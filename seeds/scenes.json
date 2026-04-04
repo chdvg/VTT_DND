@@ -1,0 +1,23 @@
+[
+  {
+    "id": "phandalin/stonehill-inn-ground-floor-1775339107776",
+    "tab": "Phandalin",
+    "label": "Stonehill Inn",
+    "views": [
+      {
+        "id": "phandalin/stonehill-inn-ground-floor-1775339107776-view-0",
+        "label": "Groundfloor",
+        "image": "/assets/maps/stonehill_ground.png",
+        "audio": "/assets/audio/tavern-ambience.wav",
+        "fog": false
+      },
+      {
+        "id": "phandalin/stonehill-inn-ground-floor-1775339107776-view-1",
+        "label": "Upstairs",
+        "image": "/assets/maps/stonehill_upstairs.png",
+        "audio": null,
+        "fog": false
+      }
+    ]
+  }
+]

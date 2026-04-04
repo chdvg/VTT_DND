@@ -15,6 +15,33 @@
     </div>
   </header>
   <div class="panel-grid">
+    <section class="panel panel-full">
+      <h2>Maps & Audio</h2>
+      <div id="maps-audio-section" style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+        <div>
+          <h3 style="color:#aaa;font-size:0.85rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:0.75rem;">Available Maps</h3>
+          <div id="map-list"></div>
+          <div id="fog-controls-container"></div>
+        </div>
+        <div>
+          <h3 style="color:#aaa;font-size:0.85rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:0.75rem;">Available Audio</h3>
+          <button id="stop-audio-btn" class="btn btn-danger btn-small" style="margin-bottom:0.5rem;">⏹ Stop All Audio</button>
+          <div id="audio-list"></div>
+        </div>
+      </div>
+    </section>
+    <section class="panel panel-full">
+      <h2>Scene Builder</h2>
+      <div id="scene-builder">
+        <p style="color:#666;font-size:0.78rem;margin-bottom:0.75rem;">Hierarchy: <strong style="color:#d4af37">Area</strong> (e.g. Phandalin) &rsaquo; <strong style="color:#d4af37">Scene</strong> (e.g. Stonehill Inn) &rsaquo; <strong style="color:#d4af37">Map</strong> (e.g. Ground Floor)</p>
+        <div class="scene-builder-row">
+          <input type="text" id="sb-tab" placeholder="Area (e.g. Phandalin)" />
+          <input type="text" id="sb-scene-label" placeholder="Scene (e.g. Stonehill Inn)" />
+          <button class="btn btn-secondary btn-small" id="sb-new-scene-btn">+ New Scene</button>
+        </div>
+        <div id="sb-scene-list"></div>
+      </div>
+    </section>
     <section class="panel">
       <h2>Quick Actions</h2>
       <div class="btn-row">

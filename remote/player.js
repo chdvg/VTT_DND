@@ -1,211 +1,148 @@
-let scenes = [];
-let currentSceneId = null;
-let currentMediaPath = null;
-let currentFit = null;
-let pendingChain = null;
-let activated = false;
-let currentFogGrid = null;
+// ============================================================
+//  D&D Player View — player.js
+// ============================================================
 
-const sceneEl = document.getElementById('scene');
-const cutsceneEl = document.getElementById('cutscene');
-const cutsceneVideo = document.getElementById('cutscene-video');
-const statusEl = document.getElementById('status');
-const tapOverlay = document.getElementById('tap-overlay');
+var sceneEl   = document.getElementById('scene');
+var statusEl  = document.getElementById('status');
+var unlockBar = document.getElementById('unlock-bar');
 
-// iOS and some browsers block autoplay until user gesture. Show a tap-to-enter
-// screen so the first interaction unlocks media playback for the session.
-tapOverlay.addEventListener('click', () => {
-  activated = true;
-  tapOverlay.classList.add('hidden');
-  // Flush any scene that arrived before the tap
-  if (currentSceneId !== null || pendingClear) renderScene();
-});
+var globalAudio    = null;
+var pendingAudio   = null;   // queued while audio not yet unlocked
+var audioUnlocked  = false;
+var currentFogKey  = null;
+var fogStates      = {};
 
-let pendingClear = false;
+// Unlock audio on first tap anywhere
+document.addEventListener('click', function () {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  if (unlockBar) unlockBar.style.display = 'none';
+  if (pendingAudio) { playAudio(pendingAudio); pendingAudio = null; }
+}, { once: true });
 
-async function loadLayout() {
-  try {
-    const res = await fetch('/api/layout');
-    const layout = await res.json();
-    if (layout) scenes = layout.scenes ?? [];
-    statusEl.textContent = 'loaded ' + scenes.length + ' scenes';
-  } catch (e) {
-    statusEl.textContent = 'layout error: ' + e.message;
-    console.error('Failed to load layout', e);
-  }
-}
-
-function renderScene() {
-  if (!activated) return;
-
+// ── Image display ────────────────────────────────────────────
+function showImage(imageUrl, fogKey) {
   sceneEl.classList.add('fading');
-  setTimeout(() => {
+  setTimeout(function () {
     sceneEl.innerHTML = '';
-    pendingClear = false;
-
-    if (!currentSceneId) {
-      sceneEl.classList.remove('fading');
-      return;
-    }
-
-    const scene = scenes.find(s => s.id === currentSceneId);
-    if (!scene) { console.warn('[Player] Scene not found:', currentSceneId, 'in', scenes.map(s=>s.id)); sceneEl.classList.remove('fading'); return; }
-
-    const mediaPath = currentMediaPath ?? scene.mediaPath;
-    const fit = currentFit ?? scene.options?.fit ?? 'contain';
-    const src = mediaPath ? (mediaPath.startsWith('/') ? mediaPath : '/' + mediaPath) : null;
-
-    switch (scene.type) {
-      case 'map':
-      case 'utility': {
-        if (!src) break;
-        const img = document.createElement('img');
-        img.src = src;
-        img.style.objectFit = fit;
-        sceneEl.appendChild(img);
-        // re-apply fog overlay after rendering image
-        if (scene.type === 'map' && currentFogGrid) renderFogOverlay(currentFogGrid);
-        break;
-      }
-      case 'video': {
-        if (!src) break;
-        const vid = document.createElement('video');
-        vid.src = src;
-        vid.autoplay = true;
-        vid.loop = scene.options?.loop ?? false;
-        vid.playsInline = true;
-        vid.muted = true; // required for autoplay on iOS for looping bg video
-        vid.style.objectFit = 'cover';
-        sceneEl.appendChild(vid);
-        vid.play().catch(() => {});
-        break;
-      }
-      case 'text': {
-        const div = document.createElement('div');
-        div.className = 'text-content';
-        div.textContent = scene.textContent ?? '';
-        sceneEl.appendChild(div);
-        break;
-      }
-    }
-
+    var img = document.createElement('img');
+    img.src = imageUrl;
+    img.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;';
+    sceneEl.appendChild(img);
     sceneEl.classList.remove('fading');
-  }, 300);
+    currentFogKey = fogKey || null;
+    if (fogKey && fogStates[fogKey]) renderFogOverlay(fogStates[fogKey]);
+  }, 150);
 }
 
+function clearScene() {
+  sceneEl.classList.add('fading');
+  setTimeout(function () {
+    sceneEl.innerHTML = '';
+    sceneEl.classList.remove('fading');
+  }, 150);
+}
+
+// ── Fog overlay ──────────────────────────────────────────────
 function renderFogOverlay(fogGrid) {
-  // Remove any existing fog overlay inside sceneEl
-  const existing = sceneEl.querySelector('.fog-overlay');
+  var existing = sceneEl.querySelector('.fog-overlay');
   if (existing) existing.remove();
   if (!fogGrid || !fogGrid.length) return;
-
-  const rows = fogGrid.length;
-  const cols = fogGrid[0].length;
-
-  const overlay = document.createElement('div');
+  var rows = fogGrid.length;
+  var cols = fogGrid[0].length;
+  var overlay = document.createElement('div');
   overlay.className = 'fog-overlay';
-  overlay.style.cssText = [
-    'position:absolute', 'inset:0',
-    `display:grid`,
-    `grid-template-columns:repeat(${cols},1fr)`,
-    `grid-template-rows:repeat(${rows},1fr)`,
-    'pointer-events:none'
-  ].join(';');
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const cell = document.createElement('div');
+  overlay.style.cssText = 'position:absolute;inset:0;display:grid;' +
+    'grid-template-columns:repeat(' + cols + ',1fr);' +
+    'grid-template-rows:repeat(' + rows + ',1fr);pointer-events:none;';
+  for (var r = 0; r < rows; r++) {
+    for (var c = 0; c < cols; c++) {
+      var cell = document.createElement('div');
       cell.style.background = fogGrid[r][c] ? 'transparent' : 'black';
       cell.style.transition = 'background 0.3s ease';
       overlay.appendChild(cell);
     }
   }
-
   sceneEl.appendChild(overlay);
 }
 
-function handleCommand(msg) {
-  statusEl.textContent = 'cmd: ' + msg.type + (msg.sceneId ? ' id=' + msg.sceneId : '');
-  console.log('[Player] Received:', msg.type, msg);
-  switch (msg.type) {
-    case 'SHOW_SCENE':
-      currentSceneId = msg.sceneId ?? null;
-      currentMediaPath = msg.mediaPath ?? null;
-      currentFit = msg.fit ?? null;
-      currentFogGrid = null; // reset fog; UPDATE_FOG arrives right after if enabled
-      if (activated) renderScene();
-      break;
+// ── Audio ─────────────────────────────────────────────────────
+function playAudio(url) {
+  if (!audioUnlocked) { pendingAudio = url; return; }
+  if (globalAudio) { globalAudio.pause(); globalAudio = null; }
+  globalAudio = new Audio(url);
+  globalAudio.loop = true;
+  globalAudio.volume = 0.7;
+  globalAudio.play().catch(function () { pendingAudio = url; });
+}
 
-    case 'BLACKOUT':
-      currentSceneId = null;
-      currentMediaPath = null;
-      currentFit = null;
-      currentFogGrid = null;
-      pendingClear = true;
-      if (activated) renderScene();
-      break;
+function stopAudio() {
+  pendingAudio = null;
+  if (globalAudio) { globalAudio.pause(); globalAudio.src = ''; globalAudio = null; }
+}
 
-    case 'PLAY_CLIP': {
-      const src = msg.videoPath ?? '';
-      pendingChain = msg.chainSceneId
-        ? { sceneId: msg.chainSceneId, mediaPath: msg.chainMediaPath ?? null, fit: msg.chainFit ?? null }
-        : null;
-      cutsceneVideo.src = src;
-      cutsceneEl.classList.add('active');
-      cutsceneVideo.play().catch(() => {});
-      cutsceneVideo.onended = () => {
-        cutsceneEl.classList.remove('active');
-        cutsceneVideo.src = '';
-        const chain = pendingChain;
-        pendingChain = null;
-        if (chain) {
-          currentSceneId = chain.sceneId;
-          currentMediaPath = chain.mediaPath;
-          currentFit = chain.fit;
-          renderScene();
-        }
-      };
-      break;
+// ── Text display ──────────────────────────────────────────────
+function showText(title, html) {
+  sceneEl.classList.add('fading');
+  setTimeout(function () {
+    var wrapper = document.createElement('div');
+    wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;padding:3rem 4rem;';
+    if (title) {
+      var h = document.createElement('div');
+      h.className = 'text-title';
+      h.textContent = title;
+      wrapper.appendChild(h);
     }
+    var body = document.createElement('div');
+    body.className = 'text-content';
+    body.style.padding = '0';
+    body.innerHTML = html;
+    wrapper.appendChild(body);
+    sceneEl.innerHTML = '';
+    sceneEl.appendChild(wrapper);
+    sceneEl.classList.remove('fading');
+  }, 150);
+}
 
-    case 'STOP_CLIP':
-      pendingChain = null;
-      cutsceneEl.classList.remove('active');
-      cutsceneVideo.pause();
-      cutsceneVideo.src = '';
+// ── Message handler ───────────────────────────────────────────
+function handleMessage(msg) {
+  statusEl.textContent = msg.type;
+  switch (msg.type) {
+    case 'SHOW_SCENE_VIEW':
+      showImage(msg.image, msg.fogKey || null);
+      if (msg.audio) playAudio(msg.audio);
       break;
-
-    case 'DATA_UPDATED':
-      loadLayout();
-      break;
-
     case 'UPDATE_FOG':
-      if (msg.sceneId === currentSceneId) {
-        currentFogGrid = msg.fogGrid ?? null;
-        if (activated) renderFogOverlay(currentFogGrid);
+      if (msg.fogKey) {
+        fogStates[msg.fogKey] = msg.fogGrid;
+        if (msg.fogKey === currentFogKey) renderFogOverlay(msg.fogGrid);
       }
+      break;
+    case 'PLAY_AUDIO':
+      if (msg.url) playAudio(msg.url);
+      break;
+    case 'STOP_AUDIO':
+      stopAudio();
+      break;
+    case 'BLACKOUT':
+      clearScene();
+      stopAudio();
+      currentFogKey = null;
+      break;
+    case 'update':
+      if (msg.data) showText(msg.content || '', msg.data);
       break;
   }
 }
 
+// ── WebSocket ─────────────────────────────────────────────────
 function connect() {
-  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(protocol + '//' + location.host + '/ws');
-
-  ws.onopen = () => {
-    statusEl.textContent = 'connected';
-  };
-
-  ws.onmessage = (e) => {
-    try { handleCommand(JSON.parse(e.data)); } catch (err) { console.error(err); }
-  };
-
-  ws.onclose = () => {
-    statusEl.textContent = 'reconnecting...';
-    setTimeout(connect, 2000);
-  };
-
-  ws.onerror = () => ws.close();
+  var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  var ws = new WebSocket(protocol + '//' + location.host + '/ws');
+  ws.onopen    = function () { statusEl.textContent = 'connected'; };
+  ws.onmessage = function (e) { try { handleMessage(JSON.parse(e.data)); } catch(err) { console.error(err); } };
+  ws.onclose   = function () { statusEl.textContent = 'reconnecting...'; setTimeout(connect, 2000); };
+  ws.onerror   = function () { ws.close(); };
 }
 
-loadLayout().then(() => connect());
+connect();
