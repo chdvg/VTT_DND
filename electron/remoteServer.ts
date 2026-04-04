@@ -11,7 +11,20 @@ const clients = new Set<WebSocket>();
 // Fog state shared with main.ts via module-level Map exposed here
 const fogState = new Map<string, boolean[][]>();
 
-export { fogState };
+// Initiative tracker state
+export interface InitEntry { name: string; roll: number; hp?: number; maxHp?: number; }
+let initiativeList: InitEntry[] = [];
+let currentTurn = 0;
+
+// Party items / inventory state
+export interface PartyItem { id: string; name: string; qty: number; notes?: string; }
+let partyItems: PartyItem[] = [];
+
+export { fogState, initiativeList, currentTurn, partyItems };
+
+export function setInitiativeList(list: InitEntry[]) { initiativeList = list; }
+export function setCurrentTurn(turn: number) { currentTurn = turn; }
+export function setPartyItems(items: PartyItem[]) { partyItems = items; }
 
 export function broadcastPlayerCommand(msg: object) {
   const data = JSON.stringify(msg);
@@ -140,6 +153,95 @@ export function startRemoteServer(
     sendToPlayer(fogMsg);
     res.sendStatus(200);
   });
+
+  // ── Initiative API ──────────────────────────────────────
+  app.get("/api/initiative", (_req, res) => {
+    res.json({ list: initiativeList, currentTurn });
+  });
+
+  app.post("/api/initiative/add", (req, res) => {
+    const { name, roll, hp, maxHp } = req.body;
+    if (!name || roll == null) { res.sendStatus(400); return; }
+    initiativeList.push({ name, roll: Number(roll), hp: hp != null ? Number(hp) : undefined, maxHp: maxHp != null ? Number(maxHp) : undefined });
+    initiativeList.sort((a, b) => b.roll - a.roll);
+    broadcastInitiative();
+    res.sendStatus(200);
+  });
+
+  app.post("/api/initiative/remove", (req, res) => {
+    const { index } = req.body;
+    if (index == null || index < 0 || index >= initiativeList.length) { res.sendStatus(400); return; }
+    initiativeList.splice(index, 1);
+    if (currentTurn >= initiativeList.length) currentTurn = 0;
+    broadcastInitiative();
+    res.sendStatus(200);
+  });
+
+  app.post("/api/initiative/next", (_req, res) => {
+    if (initiativeList.length === 0) { res.sendStatus(200); return; }
+    currentTurn = (currentTurn + 1) % initiativeList.length;
+    broadcastInitiative();
+    res.sendStatus(200);
+  });
+
+  app.post("/api/initiative/clear", (_req, res) => {
+    initiativeList = [];
+    currentTurn = 0;
+    broadcastInitiative();
+    res.sendStatus(200);
+  });
+
+  app.post("/api/initiative/update-hp", (req, res) => {
+    const { index, hp } = req.body;
+    if (index == null || index < 0 || index >= initiativeList.length) { res.sendStatus(400); return; }
+    initiativeList[index].hp = Number(hp);
+    broadcastInitiative();
+    res.sendStatus(200);
+  });
+
+  function broadcastInitiative() {
+    const msg = { type: "UPDATE_INITIATIVE", list: initiativeList, currentTurn };
+    broadcastPlayerCommand(msg);
+    // Also notify DM window
+    const pw = getPlayerWindow();
+    if (pw) pw.webContents.send("player-command", msg);
+  }
+
+  // ── Party Items API ────────────────────────────────────────
+  app.get("/api/items", (_req, res) => {
+    res.json(partyItems);
+  });
+
+  app.post("/api/items/add", (req, res) => {
+    const { name, qty, notes } = req.body;
+    if (!name) { res.sendStatus(400); return; }
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    partyItems.push({ id, name, qty: Number(qty) || 1, notes: notes || undefined });
+    broadcastItems();
+    res.sendStatus(200);
+  });
+
+  app.post("/api/items/remove", (req, res) => {
+    const { id } = req.body;
+    partyItems = partyItems.filter(i => i.id !== id);
+    broadcastItems();
+    res.sendStatus(200);
+  });
+
+  app.post("/api/items/update", (req, res) => {
+    const { id, qty, notes } = req.body;
+    const item = partyItems.find(i => i.id === id);
+    if (!item) { res.sendStatus(400); return; }
+    if (qty != null) item.qty = Number(qty);
+    if (notes != null) item.notes = notes;
+    broadcastItems();
+    res.sendStatus(200);
+  });
+
+  function broadcastItems() {
+    const msg = { type: "UPDATE_ITEMS", items: partyItems };
+    broadcastPlayerCommand(msg);
+  }
 
   const server = createServer(app);
 

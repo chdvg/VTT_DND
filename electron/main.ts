@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, screen, session } from "electron";
 import * as path from "path";
 import * as fs from "fs";
-import { startRemoteServer, broadcastPlayerCommand, fogState } from "./remoteServer";
+import { startRemoteServer, broadcastPlayerCommand, fogState, initiativeList, currentTurn, partyItems, setInitiativeList, setCurrentTurn, setPartyItems, InitEntry, PartyItem } from "./remoteServer";
 import { startRendererServer, RENDERER_DM_URL, RENDERER_PLAYER_URL } from "./rendererServer";
 import { loadAppData, saveAppData, seedDefaultData, watchSeeds } from "./storage";
 import { logEvent } from "./logger";
@@ -153,6 +153,82 @@ function setupIPC() {
     if (playerWindow) playerWindow.webContents.send("player-command", fogMsg);
     broadcastPlayerCommand(fogMsg);
   });
+
+  // ── Initiative IPC ─────────────────────────────────────
+  ipcMain.handle("get-initiative", () => ({ list: initiativeList, currentTurn }));
+
+  ipcMain.handle("add-initiative", (_e, entry: InitEntry) => {
+    const list = [...initiativeList, entry].sort((a, b) => b.roll - a.roll);
+    setInitiativeList(list);
+    broadcastInitiativeFromMain();
+  });
+
+  ipcMain.handle("remove-initiative", (_e, index: number) => {
+    const list = [...initiativeList];
+    list.splice(index, 1);
+    setInitiativeList(list);
+    let turn = currentTurn;
+    if (turn >= list.length) turn = 0;
+    setCurrentTurn(turn);
+    broadcastInitiativeFromMain();
+  });
+
+  ipcMain.handle("next-initiative", () => {
+    if (initiativeList.length === 0) return;
+    setCurrentTurn((currentTurn + 1) % initiativeList.length);
+    broadcastInitiativeFromMain();
+  });
+
+  ipcMain.handle("clear-initiative", () => {
+    setInitiativeList([]);
+    setCurrentTurn(0);
+    broadcastInitiativeFromMain();
+  });
+
+  ipcMain.handle("update-initiative-hp", (_e, index: number, hp: number) => {
+    if (index < 0 || index >= initiativeList.length) return;
+    initiativeList[index].hp = hp;
+    broadcastInitiativeFromMain();
+  });
+
+  function broadcastInitiativeFromMain() {
+    const msg = { type: "UPDATE_INITIATIVE", list: initiativeList, currentTurn };
+    if (playerWindow) playerWindow.webContents.send("player-command", msg);
+    broadcastPlayerCommand(msg);
+    if (dmWindow) dmWindow.webContents.send("initiative-updated", { list: initiativeList, currentTurn });
+  }
+
+  // ── Party Items IPC ────────────────────────────────────
+  ipcMain.handle("get-items", () => partyItems);
+
+  ipcMain.handle("add-item", (_e, item: Omit<PartyItem, "id">) => {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const newItem: PartyItem = { id, name: item.name, qty: item.qty || 1, notes: item.notes };
+    partyItems.push(newItem);
+    setPartyItems([...partyItems]);
+    broadcastItemsFromMain();
+  });
+
+  ipcMain.handle("remove-item", (_e, id: string) => {
+    setPartyItems(partyItems.filter(i => i.id !== id));
+    broadcastItemsFromMain();
+  });
+
+  ipcMain.handle("update-item", (_e, id: string, updates: Partial<PartyItem>) => {
+    const item = partyItems.find(i => i.id === id);
+    if (!item) return;
+    if (updates.qty != null) item.qty = updates.qty;
+    if (updates.notes != null) item.notes = updates.notes;
+    if (updates.name != null) item.name = updates.name;
+    broadcastItemsFromMain();
+  });
+
+  function broadcastItemsFromMain() {
+    const msg = { type: "UPDATE_ITEMS", items: partyItems };
+    if (playerWindow) playerWindow.webContents.send("player-command", msg);
+    broadcastPlayerCommand(msg);
+    if (dmWindow) dmWindow.webContents.send("items-updated", partyItems);
+  }
 }
 
 app.whenReady().then(async () => {

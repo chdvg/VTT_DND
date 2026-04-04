@@ -11,7 +11,8 @@ A virtual tabletop (VTT) control console for Dungeon and Dragons game play, buil
 - **Scene Management** — Organize maps, videos, text scenes, and utility screens into layouts
 - **Fog of War** — Grid-based fog with per-cell reveal/hide controls
 - **Audio** — Ambience, music, and SFX playback with remote controls
-- **Initiative Tracker** — Track turn order from the remote control UI
+- **Initiative Tracker** — Track turn order with roll values and HP, synced across DM console and remote
+- **Party Items** — Shared inventory with quantity tracking, synced across all connected devices
 - **Session Logging** — Automatic logging of DM actions during a session
 
 ## Architecture

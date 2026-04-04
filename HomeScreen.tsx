@@ -41,7 +41,38 @@ export const HomeScreen: React.FC<Props> = ({ onCustomize, onViewLogs }) => {
   const [activeMapSceneId, setActiveMapSceneId] = useState<string | null>(null);
   const [fogGrids, setFogGrids] = useState<Record<string, boolean[][]>>({});
 
+  // initiative tracker
+  const [initiative, setInitiative] = useState<{ name: string; roll: number; hp?: number; maxHp?: number }[]>([]);
+  const [initTurn, setInitTurn] = useState(0);
+  const [initName, setInitName] = useState("");
+  const [initRoll, setInitRoll] = useState("");
+  const [initHp, setInitHp] = useState("");
+  const [initMaxHp, setInitMaxHp] = useState("");
+
+  // party items
+  const [items, setItems] = useState<{ id: string; name: string; qty: number; notes?: string }[]>([]);
+  const [itemName, setItemName] = useState("");
+  const [itemQty, setItemQty] = useState("1");
+  const [itemNotes, setItemNotes] = useState("");
+
   const getViewCount = (scene: Scene) => 1 + (scene.views?.length ?? 0);
+
+  // Load initiative + items on mount, listen for remote updates
+  useEffect(() => {
+    window.electronAPI.getInitiative().then(data => {
+      setInitiative(data.list);
+      setInitTurn(data.currentTurn);
+    });
+    window.electronAPI.getItems().then(setItems);
+
+    window.electronAPI.onInitiativeUpdated((data) => {
+      setInitiative(data.list);
+      setInitTurn(data.currentTurn);
+    });
+    window.electronAPI.onItemsUpdated((updatedItems) => {
+      setItems(updatedItems);
+    });
+  }, []);
 
   const getActiveViewIndex = (scene: Scene) => activeViews[scene.id] ?? 0;
 
@@ -331,6 +362,87 @@ export const HomeScreen: React.FC<Props> = ({ onCustomize, onViewLogs }) => {
           </div>
         </>
       )}
+
+      {/* ── Initiative Tracker ── */}
+      <div style={styles.sectionDivider}>— Initiative Tracker —</div>
+      <div style={panelStyles.panel}>
+        <div style={panelStyles.addRow}>
+          <input style={panelStyles.input} placeholder="Name" value={initName} onChange={e => setInitName(e.target.value)} />
+          <input style={{ ...panelStyles.input, width: 60 }} placeholder="Roll" type="number" value={initRoll} onChange={e => setInitRoll(e.target.value)} />
+          <input style={{ ...panelStyles.input, width: 60 }} placeholder="HP" type="number" value={initHp} onChange={e => setInitHp(e.target.value)} />
+          <input style={{ ...panelStyles.input, width: 60 }} placeholder="Max" type="number" value={initMaxHp} onChange={e => setInitMaxHp(e.target.value)} />
+          <button style={panelStyles.addBtn} onClick={() => {
+            if (!initName || !initRoll) return;
+            window.electronAPI.addInitiative({
+              name: initName, roll: Number(initRoll),
+              hp: initHp ? Number(initHp) : undefined,
+              maxHp: initMaxHp ? Number(initMaxHp) : undefined
+            });
+            setInitName(""); setInitRoll(""); setInitHp(""); setInitMaxHp("");
+          }}>+ Add</button>
+        </div>
+        {initiative.length > 0 && (
+          <>
+            <div style={panelStyles.list}>
+              {initiative.map((entry, i) => (
+                <div key={i} style={{ ...panelStyles.entry, ...(i === initTurn ? panelStyles.activeEntry : {}) }}>
+                  <span style={panelStyles.rollBadge}>{entry.roll}</span>
+                  <span style={{ flex: 1 }}>{entry.name}</span>
+                  {entry.hp != null && (
+                    <span style={panelStyles.hpBadge}>
+                      {entry.hp}{entry.maxHp != null ? `/${entry.maxHp}` : ""} HP
+                    </span>
+                  )}
+                  <button style={panelStyles.removeBtn} onClick={() => window.electronAPI.removeInitiative(i)}>✕</button>
+                </div>
+              ))}
+            </div>
+            <div style={panelStyles.actionRow}>
+              <button style={panelStyles.actionBtn} onClick={() => window.electronAPI.nextInitiative()}>Next Turn ▶</button>
+              <button style={{ ...panelStyles.actionBtn, background: "rgba(192,57,43,0.3)", borderColor: "rgba(192,57,43,0.6)" }} onClick={() => window.electronAPI.clearInitiative()}>Clear All</button>
+            </div>
+          </>
+        )}
+        {initiative.length === 0 && <div style={{ color: "#666", fontSize: "0.85rem", padding: "8px 0" }}>No entries — add characters above</div>}
+      </div>
+
+      {/* ── Party Items ── */}
+      <div style={styles.sectionDivider}>— Party Items —</div>
+      <div style={panelStyles.panel}>
+        <div style={panelStyles.addRow}>
+          <input style={{ ...panelStyles.input, flex: 2 }} placeholder="Item name" value={itemName} onChange={e => setItemName(e.target.value)} />
+          <input style={{ ...panelStyles.input, width: 50 }} placeholder="Qty" type="number" value={itemQty} onChange={e => setItemQty(e.target.value)} />
+          <input style={{ ...panelStyles.input, flex: 1 }} placeholder="Notes" value={itemNotes} onChange={e => setItemNotes(e.target.value)} />
+          <button style={panelStyles.addBtn} onClick={() => {
+            if (!itemName) return;
+            window.electronAPI.addItem({ name: itemName, qty: Number(itemQty) || 1, notes: itemNotes || undefined });
+            setItemName(""); setItemQty("1"); setItemNotes("");
+          }}>+ Add</button>
+        </div>
+        {items.length > 0 && (
+          <div style={panelStyles.list}>
+            {items.map(item => (
+              <div key={item.id} style={panelStyles.entry}>
+                <span style={{ ...panelStyles.rollBadge, background: "rgba(200,168,75,0.2)", color: "#c8a84b" }}>{item.qty}×</span>
+                <span style={{ flex: 1 }}>{item.name}</span>
+                {item.notes && <span style={{ fontSize: "0.75rem", color: "#888", marginRight: 8 }}>{item.notes}</span>}
+                <button style={panelStyles.removeBtn} onClick={() => {
+                  window.electronAPI.updateItem(item.id, { qty: item.qty + 1 });
+                }} title="Add one">+</button>
+                <button style={panelStyles.removeBtn} onClick={() => {
+                  if (item.qty <= 1) {
+                    window.electronAPI.removeItem(item.id);
+                  } else {
+                    window.electronAPI.updateItem(item.id, { qty: item.qty - 1 });
+                  }
+                }} title="Remove one">−</button>
+                <button style={panelStyles.removeBtn} onClick={() => window.electronAPI.removeItem(item.id)}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+        {items.length === 0 && <div style={{ color: "#666", fontSize: "0.85rem", padding: "8px 0" }}>No items — add loot above</div>}
+      </div>
     </div>
   );
 };
@@ -639,5 +751,108 @@ const styles = {
     lineHeight: "24px",
     textAlign: "center" as const,
     padding: 0
+  }
+};
+
+const panelStyles = {
+  panel: {
+    background: "#222",
+    borderRadius: 8,
+    border: "1px solid #333",
+    padding: 12,
+    margin: "0 0 16px"
+  },
+  addRow: {
+    display: "flex",
+    gap: 6,
+    marginBottom: 8,
+    flexWrap: "wrap" as const,
+    alignItems: "center"
+  },
+  input: {
+    background: "#111",
+    border: "1px solid #444",
+    color: "white",
+    borderRadius: 4,
+    padding: "6px 8px",
+    fontSize: "0.85rem",
+    flex: 1,
+    minWidth: 0
+  },
+  addBtn: {
+    background: "rgba(39,174,96,0.25)",
+    border: "1px solid rgba(39,174,96,0.6)",
+    color: "#7fff7f",
+    borderRadius: 4,
+    padding: "6px 12px",
+    fontSize: "0.85rem",
+    cursor: "pointer",
+    fontWeight: 600,
+    whiteSpace: "nowrap" as const
+  },
+  list: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 4
+  },
+  entry: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 8px",
+    background: "#1a1a1a",
+    borderRadius: 4,
+    border: "1px solid #333",
+    fontSize: "0.9rem"
+  },
+  activeEntry: {
+    background: "rgba(200,168,75,0.15)",
+    border: "1px solid rgba(200,168,75,0.5)"
+  },
+  rollBadge: {
+    background: "rgba(41,128,185,0.25)",
+    color: "#5dade2",
+    borderRadius: 4,
+    padding: "2px 8px",
+    fontWeight: 700,
+    fontSize: "0.85rem",
+    minWidth: 32,
+    textAlign: "center" as const
+  },
+  hpBadge: {
+    fontSize: "0.75rem",
+    color: "#e74c3c",
+    background: "rgba(231,76,60,0.15)",
+    padding: "2px 6px",
+    borderRadius: 4
+  },
+  removeBtn: {
+    background: "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(255,255,255,0.2)",
+    color: "#999",
+    borderRadius: 4,
+    width: 24,
+    height: 24,
+    cursor: "pointer",
+    fontSize: 14,
+    lineHeight: "22px",
+    padding: 0,
+    textAlign: "center" as const
+  },
+  actionRow: {
+    display: "flex",
+    gap: 8,
+    marginTop: 8
+  },
+  actionBtn: {
+    flex: 1,
+    background: "rgba(41,128,185,0.2)",
+    border: "1px solid rgba(41,128,185,0.5)",
+    color: "white",
+    borderRadius: 4,
+    padding: "8px",
+    fontSize: "0.85rem",
+    cursor: "pointer",
+    fontWeight: 600
   }
 };

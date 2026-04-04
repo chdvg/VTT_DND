@@ -5,9 +5,10 @@
   "author": "Charles",
   "main": "dist/electron/main.js",
   "scripts": {
-    "dev": "npm run build:electron && concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev": "npm run kill-ports && npm run build:electron && concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "vite --config vite.config.ts",
     "dev:electron": "wait-on http://localhost:5173 && electron ./dist/electron/main.js",
+    "kill-ports": "node -e \"const{execSync}=require('child_process');[5173,3001,3002].forEach(p=>{try{const r=execSync('netstat -ano | findstr :'+p+' | findstr LISTENING',{encoding:'utf8'});r.split('\\n').forEach(l=>{const pid=l.trim().split(/\\s+/).pop();if(pid&&pid!=='0')try{process.kill(Number(pid))}catch(e){}});}catch(e){}});\"",
     "build": "npm run build:renderer && npm run build:electron",
     "build:renderer": "vite build --config vite.config.ts",
     "build:electron": "tsc -p tsconfig.electron.json",

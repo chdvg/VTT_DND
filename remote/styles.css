@@ -312,3 +312,144 @@ header h1 {
   border-color: var(--green-bright);
 }
 .fog-cell:active { opacity: 0.7; }
+
+/* ── Initiative Tracker ── */
+.section-header.initiative { color: var(--gold); }
+.section-header.items { color: #e67e22; }
+
+.init-form, .items-form {
+  display: flex;
+  gap: 6px;
+  padding: 8px 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.init-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  flex: 1;
+  min-width: 0;
+}
+.init-input-sm { max-width: 60px; flex: 0 0 60px; }
+.init-input:focus { outline: none; border-color: var(--gold-dim); }
+
+.init-action-btn {
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: 1px solid;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+}
+.init-action-btn.add {
+  background: var(--green);
+  border-color: var(--green-bright);
+  color: #aed6b8;
+}
+.init-action-btn.add:active { background: #245a34; }
+.init-action-btn.next {
+  flex: 1;
+  background: var(--blue);
+  border-color: var(--blue-bright);
+  color: #a8c6e0;
+}
+.init-action-btn.next:active { background: #1e3a60; }
+.init-action-btn.clear {
+  flex: 1;
+  background: var(--red);
+  border-color: var(--red-bright);
+  color: #e8a8a8;
+}
+.init-action-btn.clear:active { background: #5a1a1a; }
+
+.init-actions {
+  display: flex;
+  gap: 8px;
+  padding: 4px 16px 12px;
+}
+
+.init-entry, .item-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+.init-entry.active {
+  background: rgba(200, 168, 75, 0.12);
+  border-left: 3px solid var(--gold);
+}
+.init-roll {
+  background: rgba(41,128,185,0.2);
+  color: var(--blue-bright);
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  min-width: 36px;
+  text-align: center;
+}
+.init-name, .item-name { flex: 1; }
+.init-hp {
+  font-size: 0.75rem;
+  color: var(--red-bright);
+  background: rgba(192,57,43,0.15);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.init-remove {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.init-remove:active { background: var(--red); color: white; }
+
+.init-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+/* ── Party Items ── */
+.item-qty {
+  background: rgba(200,168,75,0.15);
+  color: var(--gold);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  min-width: 32px;
+  text-align: center;
+}
+.item-notes {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.item-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  flex-shrink: 0;
+  line-height: 24px;
+  text-align: center;
+  padding: 0;
+}
+.item-btn:active { background: var(--bg3); color: var(--text); }

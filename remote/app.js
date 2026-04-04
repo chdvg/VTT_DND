@@ -1,6 +1,8 @@
 let layout = null;
 let currentSceneId = null;
 let currentFogGrid = null; // fog grid for the active scene
+let initiativeData = { list: [], currentTurn: 0 };
+let partyItemsData = [];
 
 const nowShowingEl = document.getElementById('now-showing');
 const statusDotEl  = document.getElementById('status-dot');
@@ -39,6 +41,12 @@ function connect() {
         }
       } else if (msg.type === 'DATA_UPDATED') {
         fetchLayout().then(render);
+      } else if (msg.type === 'UPDATE_INITIATIVE') {
+        initiativeData = { list: msg.list, currentTurn: msg.currentTurn };
+        renderInitiativePanel();
+      } else if (msg.type === 'UPDATE_ITEMS') {
+        partyItemsData = msg.items;
+        renderItemsPanel();
       }
     } catch (_) {}
   };
@@ -239,6 +247,9 @@ function render() {
   const music    = layout.scenes.filter(s => s.type === 'audio' && s.options?.audioType === 'music');
   const sfx      = layout.scenes.filter(s => s.type === 'audio' && s.options?.audioType === 'sfx');
 
+  // ── Initiative Tracker section ──
+  contentEl.appendChild(buildInitiativeSection());
+
   if (visual.length) {
     const section = document.createElement('section');
     const header = document.createElement('h2');
@@ -285,6 +296,182 @@ function render() {
       refreshFogPanel(currentSceneId);
     }
   }
+
+  // ── Party Items section ──
+  contentEl.appendChild(buildItemsSection());
+}
+
+// ── Initiative Panel ───────────────────────────────────────
+function buildInitiativeSection() {
+  const section = document.createElement('section');
+  section.id = 'initiative-section';
+
+  const header = document.createElement('h2');
+  header.className = 'section-header initiative';
+  header.textContent = 'Initiative Tracker';
+  section.appendChild(header);
+
+  // Add form
+  const form = document.createElement('div');
+  form.className = 'init-form';
+  form.innerHTML = `
+    <input id="init-name" class="init-input" placeholder="Name" />
+    <input id="init-roll" class="init-input init-input-sm" placeholder="Roll" type="number" />
+    <input id="init-hp" class="init-input init-input-sm" placeholder="HP" type="number" />
+    <input id="init-maxhp" class="init-input init-input-sm" placeholder="Max" type="number" />
+    <button id="init-add-btn" class="init-action-btn add">+ Add</button>
+  `;
+  section.appendChild(form);
+
+  // List container
+  const list = document.createElement('div');
+  list.id = 'init-list';
+  section.appendChild(list);
+
+  // Action buttons
+  const actions = document.createElement('div');
+  actions.className = 'init-actions';
+  actions.innerHTML = `
+    <button id="init-next-btn" class="init-action-btn next">Next Turn ▶</button>
+    <button id="init-clear-btn" class="init-action-btn clear">Clear All</button>
+  `;
+  section.appendChild(actions);
+
+  // Wire up events after DOM insertion
+  setTimeout(() => {
+    document.getElementById('init-add-btn')?.addEventListener('click', () => {
+      const name = document.getElementById('init-name').value.trim();
+      const roll = document.getElementById('init-roll').value;
+      const hp = document.getElementById('init-hp').value;
+      const maxHp = document.getElementById('init-maxhp').value;
+      if (!name || !roll) return;
+      const body = { name, roll: Number(roll) };
+      if (hp) body.hp = Number(hp);
+      if (maxHp) body.maxHp = Number(maxHp);
+      api('/api/initiative/add', body);
+      document.getElementById('init-name').value = '';
+      document.getElementById('init-roll').value = '';
+      document.getElementById('init-hp').value = '';
+      document.getElementById('init-maxhp').value = '';
+    });
+    document.getElementById('init-next-btn')?.addEventListener('click', () => api('/api/initiative/next'));
+    document.getElementById('init-clear-btn')?.addEventListener('click', () => api('/api/initiative/clear'));
+
+    // Load current state
+    fetch('/api/initiative').then(r => r.json()).then(data => {
+      initiativeData = data;
+      renderInitiativePanel();
+    });
+  }, 0);
+
+  return section;
+}
+
+function renderInitiativePanel() {
+  const list = document.getElementById('init-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  if (initiativeData.list.length === 0) {
+    list.innerHTML = '<div class="init-empty">No entries</div>';
+    return;
+  }
+
+  initiativeData.list.forEach((entry, i) => {
+    const row = document.createElement('div');
+    row.className = 'init-entry' + (i === initiativeData.currentTurn ? ' active' : '');
+    let hpHtml = '';
+    if (entry.hp != null) {
+      hpHtml = `<span class="init-hp">${entry.hp}${entry.maxHp != null ? '/' + entry.maxHp : ''} HP</span>`;
+    }
+    row.innerHTML = `
+      <span class="init-roll">${entry.roll}</span>
+      <span class="init-name">${entry.name}</span>
+      ${hpHtml}
+      <button class="init-remove" data-index="${i}">✕</button>
+    `;
+    row.querySelector('.init-remove').onclick = () => api('/api/initiative/remove', { index: i });
+    list.appendChild(row);
+  });
+}
+
+// ── Party Items Panel ──────────────────────────────────────
+function buildItemsSection() {
+  const section = document.createElement('section');
+  section.id = 'items-section';
+
+  const header = document.createElement('h2');
+  header.className = 'section-header items';
+  header.textContent = 'Party Items';
+  section.appendChild(header);
+
+  // Add form
+  const form = document.createElement('div');
+  form.className = 'items-form';
+  form.innerHTML = `
+    <input id="item-name" class="init-input" placeholder="Item name" />
+    <input id="item-qty" class="init-input init-input-sm" placeholder="Qty" type="number" value="1" />
+    <input id="item-notes" class="init-input" placeholder="Notes" />
+    <button id="item-add-btn" class="init-action-btn add">+ Add</button>
+  `;
+  section.appendChild(form);
+
+  // List container
+  const list = document.createElement('div');
+  list.id = 'items-list';
+  section.appendChild(list);
+
+  setTimeout(() => {
+    document.getElementById('item-add-btn')?.addEventListener('click', () => {
+      const name = document.getElementById('item-name').value.trim();
+      const qty = document.getElementById('item-qty').value || '1';
+      const notes = document.getElementById('item-notes').value.trim();
+      if (!name) return;
+      api('/api/items/add', { name, qty: Number(qty), notes: notes || undefined });
+      document.getElementById('item-name').value = '';
+      document.getElementById('item-qty').value = '1';
+      document.getElementById('item-notes').value = '';
+    });
+
+    fetch('/api/items').then(r => r.json()).then(data => {
+      partyItemsData = data;
+      renderItemsPanel();
+    });
+  }, 0);
+
+  return section;
+}
+
+function renderItemsPanel() {
+  const list = document.getElementById('items-list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  if (partyItemsData.length === 0) {
+    list.innerHTML = '<div class="init-empty">No items</div>';
+    return;
+  }
+
+  partyItemsData.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'item-entry';
+    let notesHtml = item.notes ? `<span class="item-notes">${item.notes}</span>` : '';
+    row.innerHTML = `
+      <span class="item-qty">${item.qty}×</span>
+      <span class="item-name">${item.name}</span>
+      ${notesHtml}
+      <button class="item-btn plus" data-id="${item.id}">+</button>
+      <button class="item-btn minus" data-id="${item.id}">−</button>
+      <button class="init-remove" data-id="${item.id}">✕</button>
+    `;
+    row.querySelector('.plus').onclick = () => api('/api/items/update', { id: item.id, qty: item.qty + 1 });
+    row.querySelector('.minus').onclick = () => {
+      if (item.qty <= 1) api('/api/items/remove', { id: item.id });
+      else api('/api/items/update', { id: item.id, qty: item.qty - 1 });
+    };
+    row.querySelector('.init-remove').onclick = () => api('/api/items/remove', { id: item.id });
+    list.appendChild(row);
+  });
 }
 
 // ── Init ───────────────────────────────────────────────────
