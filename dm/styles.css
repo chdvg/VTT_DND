@@ -87,3 +87,7 @@ label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; col
 .sb-select { padding: 0.4rem 0.5rem; background: #161b22; border: 1px solid #30363d; border-radius: 4px; color: #e6e6e6; font-size: 0.8rem; flex: 1; min-width: 140px; }
 .sb-action-row { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
 .sb-action-row .btn { flex: 1; min-width: 0; padding: 0.5rem 0.75rem; font-size: 0.8rem; white-space: nowrap; }
+.chain-select { padding:0.3rem 0.4rem; background:#21262d; border:1px solid #444c56; border-radius:4px; color:#e6e6e6; font-size:0.75rem; flex:1; min-width:80px; cursor:pointer; }
+.chain-select:focus { outline:none; border-color:#d4af37; }
+.search-input { width:100%; padding:0.45rem 0.65rem; background:#0d1117; border:1px solid #30363d; border-radius:4px; color:#e6e6e6; font-size:0.82rem; margin-bottom:0.5rem; }
+.search-input:focus { outline:none; border-color:#d4af37; }

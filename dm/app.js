@@ -19,6 +19,11 @@ var sbViews       = [];   // array of { label, image, audio }
 var sbAudioList   = [];   // populated from /api/audio
 var sbEditingId   = null; // id of scene being edited, or null for new
 
+// Search state
+var sceneSearchTerm = '';
+var audioSearchTerm = '';
+var sbCategories    = [];   // cached from /api/audio
+
 // ── DOM refs ─────────────────────────────────────────────────
 var statusDot    = document.getElementById('status-dot');
 var clientCount  = document.getElementById('client-count');
@@ -141,7 +146,127 @@ function autoIcon(name) {
   return '🗺️';
 }
 
+// Renders a single scene group (title row + view rows with chain dropdown)
+function renderSceneGroup(container, scene, sIdx) {
+  var sceneDiv = document.createElement('div');
+  sceneDiv.className = 'scene-group';
+
+  var titleRow = document.createElement('div');
+  titleRow.className = 'scene-title';
+  var firstViewImg = scene.views && scene.views.length ? scene.views[0].image : '';
+  if (firstViewImg) {
+    var sceneThumb = document.createElement('img');
+    sceneThumb.src = firstViewImg;
+    sceneThumb.style.cssText = 'width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;';
+    titleRow.appendChild(sceneThumb);
+  }
+  titleRow.appendChild(document.createTextNode(scene.label));
+
+  var delBtn = document.createElement('button');
+  delBtn.textContent = '🗑';
+  delBtn.title = 'Delete scene';
+  delBtn.className = 'btn btn-danger btn-small';
+  delBtn.style.marginLeft = 'auto';
+  delBtn.onclick = (function (id) {
+    return function () {
+      if (!confirm('Delete "' + scene.label + '"?')) return;
+      var remaining = sceneData.filter(function (s) { return s.id !== id; });
+      fetch('/api/scenes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenes: remaining })
+      }).then(function () { currentTab = null; renderScenesPanel(); });
+    };
+  })(scene.id);
+
+  var editBtn = document.createElement('button');
+  editBtn.textContent = '✏️';
+  editBtn.title = 'Edit scene';
+  editBtn.className = 'btn btn-secondary btn-small';
+  editBtn.onclick = (function (si) {
+    return function () { editScene(si); };
+  })(sIdx);
+  titleRow.appendChild(editBtn);
+  titleRow.appendChild(delBtn);
+  sceneDiv.appendChild(titleRow);
+
+  scene.views.forEach(function (view, vIdx) {
+    var row = document.createElement('div');
+    row.className = 'view-row';
+
+    // Line 1: thumb + label + audio indicator
+    var rowTop = document.createElement('div');
+    rowTop.className = 'view-row-top';
+
+    var thumb = document.createElement('img');
+    thumb.src = view.image;
+    thumb.className = 'view-thumb';
+    rowTop.appendChild(thumb);
+
+    var lbl = document.createElement('span');
+    lbl.textContent = view.label;
+    lbl.className = 'view-label';
+    rowTop.appendChild(lbl);
+
+    if (view.audio) {
+      var audioIcon = document.createElement('span');
+      audioIcon.textContent = '🎵';
+      audioIcon.title = 'Ambience: ' + view.audio.split('/').pop();
+      audioIcon.style.cssText = 'cursor:help;flex-shrink:0;font-size:0.9rem;';
+      rowTop.appendChild(audioIcon);
+    }
+    row.appendChild(rowTop);
+
+    // Line 2: Show + chain dropdown
+    var rowBtns = document.createElement('div');
+    rowBtns.className = 'view-row-btns';
+
+    var showBtn = document.createElement('button');
+    showBtn.textContent = '▶ Show';
+    showBtn.className = 'btn btn-primary btn-small';
+    showBtn.onclick = (function (si, vi) {
+      return function () { showSceneView(si, vi); };
+    })(sIdx, vIdx);
+    rowBtns.appendChild(showBtn);
+
+    // Chain dropdown — visible only when scene has more than one view
+    if (scene.views.length > 1) {
+      var chainSel = document.createElement('select');
+      chainSel.className = 'chain-select';
+      var defOpt = document.createElement('option');
+      defOpt.value = '';
+      defOpt.textContent = '⛓ Chain to…';
+      chainSel.appendChild(defOpt);
+      scene.views.forEach(function (v, vi2) {
+        if (vi2 === vIdx) return;
+        var opt = document.createElement('option');
+        opt.value = vi2;
+        opt.textContent = v.label || ('Map ' + (vi2 + 1));
+        chainSel.appendChild(opt);
+      });
+      rowBtns.appendChild(chainSel);
+
+      var goBtn = document.createElement('button');
+      goBtn.textContent = '→ Go';
+      goBtn.className = 'btn btn-secondary btn-small';
+      goBtn.onclick = (function (si, sel) {
+        return function () {
+          var vi = parseInt(sel.value);
+          if (!isNaN(vi) && vi >= 0) showSceneView(si, vi);
+        };
+      })(sIdx, chainSel);
+      rowBtns.appendChild(goBtn);
+    }
+
+    row.appendChild(rowBtns);
+    sceneDiv.appendChild(row);
+  });
+
+  container.appendChild(sceneDiv);
+}
+
 function renderScenesPanel() {
+  var term = (sceneSearchTerm || '').toLowerCase().trim();
   fetch('/api/scenes')
     .then(function (r) { return r.json(); })
     .then(function (data) {
@@ -154,7 +279,49 @@ function renderScenesPanel() {
         return;
       }
 
-      // Collect unique tabs
+      // ── Search mode: show matching scenes/views regardless of tab ──
+      if (term) {
+        var hits = [];
+        sceneData.forEach(function (scene, sIdx) {
+          var tabMatch   = (scene.tab   || '').toLowerCase().indexOf(term) !== -1;
+          var labelMatch = (scene.label || '').toLowerCase().indexOf(term) !== -1;
+          // If area or scene name matches → show whole scene with all views
+          if (tabMatch || labelMatch) {
+            hits.push({ scene: scene, sIdx: sIdx, filteredViews: null });
+            return;
+          }
+          // Otherwise filter to only views whose label matches
+          var matchingViews = (scene.views || []).filter(function (v) {
+            return (v.label || '').toLowerCase().indexOf(term) !== -1;
+          });
+          if (matchingViews.length) {
+            hits.push({ scene: scene, sIdx: sIdx, filteredViews: matchingViews });
+          }
+        });
+
+        if (!hits.length) {
+          mapList.innerHTML = '<p style="color:#888;font-size:0.85rem;">No results for "' + sceneSearchTerm + '"</p>';
+          return;
+        }
+        var totalViews = hits.reduce(function (n, h) {
+          return n + (h.filteredViews ? h.filteredViews.length : (h.scene.views || []).length);
+        }, 0);
+        var info = document.createElement('div');
+        info.style.cssText = 'font-size:0.75rem;color:#888;margin-bottom:0.5rem;';
+        info.textContent = totalViews + ' map' + (totalViews !== 1 ? 's' : '') + ' in ' +
+          hits.length + ' scene' + (hits.length !== 1 ? 's' : '') + ' for "' + sceneSearchTerm + '"';
+        mapList.appendChild(info);
+        hits.forEach(function (h) {
+          // For view-only hits, render a synthetic scene with just the matching views
+          var sceneToRender = h.filteredViews
+            ? Object.assign({}, h.scene, { views: h.filteredViews })
+            : h.scene;
+          renderSceneGroup(mapList, sceneToRender, h.sIdx);
+        });
+        return;
+      }
+
+      // ── Normal tab mode ──
       var tabs = [];
       sceneData.forEach(function (s) {
         var t = s.tab || s.label;
@@ -162,11 +329,9 @@ function renderScenesPanel() {
       });
       if (!currentTab || tabs.indexOf(currentTab) === -1) currentTab = tabs[0];
 
-      // Tab bar
       var tabBar = document.createElement('div');
       tabBar.className = 'tab-bar';
       tabs.forEach(function (tab) {
-        // Find first image for this tab
         var firstImg = '';
         sceneData.forEach(function (s) {
           if ((s.tab || s.label) === tab && !firstImg && s.views && s.views.length) firstImg = s.views[0].image;
@@ -185,118 +350,9 @@ function renderScenesPanel() {
       });
       mapList.appendChild(tabBar);
 
-      // Scenes for active tab
       sceneData.forEach(function (scene, sIdx) {
         if ((scene.tab || scene.label) !== currentTab) return;
-
-        var sceneDiv = document.createElement('div');
-        sceneDiv.className = 'scene-group';
-
-        var titleRow = document.createElement('div');
-        titleRow.className = 'scene-title';
-        var firstViewImg = scene.views && scene.views.length ? scene.views[0].image : '';
-        if (firstViewImg) {
-          var sceneThumb = document.createElement('img');
-          sceneThumb.src = firstViewImg;
-          sceneThumb.style.cssText = 'width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0;';
-          titleRow.appendChild(sceneThumb);
-        }
-        titleRow.appendChild(document.createTextNode(scene.label));
-
-        var delBtn = document.createElement('button');
-        delBtn.textContent = '🗑';
-        delBtn.title = 'Delete scene';
-        delBtn.className = 'btn btn-danger btn-small';
-        delBtn.style.marginLeft = 'auto';
-        delBtn.onclick = (function (id) {
-          return function () {
-            if (!confirm('Delete "' + scene.label + '"?')) return;
-            var remaining = sceneData.filter(function (s) { return s.id !== id; });
-            fetch('/api/scenes', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ scenes: remaining })
-            }).then(function () { currentTab = null; renderScenesPanel(); });
-          };
-        })(scene.id);
-
-        var editBtn = document.createElement('button');
-        editBtn.textContent = '✏️';
-        editBtn.title = 'Edit scene';
-        editBtn.className = 'btn btn-secondary btn-small';
-        editBtn.onclick = (function (si) {
-          return function () { editScene(si); };
-        })(sIdx);
-        titleRow.appendChild(editBtn);
-        titleRow.appendChild(delBtn);
-
-        sceneDiv.appendChild(titleRow);
-
-        scene.views.forEach(function (view, vIdx) {
-          var row = document.createElement('div');
-          row.className = 'view-row';
-
-          // Line 1: thumb + label + audio indicator
-          var rowTop = document.createElement('div');
-          rowTop.className = 'view-row-top';
-
-          var thumb = document.createElement('img');
-          thumb.src = view.image;
-          thumb.className = 'view-thumb';
-          rowTop.appendChild(thumb);
-
-          var lbl = document.createElement('span');
-          lbl.textContent = view.label;
-          lbl.className = 'view-label';
-          rowTop.appendChild(lbl);
-
-          if (view.audio) {
-            var audioIcon = document.createElement('span');
-            audioIcon.textContent = '🎵';
-            audioIcon.title = 'Ambience: ' + view.audio.split('/').pop();
-            audioIcon.style.cssText = 'cursor:help;flex-shrink:0;font-size:0.9rem;';
-            rowTop.appendChild(audioIcon);
-          }
-          row.appendChild(rowTop);
-
-          // Line 2: action buttons — full width, equal share
-          var rowBtns = document.createElement('div');
-          rowBtns.className = 'view-row-btns';
-
-          var showBtn = document.createElement('button');
-          showBtn.textContent = '▶ Show';
-          showBtn.className = 'btn btn-primary btn-small';
-          showBtn.onclick = (function (si, vi) {
-            return function () { showSceneView(si, vi); };
-          })(sIdx, vIdx);
-          rowBtns.appendChild(showBtn);
-
-          if (vIdx > 0) {
-            var chainPrevBtn = document.createElement('button');
-            chainPrevBtn.textContent = '⛓ ' + scene.views[vIdx - 1].label;
-            chainPrevBtn.className = 'btn btn-secondary btn-small';
-            chainPrevBtn.title = 'Chain to: ' + scene.views[vIdx - 1].label;
-            chainPrevBtn.onclick = (function (si, vi) {
-              return function () { showSceneView(si, vi); };
-            })(sIdx, vIdx - 1);
-            rowBtns.appendChild(chainPrevBtn);
-          }
-
-          if (vIdx < scene.views.length - 1) {
-            var chainNextBtn = document.createElement('button');
-            chainNextBtn.textContent = '⛓ ' + scene.views[vIdx + 1].label;
-            chainNextBtn.className = 'btn btn-secondary btn-small';
-            chainNextBtn.title = 'Chain to: ' + scene.views[vIdx + 1].label;
-            chainNextBtn.onclick = (function (si, nextVi) {
-              return function () { showSceneView(si, nextVi); };
-            })(sIdx, vIdx + 1);
-            rowBtns.appendChild(chainNextBtn);
-          }
-          row.appendChild(rowBtns);
-          sceneDiv.appendChild(row);
-        });
-
-        mapList.appendChild(sceneDiv);
+        renderSceneGroup(mapList, scene, sIdx);
       });
     })
     .catch(function (e) {
@@ -329,73 +385,87 @@ function renderAudioPanel() {
   fetch('/api/audio')
     .then(function (r) { return r.json(); })
     .then(function (data) {
-      sbAudioList = data.audio || [];
-      var categories = data.categories || [];
-      var audioList = document.getElementById('audio-list');
-      audioList.innerHTML = '';
-
-      if (!categories.length) {
-        audioList.textContent = 'No audio found in public/assets/audio/';
-        return;
-      }
-
-      categories.forEach(function (group) {
-        // Category header — click to collapse/expand
-        var hdr = document.createElement('div');
-        hdr.className = 'audio-cat-hdr';
-        hdr.innerHTML = '<span class="audio-cat-arrow">▼</span> ' + group.cat +
-          ' <span style="color:#555;font-size:0.72rem;">(' + group.files.length + ')</span>';
-        audioList.appendChild(hdr);
-
-        var section = document.createElement('div');
-        section.className = 'audio-cat-body';
-
-        group.files.forEach(function (url) {
-          var name = url.split('/').pop();
-          // Strip "Category - " prefix for display
-          var dash = name.indexOf(' - ');
-          var displayName = dash > 0 ? name.slice(dash + 3) : name;
-          // Strip extension
-          displayName = displayName.replace(/\.[^/.]+$/, '');
-
-          var row = document.createElement('div');
-          row.className = 'audio-row';
-
-          var lbl = document.createElement('span');
-          lbl.textContent = displayName;
-          lbl.className = 'audio-label';
-          row.appendChild(lbl);
-
-          var preview = document.createElement('audio');
-          preview.src = url;
-          preview.controls = true;
-          preview.className = 'audio-preview';
-          row.appendChild(preview);
-
-          var btn = document.createElement('button');
-          btn.textContent = '▶ Play';
-          btn.className = 'btn btn-primary btn-small audio-play-btn';
-          btn.onclick = (function (u) {
-            return function () { broadcastAudio(u); };
-          })(url);
-          row.appendChild(btn);
-
-          section.appendChild(row);
-        });
-
-        audioList.appendChild(section);
-
-        // Toggle collapse on header click
-        hdr.addEventListener('click', function () {
-          var collapsed = section.style.display === 'none';
-          section.style.display = collapsed ? '' : 'none';
-          hdr.querySelector('.audio-cat-arrow').textContent = collapsed ? '▼' : '▶';
-        });
-      });
+      sbAudioList  = data.audio      || [];
+      sbCategories = data.categories || [];
+      applyAudioDisplay();
     })
     .catch(function (e) {
       document.getElementById('audio-list').textContent = 'Error loading audio: ' + e.message;
     });
+}
+
+function applyAudioDisplay() {
+  var term = (audioSearchTerm || '').toLowerCase().trim();
+  var audioList = document.getElementById('audio-list');
+  audioList.innerHTML = '';
+
+  if (!sbCategories.length) {
+    audioList.textContent = 'No audio found in public/assets/audio/';
+    return;
+  }
+
+  sbCategories.forEach(function (group) {
+    var catMatches = !term || group.cat.toLowerCase().indexOf(term) !== -1;
+
+    // If category name matches, show all tracks; otherwise filter by track name
+    var matchingFiles = group.files.filter(function (url) {
+      if (catMatches) return true;
+      var name = url.split('/').pop();
+      var dash = name.indexOf(' - ');
+      var displayName = dash > 0 ? name.slice(dash + 3) : name;
+      displayName = displayName.replace(/\.[^/.]+$/, '').toLowerCase();
+      return displayName.indexOf(term) !== -1;
+    });
+    if (!matchingFiles.length) return;
+
+    var hdr = document.createElement('div');
+    hdr.className = 'audio-cat-hdr';
+    hdr.innerHTML = '<span class="audio-cat-arrow">▼</span> ' + group.cat +
+      ' <span style="color:#555;font-size:0.72rem;">(' + matchingFiles.length + ')</span>';
+    audioList.appendChild(hdr);
+
+    var section = document.createElement('div');
+    section.className = 'audio-cat-body';
+
+    matchingFiles.forEach(function (url) {
+      var name = url.split('/').pop();
+      var dash = name.indexOf(' - ');
+      var displayName = dash > 0 ? name.slice(dash + 3) : name;
+      displayName = displayName.replace(/\.[^/.]+$/, '');
+
+      var row = document.createElement('div');
+      row.className = 'audio-row';
+
+      var lbl = document.createElement('span');
+      lbl.textContent = displayName;
+      lbl.className = 'audio-label';
+      row.appendChild(lbl);
+
+      var preview = document.createElement('audio');
+      preview.src = url;
+      preview.controls = true;
+      preview.className = 'audio-preview';
+      row.appendChild(preview);
+
+      var btn = document.createElement('button');
+      btn.textContent = '▶ Play';
+      btn.className = 'btn btn-primary btn-small audio-play-btn';
+      btn.onclick = (function (u) {
+        return function () { broadcastAudio(u); };
+      })(url);
+      row.appendChild(btn);
+
+      section.appendChild(row);
+    });
+
+    audioList.appendChild(section);
+
+    hdr.addEventListener('click', function () {
+      var collapsed = section.style.display === 'none';
+      section.style.display = collapsed ? '' : 'none';
+      hdr.querySelector('.audio-cat-arrow').textContent = collapsed ? '▼' : '▶';
+    });
+  });
 }
 
 function broadcastAudio(url) {
@@ -828,6 +898,19 @@ function sendInitiative() {
     body: JSON.stringify({ label: 'Initiative Order', data: html })
   });
 }
+
+// ============================================================
+// Search — Maps & Audio
+// ============================================================
+document.getElementById('map-search').addEventListener('input', function () {
+  sceneSearchTerm = this.value.trim();
+  renderScenesPanel();
+});
+
+document.getElementById('audio-search').addEventListener('input', function () {
+  audioSearchTerm = this.value.trim();
+  applyAudioDisplay();
+});
 
 // ============================================================
 // Boot
