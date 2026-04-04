@@ -20,8 +20,9 @@ The DM panel and player screen stay in sync via WebSocket. Everything the DM doe
 ## Features
 
 - **Scene Management** — Organize content in an *Area › Scene › Map* hierarchy (e.g. Phandalin › Stonehill Inn › Ground Floor)
+- **Search** — Live search maps by area, scene, or individual map name; live search audio by category or track title
 - **Map Display** — Push any map image to all player screens with one click; images fit to screen
-- **Chain Navigation** — Each map view has quick-switch buttons to jump directly to neighboring maps in the same scene
+- **Chain Navigation** — Each map has a dropdown to jump to any other map in the same scene
 - **Fog of War** — Per-map 20×20 grid fog; click cells to reveal or hide on the player screen in real time
 - **Audio** — Categorized ambient/music/SFX library; preview locally before broadcasting; looping playback on player screens; Stop All Audio clears both DM previews and player screens
 - **Scene Builder** — Create and edit scenes with multiple maps; assign per-map ambience audio and optional fog; file picker auto-fills the image URL
@@ -162,10 +163,6 @@ Scenes are stored in `seeds/scenes.json` and saved via `POST /api/scenes`. Struc
 
 MIT
 
-
-## Features
-
-- **DM Control Panel** — Manage scenes, maps, audio, and fog of war from a single window
 - **Player Display** — Fullscreen second-screen output for maps, text, and video
 - **Remote Control** — Control the session from a phone or tablet over LAN
 - **Web Player** — Players can view the session on any device via browser
