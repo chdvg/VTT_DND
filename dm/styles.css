@@ -1,0 +1,47 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0d1117; color: #e6e6e6; min-height: 100vh; }
+header { background: #161b22; padding: 1rem 1.5rem; border-bottom: 2px solid #d4af37; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+header h1 { font-size: 1.4rem; letter-spacing: 1px; }
+.header-controls { display: flex; align-items: center; gap: 0.75rem; }
+#client-count { font-size: 0.85rem; color: #999; }
+.status-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.status-dot.on { background: #4ade80; box-shadow: 0 0 8px #4ade80; }
+.status-dot.off { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
+.panel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 1rem; padding: 1.5rem; }
+.panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1.25rem; }
+.panel h2 { font-size: 1rem; color: #d4af37; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #30363d; padding-bottom: 0.5rem; }
+input[type="text"], input[type="number"], textarea { width: 100%; padding: 0.6rem 0.75rem; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6e6e6; font-size: 0.9rem; margin-bottom: 0.75rem; font-family: inherit; }
+input:focus, textarea:focus { outline: none; border-color: #d4af37; }
+textarea { resize: vertical; min-height: 100px; }
+input[type="file"] { width: 100%; padding: 0.5rem; margin-bottom: 0.75rem; color: #999; }
+.divider { text-align: center; color: #555; font-size: 0.8rem; margin: 0.5rem 0; }
+.btn-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.btn { padding: 0.6rem 1.2rem; font-size: 0.9rem; font-weight: bold; border: 2px solid transparent; border-radius: 4px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; flex: 1; min-width: 100px; transition: all 0.2s ease; }
+.btn-primary { background: #d4af37; color: #0d1117; border-color: #d4af37; }
+.btn-primary:hover { background: #e6c74c; }
+.btn-secondary { background: #30363d; color: #e6e6e6; border-color: #444c56; }
+.btn-secondary:hover { background: #444c56; }
+.btn-danger { background: #b91c1c; color: #fff; border-color: #dc2626; }
+.btn-danger:hover { background: #dc2626; }
+.btn-danger.active { background: #000; border-color: #ff0000; color: #ff0000; animation: pulse-red 1.5s infinite; }
+@keyframes pulse-red { 0%, 100% { box-shadow: 0 0 5px #ff0000; } 50% { box-shadow: 0 0 20px #ff0000; } }
+.btn-warning { background: #92400e; color: #fff; border-color: #d97706; }
+.btn-warning:hover { background: #d97706; }
+.btn-small { padding: 0.4rem 0.8rem; font-size: 0.8rem; min-width: 60px; flex: 0; }
+.dice-buttons { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.btn-dice { padding: 0.5rem 0.75rem; background: #21262d; color: #d4af37; border: 1px solid #d4af37; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.9rem; transition: all 0.2s; }
+.btn-dice:hover { background: #d4af37; color: #0d1117; }
+#dice-result { font-size: 2rem; text-align: center; padding: 0.75rem; color: #d4af37; font-weight: bold; min-height: 60px; display: flex; align-items: center; justify-content: center; }
+label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #999; margin-top: 0.5rem; }
+#init-list { margin-bottom: 0.75rem; }
+.init-entry { display: flex; align-items: center; padding: 0.5rem 0.75rem; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; margin-bottom: 0.35rem; gap: 0.75rem; }
+.init-entry.active-turn { border-color: #d4af37; background: #1a1a2e; }
+.init-entry .init-order { color: #d4af37; font-weight: bold; min-width: 30px; }
+.init-entry .init-entry-name { flex: 1; }
+.init-entry .init-remove { background: none; border: none; color: #ef4444; cursor: pointer; font-size: 1.1rem; }
+.init-add { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+.init-add input { margin-bottom: 0; }
+.init-add input[type="text"] { flex: 2; }
+.init-add input[type="number"] { flex: 1; }
+#image-preview { margin-bottom: 0.75rem; text-align: center; }
+#image-preview img { max-width: 100%; max-height: 200px; border-radius: 4px; border: 1px solid #30363d; }

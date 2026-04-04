@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>D&D Remote</title>
+  <link rel="stylesheet" href="/remote/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>D&amp;D Remote</h1>
+    <span id="status-dot" class="status-dot off" title="WebSocket status"></span>
+  </header>
+
+  <div id="now-bar">
+    <span class="now-label">NOW SHOWING</span>
+    <span id="now-showing">—</span>
+  </div>
+
+  <div id="blackout-wrap">
+    <button id="blackout-btn">⬛ BLACKOUT</button>
+  </div>
+
+  <main id="content"></main>
+
+  <script src="/remote/app.js"></script>
+</body>
+</html>
