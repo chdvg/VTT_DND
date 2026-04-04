@@ -12,13 +12,18 @@ var audioUnlocked  = false;
 var currentFogKey  = null;
 var fogStates      = {};
 
-// Unlock audio on first tap anywhere
+// Unlock audio on first tap; also retry any pending audio on subsequent clicks
 document.addEventListener('click', function () {
-  if (audioUnlocked) return;
-  audioUnlocked = true;
-  if (unlockBar) unlockBar.style.display = 'none';
-  if (pendingAudio) { playAudio(pendingAudio); pendingAudio = null; }
-}, { once: true });
+  if (!audioUnlocked) {
+    audioUnlocked = true;
+    if (unlockBar) unlockBar.style.display = 'none';
+  }
+  if (pendingAudio) {
+    var url = pendingAudio;
+    pendingAudio = null;
+    playAudio(url);
+  }
+});
 
 // ── Image display ────────────────────────────────────────────
 function showImage(imageUrl, fogKey) {

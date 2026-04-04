@@ -191,6 +191,8 @@ function renderSceneGroup(container, scene, sIdx) {
   sceneDiv.appendChild(titleRow);
 
   scene.views.forEach(function (view, vIdx) {
+    // In search mode, views may carry _origIdx (their position in the real scene.views array)
+    var realVIdx = (view._origIdx !== undefined) ? view._origIdx : vIdx;
     var row = document.createElement('div');
     row.className = 'view-row';
 
@@ -226,19 +228,21 @@ function renderSceneGroup(container, scene, sIdx) {
     showBtn.className = 'btn btn-primary btn-small';
     showBtn.onclick = (function (si, vi) {
       return function () { showSceneView(si, vi); };
-    })(sIdx, vIdx);
+    })(sIdx, realVIdx);
     rowBtns.appendChild(showBtn);
 
-    // Chain dropdown — visible only when scene has more than one view
-    if (scene.views.length > 1) {
+    // Chain dropdown — only show when scene has more than one view
+    // Use the full original scene.views list so chain targets are always correct
+    var originalViews = sceneData[sIdx] ? sceneData[sIdx].views : scene.views;
+    if (originalViews.length > 1) {
       var chainSel = document.createElement('select');
       chainSel.className = 'chain-select';
       var defOpt = document.createElement('option');
       defOpt.value = '';
       defOpt.textContent = '⛓ Chain to…';
       chainSel.appendChild(defOpt);
-      scene.views.forEach(function (v, vi2) {
-        if (vi2 === vIdx) return;
+      originalViews.forEach(function (v, vi2) {
+        if (vi2 === realVIdx) return;
         var opt = document.createElement('option');
         opt.value = vi2;
         opt.textContent = v.label || ('Map ' + (vi2 + 1));
@@ -291,8 +295,13 @@ function renderScenesPanel() {
             return;
           }
           // Otherwise filter to only views whose label matches
-          var matchingViews = (scene.views || []).filter(function (v) {
-            return (v.label || '').toLowerCase().indexOf(term) !== -1;
+          // Attach _origIdx so renderSceneGroup uses the correct index into sceneData
+          var matchingViews = [];
+          (scene.views || []).forEach(function (v, origIdx) {
+            if ((v.label || '').toLowerCase().indexOf(term) !== -1) {
+              var copy = Object.assign({}, v, { _origIdx: origIdx });
+              matchingViews.push(copy);
+            }
           });
           if (matchingViews.length) {
             hits.push({ scene: scene, sIdx: sIdx, filteredViews: matchingViews });
