@@ -457,8 +457,9 @@ function applyAudioDisplay() {
       row.appendChild(preview);
 
       var btn = document.createElement('button');
-      btn.textContent = '▶ Play';
-      btn.className = 'btn btn-primary btn-small audio-play-btn';
+      btn.textContent = '→ Player';
+      btn.title = 'Send to player screen';
+      btn.className = 'btn btn-secondary btn-small audio-play-btn';
       btn.onclick = (function (u) {
         return function () { broadcastAudio(u); };
       })(url);

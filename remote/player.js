@@ -16,12 +16,14 @@ var fogStates      = {};
 document.addEventListener('click', function () {
   if (!audioUnlocked) {
     audioUnlocked = true;
-    if (unlockBar) unlockBar.style.display = 'none';
   }
   if (pendingAudio) {
     var url = pendingAudio;
     pendingAudio = null;
+    if (unlockBar) unlockBar.style.display = 'none';
     playAudio(url);
+  } else if (audioUnlocked && unlockBar) {
+    unlockBar.style.display = 'none';
   }
 });
 
@@ -73,12 +75,19 @@ function renderFogOverlay(fogGrid) {
 
 // ── Audio ─────────────────────────────────────────────────────
 function playAudio(url) {
-  if (!audioUnlocked) { pendingAudio = url; return; }
+  if (!audioUnlocked) {
+    pendingAudio = url;
+    if (unlockBar) { unlockBar.style.display = ''; unlockBar.textContent = '🎵 Audio ready — tap anywhere to play'; }
+    return;
+  }
   if (globalAudio) { globalAudio.pause(); globalAudio = null; }
   globalAudio = new Audio(url);
   globalAudio.loop = true;
   globalAudio.volume = 0.7;
-  globalAudio.play().catch(function () { pendingAudio = url; });
+  globalAudio.play().catch(function () {
+    pendingAudio = url;
+    if (unlockBar) { unlockBar.style.display = ''; unlockBar.textContent = '🎵 Audio ready — tap anywhere to play'; }
+  });
 }
 
 function stopAudio() {
