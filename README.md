@@ -1,6 +1,6 @@
 # D&D Control Console
 
-A virtual tabletop (VTT) control console for Dungeon Masters, built with Electron, React, Vite, and TypeScript.
+A virtual tabletop (VTT) control console for Dungeon and Dragons game play, built with Electron, React, Vite, and TypeScript.
 
 ## Features
 
