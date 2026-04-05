@@ -2,28 +2,26 @@
 //  D&D Player View — player.js
 // ============================================================
 
-var sceneEl   = document.getElementById('scene');
-var statusEl  = document.getElementById('status');
-var unlockBar = document.getElementById('unlock-bar');
+var sceneEl    = document.getElementById('scene');
+var statusEl   = document.getElementById('status');
+var tapOverlay = document.getElementById('tap-overlay');
 
 var globalAudio    = null;
-var pendingAudio   = null;   // queued while audio not yet unlocked
+var pendingAudio   = null;   // queued until tap-overlay is dismissed
 var audioUnlocked  = false;
 var currentFogKey  = null;
 var fogStates      = {};
 
-// Unlock audio on first tap; also retry any pending audio on subsequent clicks
+// Dismiss the tap-overlay on first click/touch, then play any queued audio
 document.addEventListener('click', function () {
   if (!audioUnlocked) {
     audioUnlocked = true;
+    if (tapOverlay) tapOverlay.classList.add('hidden');
   }
   if (pendingAudio) {
     var url = pendingAudio;
     pendingAudio = null;
-    if (unlockBar) unlockBar.style.display = 'none';
     playAudio(url);
-  } else if (audioUnlocked && unlockBar) {
-    unlockBar.style.display = 'none';
   }
 });
 
@@ -77,16 +75,15 @@ function renderFogOverlay(fogGrid) {
 function playAudio(url) {
   if (!audioUnlocked) {
     pendingAudio = url;
-    if (unlockBar) { unlockBar.style.display = ''; unlockBar.textContent = '🎵 Audio ready — tap anywhere to play'; }
     return;
   }
   if (globalAudio) { globalAudio.pause(); globalAudio = null; }
   globalAudio = new Audio(url);
   globalAudio.loop = true;
   globalAudio.volume = 0.7;
-  globalAudio.play().catch(function () {
+  globalAudio.play().catch(function (err) {
+    console.warn('Audio play blocked:', err);
     pendingAudio = url;
-    if (unlockBar) { unlockBar.style.display = ''; unlockBar.textContent = '🎵 Audio ready — tap anywhere to play'; }
   });
 }
 
