@@ -911,7 +911,7 @@ function saveScene() {
   var grid = document.querySelector('.panel-grid');
   var dragSrc = null;
   var dropTarget = null;
-  var canDrag = false;
+  var dragSection = null;
 
   function restoreOrder() {
     var saved;
@@ -928,16 +928,29 @@ function saveScene() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
   }
 
-  // Only allow drag when mousedown originates on the handle
+  // Enable drag only while the handle is held, so child interactions (fog cells, inputs) work normally
   document.addEventListener('mousedown', function (e) {
-    canDrag = !!(e.target.closest && e.target.closest('.drag-handle'));
+    var handle = e.target.closest && e.target.closest('.drag-handle');
+    if (handle) {
+      var section = handle.closest('section');
+      if (section) { section.setAttribute('draggable', 'true'); dragSection = section; }
+    }
+  });
+
+  document.addEventListener('mouseup', function () {
+    if (dragSection && !dragSrc) {
+      // Released without starting a drag — remove draggable immediately
+      dragSection.setAttribute('draggable', 'false');
+      dragSection = null;
+    }
   });
 
   grid.addEventListener('dragstart', function (e) {
-    if (!canDrag) { e.preventDefault(); return; }
     var el = e.target;
     while (el && el.tagName !== 'SECTION') el = el.parentElement;
-    if (!el || !grid.contains(el)) return;
+    if (!el || !grid.contains(el) || el.getAttribute('draggable') !== 'true') {
+      e.preventDefault(); return;
+    }
     dragSrc = el;
     el.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
@@ -948,11 +961,12 @@ function saveScene() {
     grid.querySelectorAll('section').forEach(function (s) {
       s.classList.remove('dragging');
       s.classList.remove('drag-over');
+      s.setAttribute('draggable', 'false');
     });
     if (dragSrc) saveOrder();
     dragSrc = null;
     dropTarget = null;
-    canDrag = false;
+    dragSection = null;
   });
 
   // dragover: just highlight the target — do NOT reorder DOM here
