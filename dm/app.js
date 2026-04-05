@@ -573,7 +573,7 @@ function renderFogControls(mapUrl, fogKey) {
   container.innerHTML = '';
 
   var title = document.createElement('div');
-  title.textContent = 'Fog of War — click cells to reveal (transparent) or hide (black)';
+  title.textContent = 'Fog of War — click or drag to reveal/hide cells';
   title.style.cssText = 'margin:0.75rem 0 0.4rem;font-size:0.8rem;color:#888;';
   container.appendChild(title);
 
@@ -591,17 +591,48 @@ function renderFogControls(mapUrl, fogKey) {
     'grid-template-columns:repeat(' + fogCols + ',1fr);' +
     'grid-template-rows:repeat(' + fogRows + ',1fr);';
 
+  // Paint-brush state: track whether mouse is held and what value we're painting
+  var isPainting = false;
+  var paintValue = true; // true = reveal, false = hide
+
+  // Throttle WebSocket sends while dragging
+  var fogSendTimer = null;
+  function scheduleFogUpdate() {
+    if (fogSendTimer) return;
+    fogSendTimer = setTimeout(function () {
+      fogSendTimer = null;
+      sendFogUpdate(fogKey);
+    }, 60);
+  }
+
+  function paintCell(cell, r, c) {
+    if (fogGrid[r][c] === paintValue) return; // already this value, skip
+    fogGrid[r][c] = paintValue;
+    cell.style.background = paintValue ? 'transparent' : 'rgba(0,0,0,0.85)';
+    scheduleFogUpdate();
+  }
+
+  document.addEventListener('mouseup', function () { isPainting = false; });
+
   for (var row = 0; row < fogRows; row++) {
     for (var col = 0; col < fogCols; col++) {
       (function (r, c) {
         var cell = document.createElement('div');
-        cell.style.cssText = 'cursor:pointer;box-sizing:border-box;border:1px solid rgba(255,255,255,0.08);background:' +
-          (fogGrid[r][c] ? 'transparent' : 'rgba(0,0,0,0.85)') + ';transition:background 0.15s;';
-        cell.onclick = function () {
-          fogGrid[r][c] = !fogGrid[r][c];
-          cell.style.background = fogGrid[r][c] ? 'transparent' : 'rgba(0,0,0,0.85)';
-          sendFogUpdate(fogKey);
-        };
+        cell.style.cssText = 'cursor:crosshair;box-sizing:border-box;border:1px solid rgba(255,255,255,0.08);background:' +
+          (fogGrid[r][c] ? 'transparent' : 'rgba(0,0,0,0.85)') + ';transition:background 0.1s;';
+
+        cell.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          isPainting = true;
+          // Paint mode is opposite of current cell value (toggle on first touch)
+          paintValue = !fogGrid[r][c];
+          paintCell(cell, r, c);
+        });
+
+        cell.addEventListener('mouseenter', function () {
+          if (isPainting) paintCell(cell, r, c);
+        });
+
         grid.appendChild(cell);
       })(row, col);
     }
