@@ -3,10 +3,81 @@ const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });
+
+// ── DM Password Auth ─────────────────────────────────────────
+const DM_PASSWORD = process.env.DM_PASSWORD || 'dm1234';
+const SESSION_SECRET = crypto.randomBytes(32).toString('hex'); // ephemeral per-run
+const dmSessions = new Set(); // valid session tokens
+
+function makeToken() { return crypto.randomBytes(24).toString('hex'); }
+function parseCookies(req) {
+  const out = {};
+  (req.headers.cookie || '').split(';').forEach(c => {
+    const [k, ...v] = c.trim().split('=');
+    if (k) out[k.trim()] = v.join('=').trim();
+  });
+  return out;
+}
+function isDmAuthed(req) {
+  return dmSessions.has(parseCookies(req).dm_token || '');
+}
+
+// Login page
+app.get('/dm-login', (req, res) => {
+  if (isDmAuthed(req)) return res.redirect('/');
+  res.send(`<!DOCTYPE html><html><head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>DM Login</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#0d1117;color:#e6e6e6;font-family:'Segoe UI',sans-serif;height:100vh;display:flex;align-items:center;justify-content:center;}
+  .box{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:2.5rem 3rem;width:340px;text-align:center;}
+  h1{color:#d4af37;font-size:1.6rem;margin-bottom:0.4rem;}
+  p{color:#666;font-size:0.85rem;margin-bottom:1.75rem;}
+  input{width:100%;padding:0.65rem 0.9rem;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6e6e6;font-size:1rem;margin-bottom:1rem;text-align:center;letter-spacing:0.15em;}
+  input:focus{outline:none;border-color:#d4af37;}
+  button{width:100%;padding:0.65rem;background:#d4af37;color:#0d1117;font-weight:bold;font-size:1rem;border:none;border-radius:5px;cursor:pointer;text-transform:uppercase;letter-spacing:1px;}
+  button:hover{background:#e6c74c;}
+  .err{color:#ef4444;font-size:0.85rem;margin-top:0.75rem;min-height:1.2rem;}
+</style></head><body>
+<div class="box">
+  <h1>🎲 DM Console</h1>
+  <p>Enter the DM password to continue</p>
+  <form method="POST" action="/dm-login">
+    <input type="password" name="password" placeholder="Password" autofocus autocomplete="current-password"/>
+    <button type="submit">Enter</button>
+    <div class="err">${req.query.err ? 'Incorrect password.' : ''}</div>
+  </form>
+</div></body></html>`);
+});
+
+app.post('/dm-login', express.urlencoded({ extended: false }), (req, res) => {
+  if (req.body.password === DM_PASSWORD) {
+    const token = makeToken();
+    dmSessions.add(token);
+    res.setHeader('Set-Cookie', `dm_token=${token}; HttpOnly; SameSite=Strict; Path=/`);
+    return res.redirect('/');
+  }
+  res.redirect('/dm-login?err=1');
+});
+
+app.get('/dm-logout', (req, res) => {
+  dmSessions.delete(parseCookies(req).dm_token || '');
+  res.setHeader('Set-Cookie', 'dm_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
+  res.redirect('/dm-login');
+});
+
+// Protect DM routes
+function requireDm(req, res, next) {
+  if (isDmAuthed(req)) return next();
+  res.redirect('/dm-login');
+}
 
 app.use('/assets', express.static(path.join(__dirname, 'public/assets')));
 app.use(express.static(path.join(__dirname)));
@@ -84,31 +155,31 @@ wss.on('connection', (ws) => {
   });
 });
 
-app.post('/api/show', express.json({ limit: '50mb' }), (req, res) => {
+app.post('/api/show', requireDm, express.json({ limit: '50mb' }), (req, res) => {
   const { label, data } = req.body;
   currentState.nowShowing = label || '—'; currentState.content = data || '';
   broadcast({ type: 'update', content: currentState.nowShowing, data: currentState.content });
   res.json({ ok: true });
 });
 
-app.post('/api/overlay', express.json({ limit: '1mb' }), (req, res) => {
+app.post('/api/overlay', requireDm, express.json({ limit: '1mb' }), (req, res) => {
   const { title, data, duration } = req.body;
   broadcast({ type: 'OVERLAY', title: title || '', data: data || '', duration: duration || 10000 });
   res.json({ ok: true });
 });
 
-app.post('/api/stopaudio', (req, res) => {
+app.post('/api/stopaudio', requireDm, (req, res) => {
   broadcast({ type: 'STOP_AUDIO' });
   res.json({ ok: true });
 });
 
-app.post('/api/blackout', (req, res) => {
+app.post('/api/blackout', requireDm, (req, res) => {
   currentState.blackout = !currentState.blackout;
   broadcast({ type: 'BLACKOUT' });
   res.json({ ok: true, blackout: currentState.blackout });
 });
 
-app.post('/api/clear', (req, res) => {
+app.post('/api/clear', requireDm, (req, res) => {
   currentState.nowShowing = '—'; currentState.content = ''; currentState.blackout = false;
   broadcast({ type: 'BLACKOUT' });
   res.json({ ok: true });
@@ -147,7 +218,7 @@ app.get('/api/scenes', (req, res) => {
   }
 });
 
-app.post('/api/scenes', express.json({ limit: '1mb' }), (req, res) => {
+app.post('/api/scenes', requireDm, express.json({ limit: '1mb' }), (req, res) => {
   try {
     const scenes = req.body.scenes;
     if (!Array.isArray(scenes)) return res.status(400).json({ error: 'scenes must be an array' });
@@ -158,7 +229,8 @@ app.post('/api/scenes', express.json({ limit: '1mb' }), (req, res) => {
   }
 });
 
-app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'dm', 'index.html')); });
+app.get('/', requireDm, (req, res) => { res.sendFile(path.join(__dirname, 'dm', 'index.html')); });
+app.use('/dm', requireDm);
 app.get('/remote', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'index.html')); });
 app.get('/remote/player', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'player.html')); });
 app.get('/player', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'player.html')); });
