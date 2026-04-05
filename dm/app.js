@@ -242,15 +242,15 @@ function renderSceneGroup(container, scene, sIdx) {
     }
     row.appendChild(rowTop);
 
-    // Fit mode toggle
-    var fitModes = ['contain', 'cover', 'fill'];
-    var fitLabels = { contain: '📐 Fit', cover: '🔲 Cover', fill: '⬜ Fill' };
+    // Line 2: Show + fit toggle + chain dropdown
+    var rowBtns = document.createElement('div');
+    rowBtns.className = 'view-row-btns';
     var fitBtn = document.createElement('button');
     var curFit = view.fit || 'contain';
     fitBtn.textContent = fitLabels[curFit];
     fitBtn.title = 'Fit: contain (letterbox) | Cover: crop to fill | Fill: stretch';
     fitBtn.className = 'btn btn-small';
-    fitBtn.style.cssText = 'font-size:0.7rem;background:transparent;border:1px solid #555;margin-bottom:4px;flex:none;width:auto;';
+    fitBtn.style.cssText = 'font-size:0.7rem;background:transparent;border:1px solid #555;flex:none;width:auto;';
     fitBtn.onclick = (function (si, vi2, btn) {
       return function (e) {
         e.stopPropagation();
@@ -266,6 +266,8 @@ function renderSceneGroup(container, scene, sIdx) {
       };
     })(sIdx, realVIdx, fitBtn);
     rowBtns.appendChild(fitBtn);
+
+    var showBtn = document.createElement('button');
     showBtn.textContent = '▶ Show';
     showBtn.className = 'btn btn-primary btn-small';
     showBtn.onclick = (function (si, vi) {
