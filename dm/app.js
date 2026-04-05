@@ -833,11 +833,22 @@ function saveScene() {
     updatedScenes = sceneData.concat([newScene]);
   }
 
-  fetch('/api/scenes', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scenes: updatedScenes })
-  })
+  fetch('/api/scenes')
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      var currentScenes = data.scenes || [];
+      var updatedScenes;
+      if (sbEditingId) {
+        updatedScenes = currentScenes.map(function (s) { return s.id === sbEditingId ? newScene : s; });
+      } else {
+        updatedScenes = currentScenes.concat([newScene]);
+      }
+      return fetch('/api/scenes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenes: updatedScenes })
+      });
+    })
     .then(function (r) { return r.json(); })
     .then(function (resp) {
       if (!resp.ok) { alert('Error saving: ' + (resp.error || 'unknown')); return; }

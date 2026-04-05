@@ -1,11 +1,11 @@
 [
   {
-    "id": "phandalin/stonehill-inn-ground-floor-1775339107776",
+    "id": "phandalin/stonehill-inn-1775339107776",
     "tab": "Phandalin",
     "label": "Stonehill Inn",
     "views": [
       {
-        "id": "phandalin/stonehill-inn-ground-floor-1775339107776-view-0",
+        "id": "phandalin/stonehill-inn-1775339107776-view-0",
         "label": "Groundfloor",
         "image": "/assets/maps/stonehill_ground.png",
         "audio": "/assets/audio/tavern-ambience.wav",
@@ -13,32 +13,46 @@
         "audioLoop": false
       },
       {
-        "id": "phandalin/stonehill-inn-ground-floor-1775339107776-view-1",
+        "id": "phandalin/stonehill-inn-1775339107776-view-1",
         "label": "Upstairs",
         "image": "/assets/maps/stonehill_upstairs.png",
         "audio": null,
         "fog": false
       },
       {
-        "id": "phandalin/stonehill-inn-ground-floor-1775339107776-view-2",
+        "id": "phandalin/stonehill-inn-1775339107776-view-2",
         "label": "Old Owl Well",
         "image": "/assets/maps/old owl well daytime a2.png",
         "audio": null,
         "fog": false
       },
       {
-        "id": "phandalin/stonehill-inn-ground-floor-1775339107776-view-3",
+        "id": "phandalin/stonehill-inn-1775339107776-view-3",
         "label": "Orchard View",
         "image": "/assets/maps/orchard_entry.jpg",
         "audio": "/assets/audio/mixkit-little-birds-singing-in-the-trees-17.wav",
         "fog": false
       },
       {
-        "id": "phandalin/stonehill-inn-ground-floor-1775339107776-view-4",
+        "id": "phandalin/stonehill-inn-1775339107776-view-4",
         "label": "Orchard Map",
         "image": "/assets/maps/orchard.jpg",
         "audio": null,
         "fog": false
+      }
+    ]
+  },
+  {
+    "id": "phandalin/redbrand-hideout-1775400000000",
+    "tab": "Phandalin",
+    "label": "Redbrand Hideout",
+    "views": [
+      {
+        "id": "phandalin/redbrand-hideout-1775400000000-view-0",
+        "label": "RedBrand Hideout",
+        "image": "/assets/maps/redbrand_hideout.png",
+        "audio": null,
+        "fog": true
       }
     ]
   }
