@@ -91,6 +91,12 @@ app.post('/api/show', express.json({ limit: '50mb' }), (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/overlay', express.json({ limit: '1mb' }), (req, res) => {
+  const { title, data, duration } = req.body;
+  broadcast({ type: 'OVERLAY', title: title || '', data: data || '', duration: duration || 10000 });
+  res.json({ ok: true });
+});
+
 app.post('/api/stopaudio', (req, res) => {
   broadcast({ type: 'STOP_AUDIO' });
   res.json({ ok: true });

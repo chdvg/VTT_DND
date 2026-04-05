@@ -2,9 +2,11 @@
 //  D&D Player View — player.js
 // ============================================================
 
-var sceneEl    = document.getElementById('scene');
-var statusEl   = document.getElementById('status');
-var tapOverlay = document.getElementById('tap-overlay');
+var sceneEl     = document.getElementById('scene');
+var statusEl    = document.getElementById('status');
+var tapOverlay  = document.getElementById('tap-overlay');
+var popupEl     = document.getElementById('popup-overlay');
+var popupTimer  = null;
 
 var globalAudio    = null;
 var pendingAudio   = null;   // queued until tap-overlay is dismissed
@@ -69,6 +71,20 @@ function renderFogOverlay(fogGrid) {
     }
   }
   sceneEl.appendChild(overlay);
+}
+
+// ── Overlay popup (dice, initiative) ─────────────────────────
+function showOverlay(title, html, duration) {
+  if (popupTimer) { clearTimeout(popupTimer); popupTimer = null; }
+  var inner = '';
+  if (title) inner += '<div style="font-family:Georgia,serif;font-size:1.5rem;font-weight:bold;color:#d4af37;text-align:center;margin-bottom:1rem;">' + title + '</div>';
+  inner += '<div style="color:#f0e6c8;font-family:Georgia,serif;font-size:1.1rem;">' + html + '</div>';
+  popupEl.innerHTML = inner;
+  popupEl.classList.add('visible');
+  popupTimer = setTimeout(function () {
+    popupEl.classList.remove('visible');
+    popupTimer = null;
+  }, duration || 10000);
 }
 
 // ── Audio ─────────────────────────────────────────────────────
@@ -139,6 +155,9 @@ function handleMessage(msg) {
       clearScene();
       stopAudio();
       currentFogKey = null;
+      break;
+    case 'OVERLAY':
+      showOverlay(msg.title, msg.data, msg.duration);
       break;
     case 'update':
       if (msg.data) showText(msg.content || '', msg.data);

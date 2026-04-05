@@ -115,6 +115,27 @@
       transition: background 0.3s;
     }
     #unlock-bar:hover { background: rgba(212,175,55,0.25); }
+
+    #popup-overlay {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 300;
+      background: rgba(10,10,20,0.93);
+      border: 2px solid #d4af37;
+      border-radius: 10px;
+      padding: 2rem 2.5rem;
+      min-width: 320px;
+      max-width: 560px;
+      max-height: 80vh;
+      overflow-y: auto;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      box-shadow: 0 0 40px rgba(212,175,55,0.25);
+    }
+    #popup-overlay.visible { opacity: 1; }
   </style>
 </head>
 <body>
@@ -123,6 +144,7 @@
     <div class="tap-text">tap to begin session</div>
   </div>
   <div id="scene"></div>
+  <div id="popup-overlay"></div>
   <div id="unlock-bar" style="display:none"></div>
   <div id="status">connecting...</div>
 

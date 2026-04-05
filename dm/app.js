@@ -887,12 +887,12 @@ document.querySelectorAll('.btn-dice').forEach(function (btn) {
     var roll = Math.floor(Math.random() * die) + 1;
     diceResult.textContent = 'D' + die + ': ' + roll;
     if (document.getElementById('dice-broadcast').checked) {
-      var html = '<div style="text-align:center;font-size:4rem;padding:2rem;color:#d4af37;">🎲 d' +
+      var html = '<div style="text-align:center;font-size:3.5rem;padding:1rem;color:#d4af37;">🎲 d' +
         die + ': <strong>' + roll + '</strong></div>';
-      fetch('/api/show', {
+      fetch('/api/overlay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label: 'Dice Roll', data: html })
+        body: JSON.stringify({ title: 'Dice Roll', data: html, duration: 8000 })
       });
     }
   });
@@ -958,10 +958,10 @@ function sendInitiative() {
       initiative[i].name + (active ? ' ⬅️' : '') + '</span></div>';
   }
   html += '</div>';
-  fetch('/api/show', {
+  fetch('/api/overlay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label: 'Initiative Order', data: html })
+    body: JSON.stringify({ title: 'Initiative Order', data: html, duration: 12000 })
   });
 }
 
