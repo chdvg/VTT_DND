@@ -1,27 +1,5 @@
 [
   {
-    "id": "phandalin/stonehill-inn-1775339107776",
-    "tab": "Phandalin",
-    "label": "Stonehill Inn",
-    "views": [
-      {
-        "id": "phandalin/stonehill-inn-1775339107776-view-0",
-        "label": "Groundfloor",
-        "image": "/assets/maps/stonehill_ground.png",
-        "audio": "/assets/audio/tavern-ambience.wav",
-        "fog": false,
-        "audioLoop": false
-      },
-      {
-        "id": "phandalin/stonehill-inn-1775339107776-view-1",
-        "label": "Upstairs",
-        "image": "/assets/maps/stonehill_upstairs.png",
-        "audio": null,
-        "fog": false
-      }
-    ]
-  },
-  {
     "id": "phandalin/redbrand-hideout-1775400000000",
     "tab": "Phandalin",
     "label": "Redbrand Hideout",
@@ -45,7 +23,7 @@
   {
     "id": "phandalin-orchard-1775350349884",
     "tab": "Phandalin",
-    "label": "Orchard",
+    "label": "Town",
     "views": [
       {
         "id": "phandalin-orchard-1775350349884-view-0",
@@ -58,6 +36,97 @@
         "id": "phandalin-orchard-1775350349884-view-1",
         "label": "Orchard",
         "image": "/assets/maps/orchard.jpg",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-2",
+        "label": "Barthens Provisions",
+        "image": "/assets/maps/barthen_provisions.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-3",
+        "label": "Alderleaf Farm",
+        "image": "/assets/maps/Alderleaf Farm.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-4",
+        "label": "Halia's Home",
+        "image": "/assets/maps/HaliasHome.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-5",
+        "label": "Harbin Wester's Home",
+        "image": "/assets/maps/HarbinWestersHome.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-6",
+        "label": "Linene's Home",
+        "image": "/assets/maps/LinenesHome.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-7",
+        "label": "Lionshield Coster's",
+        "image": "/assets/maps/LionshieldCoster.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-8",
+        "label": "Old Owl Well",
+        "image": "/assets/maps/old owl well daytime a2.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-9",
+        "label": "Shrine of Luck",
+        "image": "/assets/maps/ShrineOfLuck.webp",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-10",
+        "label": "Phandalin Town Map",
+        "image": "/assets/maps/phandalin_town.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-11",
+        "label": "Shrine of Luck",
+        "image": "/assets/maps/shrine-of-luck.webp",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-12",
+        "label": "Sister Garaeles",
+        "image": "/assets/maps/SisterGaraelesHome.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-13",
+        "label": "Town Master Haraell",
+        "image": "/assets/maps/TownMasterHall.png",
+        "audio": null,
+        "fog": false
+      },
+      {
+        "id": "phandalin-orchard-1775350349884-view-14",
+        "label": "Umbridge Hill",
+        "image": "/assets/maps/UmbrageHill.png",
         "audio": null,
         "fog": false
       }
@@ -73,6 +142,27 @@
         "label": "road",
         "image": "/assets/maps/travel.webp",
         "audio": "/assets/audio/mixkit-little-birds-singing-in-the-trees-17.wav",
+        "fog": false
+      }
+    ]
+  },
+  {
+    "id": "phandalin-stonehill-inn-1775357679767",
+    "tab": "Phandalin",
+    "label": "StoneHill Inn",
+    "views": [
+      {
+        "id": "phandalin-stonehill-inn-1775357679767-view-0",
+        "label": "Downstairs",
+        "image": "/assets/maps/stonehill_ground.png",
+        "audio": "/assets/audio/tavern-ambience.wav",
+        "fog": false
+      },
+      {
+        "id": "phandalin-stonehill-inn-1775357679767-view-1",
+        "label": "Upstairs",
+        "image": "/assets/maps/stonehill_upstairs.png",
+        "audio": null,
         "fog": false
       }
     ]
