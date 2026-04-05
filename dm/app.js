@@ -422,6 +422,9 @@ function showSceneView(sceneIdx, viewIdx) {
   var fogKey = view.id || (sceneIdx + '-' + viewIdx);
   var useFog = view.fog === true;
 
+  // Stop any playing audio before switching scene view
+  wsSend({ action: 'stop-audio' });
+
   // Pass fogKey so player can correlate fog updates
   wsSend({ action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fit: view.fit || 'contain', fogKey: useFog ? fogKey : null });
 
