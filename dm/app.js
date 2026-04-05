@@ -903,19 +903,20 @@ function saveScene() {
       renderScenesPanel();
     })
     .catch(function (e) { alert('Network error: ' + e.message); });
+}
 
 // ── Section Drag & Drop ──────────────────────────────────
 (function () {
   var STORAGE_KEY = 'dm-panel-order';
   var grid = document.querySelector('.panel-grid');
   var dragSrc = null;
-  var lastMousedownTarget = null;
+  var dropTarget = null;
+  var canDrag = false;
 
-  // Restore saved order on load
   function restoreOrder() {
     var saved;
     try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) { saved = null; }
-    if (!Array.isArray(saved)) return;
+    if (!Array.isArray(saved) || !saved.length) return;
     saved.forEach(function (id) {
       var el = document.getElementById(id);
       if (el) grid.appendChild(el);
@@ -923,56 +924,76 @@ function saveScene() {
   }
 
   function saveOrder() {
-    var ids = Array.from(grid.querySelectorAll(':scope > section')).map(function (s) { return s.id; });
+    var ids = Array.from(grid.querySelectorAll(':scope > section')).map(function (s) { return s.id; }).filter(Boolean);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
   }
 
-  // Track where the mousedown happened so we only drag from the handle
-  grid.addEventListener('mousedown', function (e) { lastMousedownTarget = e.target; });
+  // Only allow drag when mousedown originates on the handle
+  document.addEventListener('mousedown', function (e) {
+    canDrag = !!(e.target.closest && e.target.closest('.drag-handle'));
+  });
 
   grid.addEventListener('dragstart', function (e) {
-    var section = e.target.closest ? e.target.closest('section') : null;
-    if (!section) return;
-    var fromHandle = lastMousedownTarget && (lastMousedownTarget.classList.contains('drag-handle') || lastMousedownTarget.closest('.drag-handle'));
-    if (!fromHandle) { e.preventDefault(); return; }
-    dragSrc = section;
-    dragSrc.classList.add('dragging');
+    if (!canDrag) { e.preventDefault(); return; }
+    var el = e.target;
+    while (el && el.tagName !== 'SECTION') el = el.parentElement;
+    if (!el || !grid.contains(el)) return;
+    dragSrc = el;
+    el.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', section.id); // required for Firefox
+    e.dataTransfer.setData('text/plain', el.id);
   });
 
   grid.addEventListener('dragend', function () {
-    if (dragSrc) dragSrc.classList.remove('dragging');
-    grid.querySelectorAll('section').forEach(function (s) { s.classList.remove('drag-over'); });
-    saveOrder();
+    grid.querySelectorAll('section').forEach(function (s) {
+      s.classList.remove('dragging');
+      s.classList.remove('drag-over');
+    });
+    if (dragSrc) saveOrder();
     dragSrc = null;
+    dropTarget = null;
+    canDrag = false;
   });
 
+  // dragover: just highlight the target — do NOT reorder DOM here
   grid.addEventListener('dragover', function (e) {
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
     if (!dragSrc) return;
-    var target = e.target.closest ? e.target.closest('section') : null;
-    if (!target || target === dragSrc) return;
-    grid.querySelectorAll('section').forEach(function (s) { s.classList.remove('drag-over'); });
-    target.classList.add('drag-over');
-    var rect = target.getBoundingClientRect();
-    if (e.clientY < rect.top + rect.height / 2) {
-      grid.insertBefore(dragSrc, target);
-    } else {
-      grid.insertBefore(dragSrc, target.nextSibling);
+    var el = e.target;
+    while (el && el !== grid) {
+      if (el.tagName === 'SECTION' && el !== dragSrc) break;
+      el = el.parentElement;
     }
+    if (!el || el === grid || el === dragSrc) return;
+    if (el === dropTarget) return;
+    dropTarget = el;
+    grid.querySelectorAll('section').forEach(function (s) { s.classList.remove('drag-over'); });
+    el.classList.add('drag-over');
   });
 
   grid.addEventListener('dragleave', function (e) {
-    var target = e.target.closest ? e.target.closest('section') : null;
-    if (target) target.classList.remove('drag-over');
+    if (!grid.contains(e.relatedTarget)) {
+      grid.querySelectorAll('section').forEach(function (s) { s.classList.remove('drag-over'); });
+      dropTarget = null;
+    }
   });
 
-  grid.addEventListener('drop', function (e) { e.preventDefault(); });
+  // drop: insert the dragged section before or after the target
+  grid.addEventListener('drop', function (e) {
+    e.preventDefault();
+    if (!dragSrc || !dropTarget) return;
+    var rect = dropTarget.getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height / 2) {
+      grid.insertBefore(dragSrc, dropTarget);
+    } else {
+      grid.insertBefore(dragSrc, dropTarget.nextSibling);
+    }
+    dropTarget = null;
+  });
 
   restoreOrder();
 }());
-}
 
 // ============================================================
 // Dice Roller
