@@ -245,8 +245,11 @@ function renderSceneGroup(container, scene, sIdx) {
     // Line 2: Show + fit toggle + chain dropdown
     var rowBtns = document.createElement('div');
     rowBtns.className = 'view-row-btns';
-    var fitBtn = document.createElement('button');
+
+    var fitModes = ['contain', 'cover', 'fill'];
+    var fitLabels = { contain: '📐 Fit', cover: '🔲 Cover', fill: '⬜ Fill' };
     var curFit = view.fit || 'contain';
+    var fitBtn = document.createElement('button');
     fitBtn.textContent = fitLabels[curFit];
     fitBtn.title = 'Fit: contain (letterbox) | Cover: crop to fill | Fill: stretch';
     fitBtn.className = 'btn btn-small';
