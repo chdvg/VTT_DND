@@ -613,7 +613,7 @@ function renderFogControls(mapUrl, fogKey) {
   btnRow.style.cssText = 'display:flex;gap:0.5rem;';
 
   var clearFogBtn = document.createElement('button');
-  clearFogBtn.textContent = 'Clear Fog';
+  clearFogBtn.textContent = 'Hide All';
   clearFogBtn.className = 'btn btn-warning';
   clearFogBtn.onclick = function () {
     window.fogStates[fogKey] = [];

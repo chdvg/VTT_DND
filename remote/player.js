@@ -33,12 +33,19 @@ function showImage(imageUrl, fogKey, fit) {
   setTimeout(function () {
     sceneEl.innerHTML = '';
     var img = document.createElement('img');
-    img.src = imageUrl;
     img.style.cssText = 'width:100%;height:100%;object-fit:' + (fit || 'contain') + ';display:block;';
     sceneEl.appendChild(img);
     sceneEl.classList.remove('fading');
     currentFogKey = fogKey || null;
-    if (fogKey && fogStates[fogKey]) renderFogOverlay(fogStates[fogKey]);
+    if (fogKey && fogStates[fogKey]) {
+      // Wait for image to load so we know its natural dimensions
+      if (img.complete && img.naturalWidth) {
+        renderFogOverlay(fogStates[fogKey], img);
+      } else {
+        img.onload = function () { renderFogOverlay(fogStates[fogKey], img); };
+      }
+    }
+    img.src = imageUrl;
   }, 150);
 }
 
@@ -51,7 +58,9 @@ function clearScene() {
 }
 
 // ── Fog overlay ──────────────────────────────────────────────
-function renderFogOverlay(fogGrid) {
+// imgEl is optional – when provided the overlay is sized/positioned to match
+// the actual rendered image area (handles object-fit:contain letterboxing).
+function renderFogOverlay(fogGrid, imgEl) {
   var existing = sceneEl.querySelector('.fog-overlay');
   if (existing) existing.remove();
   if (!fogGrid || !fogGrid.length) return;
@@ -59,9 +68,32 @@ function renderFogOverlay(fogGrid) {
   var cols = fogGrid[0].length;
   var overlay = document.createElement('div');
   overlay.className = 'fog-overlay';
-  overlay.style.cssText = 'position:absolute;inset:0;display:grid;' +
+
+  // Calculate the exact pixel rect of the rendered image inside sceneEl
+  var posStyle;
+  var el = imgEl || sceneEl.querySelector('img');
+  if (el && el.naturalWidth && el.naturalHeight) {
+    var cW = sceneEl.offsetWidth;
+    var cH = sceneEl.offsetHeight;
+    var fitMode = el.style.objectFit || 'contain';
+    var scale = fitMode === 'cover'
+      ? Math.max(cW / el.naturalWidth, cH / el.naturalHeight)
+      : Math.min(cW / el.naturalWidth, cH / el.naturalHeight);
+    var rendW = el.naturalWidth  * scale;
+    var rendH = el.naturalHeight * scale;
+    var offX  = (cW - rendW) / 2;
+    var offY  = (cH - rendH) / 2;
+    posStyle = 'position:absolute;' +
+      'left:' + offX + 'px;top:' + offY + 'px;' +
+      'width:' + rendW + 'px;height:' + rendH + 'px;';
+  } else {
+    posStyle = 'position:absolute;inset:0;';
+  }
+
+  overlay.style.cssText = posStyle + 'display:grid;' +
     'grid-template-columns:repeat(' + cols + ',1fr);' +
-    'grid-template-rows:repeat(' + rows + ',1fr);pointer-events:none;';
+    'grid-template-rows:repeat(' + rows + ',1fr);pointer-events:none;overflow:hidden;';
+
   for (var r = 0; r < rows; r++) {
     for (var c = 0; c < cols; c++) {
       var cell = document.createElement('div');
@@ -142,7 +174,7 @@ function handleMessage(msg) {
     case 'UPDATE_FOG':
       if (msg.fogKey) {
         fogStates[msg.fogKey] = msg.fogGrid;
-        if (msg.fogKey === currentFogKey) renderFogOverlay(msg.fogGrid);
+        if (msg.fogKey === currentFogKey) renderFogOverlay(msg.fogGrid, sceneEl.querySelector('img'));
       }
       break;
     case 'PLAY_AUDIO':
