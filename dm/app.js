@@ -587,7 +587,7 @@ function renderFogControls(mapUrl, fogKey) {
 
   var clearFogBtn = document.createElement('button');
   clearFogBtn.textContent = 'Clear Fog';
-  clearFogBtn.className = 'btn btn-warning btn-small';
+  clearFogBtn.className = 'btn btn-warning';
   clearFogBtn.onclick = function () {
     window.fogStates[fogKey] = [];
     for (var r = 0; r < fogRows; r++) {
@@ -601,7 +601,7 @@ function renderFogControls(mapUrl, fogKey) {
 
   var revealBtn = document.createElement('button');
   revealBtn.textContent = 'Reveal All';
-  revealBtn.className = 'btn btn-secondary btn-small';
+  revealBtn.className = 'btn btn-secondary';
   revealBtn.onclick = function () {
     window.fogStates[fogKey] = [];
     for (var r = 0; r < fogRows; r++) {
