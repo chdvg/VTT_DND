@@ -4,3 +4,4 @@ release/
 *.exe
 *.blockmap
 claude.md
+public/assets/
