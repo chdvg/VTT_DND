@@ -165,6 +165,48 @@ function handleMessage(msg) {
   }
 }
 
+// ── Fullscreen button ─────────────────────────────────────────
+(function () {
+  var btn = document.getElementById('fullscreen-btn');
+  if (!btn) return;
+  var hideTimer = null;
+
+  function showBtn() {
+    btn.classList.remove('hidden');
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () { btn.classList.add('hidden'); }, 4000);
+  }
+
+  // Show on any mouse/touch movement
+  document.addEventListener('mousemove', showBtn);
+  document.addEventListener('touchstart', showBtn);
+
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation(); // don't trigger the tap-overlay dismiss
+    var doc = document.documentElement;
+    if (!document.fullscreenElement) {
+      (doc.requestFullscreen || doc.webkitRequestFullscreen || doc.mozRequestFullScreen || doc.msRequestFullscreen).call(doc);
+      btn.textContent = '✕';
+      btn.title = 'Exit fullscreen';
+    } else {
+      (document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen).call(document);
+      btn.textContent = '⛶';
+      btn.title = 'Toggle fullscreen';
+    }
+  });
+
+  document.addEventListener('fullscreenchange', function () {
+    if (!document.fullscreenElement) {
+      btn.textContent = '⛶';
+      btn.title = 'Toggle fullscreen';
+    }
+  });
+
+  // Start hidden; appears on first mouse move
+  btn.classList.add('hidden');
+}());
+}
+
 // ── WebSocket ─────────────────────────────────────────────────
 function connect() {
   var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
