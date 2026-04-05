@@ -77,14 +77,45 @@ node server.js
 
 Server starts on **port 3000**.
 
-- **DM Panel:** `http://localhost:3000`
-- **Player Screen:** `http://<your-ip>:3000/remote/player` on any device on the network
+- **DM Panel:** `http://localhost:3000` — password protected
+- **Player Screen:** `http://<your-ip>:3000/remote/player` — open to all devices on the network
 
 To find your local IP on Windows:
 ```
 ipconfig
 ```
 Look for **IPv4 Address** under your active adapter (usually `192.168.x.x`).
+
+---
+
+## DM Password
+
+The DM panel is password protected. The default password is:
+
+```
+dm1234
+```
+
+### Changing the password
+
+**Option 1 — Environment variable (recommended):**
+```powershell
+$env:DM_PASSWORD="yournewpassword" ; node server.js
+```
+The password only applies for that server run. Set it every time you start, or add it to a start script.
+
+**Option 2 — Change the default in source:**
+
+Edit line 13 of `server.js`:
+```js
+const DM_PASSWORD = process.env.DM_PASSWORD || 'dm1234';
+```
+Replace `dm1234` with your password. Don't commit this to a public repo.
+
+### Logging out
+Click the **🔒 Lock** button in the top-right of the DM panel header. This clears your session and redirects back to the login page.
+
+> Sessions are in-memory — restarting the server automatically logs everyone out.
 
 ---
 
