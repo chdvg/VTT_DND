@@ -405,6 +405,8 @@ function showSceneView(sceneIdx, viewIdx) {
   var fogContainer = document.getElementById('fog-controls-container');
   if (useFog) {
     renderFogControls(view.image, fogKey);
+    // Send initial fog state immediately so player screen shows fog on Show
+    sendFogUpdate(fogKey);
   } else {
     fogContainer.innerHTML = '';
   }
@@ -544,30 +546,41 @@ function renderFogControls(mapUrl, fogKey) {
   container.innerHTML = '';
 
   var title = document.createElement('div');
-  title.textContent = 'Fog of War — click cells to reveal/hide';
-  title.style.cssText = 'margin:0.75rem 0 0.25rem;font-size:0.8rem;color:#888;';
+  title.textContent = 'Fog of War — click cells to reveal (transparent) or hide (black)';
+  title.style.cssText = 'margin:0.75rem 0 0.4rem;font-size:0.8rem;color:#888;';
   container.appendChild(title);
 
+  // Map preview with fog grid overlaid
+  var mapWrap = document.createElement('div');
+  mapWrap.style.cssText = 'position:relative;display:inline-block;max-width:100%;margin-bottom:0.5rem;border:1px solid #444;';
+
+  var mapImg = document.createElement('img');
+  mapImg.src = mapUrl;
+  mapImg.style.cssText = 'display:block;max-width:100%;max-height:340px;object-fit:contain;user-select:none;pointer-events:none;';
+  mapWrap.appendChild(mapImg);
+
   var grid = document.createElement('div');
-  grid.style.cssText = 'display:grid;grid-template-columns:repeat(' + fogCols + ',15px);' +
-    'grid-template-rows:repeat(' + fogRows + ',15px);gap:1px;background:#222;border:1px solid #444;margin-bottom:0.5rem;';
+  grid.style.cssText = 'position:absolute;inset:0;display:grid;' +
+    'grid-template-columns:repeat(' + fogCols + ',1fr);' +
+    'grid-template-rows:repeat(' + fogRows + ',1fr);';
 
   for (var row = 0; row < fogRows; row++) {
     for (var col = 0; col < fogCols; col++) {
       (function (r, c) {
         var cell = document.createElement('div');
-        cell.style.cssText = 'width:15px;height:15px;cursor:pointer;background:' +
-          (fogGrid[r][c] ? 'transparent' : '#000') + ';';
+        cell.style.cssText = 'cursor:pointer;box-sizing:border-box;border:1px solid rgba(255,255,255,0.08);background:' +
+          (fogGrid[r][c] ? 'transparent' : 'rgba(0,0,0,0.85)') + ';transition:background 0.15s;';
         cell.onclick = function () {
           fogGrid[r][c] = !fogGrid[r][c];
-          cell.style.background = fogGrid[r][c] ? 'transparent' : '#000';
+          cell.style.background = fogGrid[r][c] ? 'transparent' : 'rgba(0,0,0,0.85)';
           sendFogUpdate(fogKey);
         };
         grid.appendChild(cell);
       })(row, col);
     }
   }
-  container.appendChild(grid);
+  mapWrap.appendChild(grid);
+  container.appendChild(mapWrap);
 
   var btnRow = document.createElement('div');
   btnRow.style.cssText = 'display:flex;gap:0.5rem;';
