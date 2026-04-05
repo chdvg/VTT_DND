@@ -89,13 +89,6 @@
         "fog": false
       },
       {
-        "id": "phandalin-orchard-1775350349884-view-9",
-        "label": "Shrine of Luck",
-        "image": "/assets/maps/ShrineOfLuck.webp",
-        "audio": null,
-        "fog": false
-      },
-      {
         "id": "phandalin-orchard-1775350349884-view-10",
         "label": "Phandalin Town Map",
         "image": "/assets/maps/phandalin_town.png",
