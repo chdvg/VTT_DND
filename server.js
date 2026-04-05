@@ -63,12 +63,12 @@ wss.on('connection', (ws) => {
           currentSceneId = message.sceneId || null;
           broadcast({ type: 'SHOW_SCENE', sceneId: currentSceneId }); break;
         case 'show-scene-view':
-          broadcast({ type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null }); break;
+          broadcast({ type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain' }); break;
         case 'clear':
           currentSceneId = null;
           broadcast({ type: 'BLACKOUT' }); break;
         case 'play-audio':
-          if (message.url) broadcast({ type: 'PLAY_AUDIO', url: message.url }); break;
+          if (message.url) broadcast({ type: 'PLAY_AUDIO', url: message.url, loop: message.loop !== false }); break;
         case 'stop-audio':
           broadcast({ type: 'STOP_AUDIO' }); break;
         case 'update-fog':
@@ -88,6 +88,12 @@ app.post('/api/show', express.json({ limit: '50mb' }), (req, res) => {
   const { label, data } = req.body;
   currentState.nowShowing = label || '—'; currentState.content = data || '';
   broadcast({ type: 'update', content: currentState.nowShowing, data: currentState.content });
+  res.json({ ok: true });
+});
+
+app.post('/api/overlay', express.json({ limit: '1mb' }), (req, res) => {
+  const { title, data, duration } = req.body;
+  broadcast({ type: 'OVERLAY', title: title || '', data: data || '', duration: duration || 10000 });
   res.json({ ok: true });
 });
 

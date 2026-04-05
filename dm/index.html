@@ -15,8 +15,8 @@
     </div>
   </header>
   <div class="panel-grid">
-    <section class="panel panel-full">
-      <h2>Maps & Audio</h2>
+    <section class="panel panel-full" id="section-maps-audio" draggable="true">
+      <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Maps & Audio</h2>
       <div id="maps-audio-section" style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
         <div>
           <h3 style="color:#aaa;font-size:0.85rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:0.75rem;">Available Maps</h3>
@@ -32,8 +32,15 @@
         </div>
       </div>
     </section>
-    <section class="panel panel-full">
-      <h2>Scene Builder</h2>
+    <section class="panel" id="section-quick-actions" draggable="true">
+      <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Quick Actions</h2>
+      <div class="btn-row">
+        <button id="blackout-btn" class="btn btn-danger">⬛ BLACKOUT</button>
+        <button id="clear-btn" class="btn btn-warning">🧹 CLEAR</button>
+      </div>
+    </section>
+    <section class="panel panel-full" id="section-scene-builder" draggable="true">
+      <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Scene Builder</h2>
       <div id="scene-builder">
         <p style="color:#666;font-size:0.78rem;margin-bottom:0.75rem;">Hierarchy: <strong style="color:#d4af37">Area</strong> (e.g. Phandalin) &rsaquo; <strong style="color:#d4af37">Scene</strong> (e.g. Stonehill Inn) &rsaquo; <strong style="color:#d4af37">Map</strong> (e.g. Ground Floor)</p>
         <div class="scene-builder-row">
@@ -44,23 +51,16 @@
         <div id="sb-scene-list"></div>
       </div>
     </section>
-    <section class="panel">
-      <h2>Quick Actions</h2>
-      <div class="btn-row">
-        <button id="blackout-btn" class="btn btn-danger">⬛ BLACKOUT</button>
-        <button id="clear-btn" class="btn btn-warning">🧹 CLEAR</button>
-      </div>
-    </section>
-    <section class="panel">
-      <h2>Send Text</h2>
+    <section class="panel" id="section-send-text" draggable="true">
+      <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Send Text</h2>
       <input type="text" id="text-label" placeholder="Label (e.g. Room Description)" />
       <textarea id="text-content" rows="6" placeholder="Type content here..."></textarea>
       <div class="btn-row">
         <button id="send-text-btn" class="btn btn-primary">📜 Send Text</button>
       </div>
     </section>
-    <section class="panel">
-      <h2>Send Image</h2>
+    <section class="panel" id="section-send-image" draggable="true">
+      <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Send Image</h2>
       <input type="text" id="image-label" placeholder="Label (e.g. Battle Map)" />
       <input type="text" id="image-url" placeholder="Image URL" />
       <div class="divider">— OR —</div>
@@ -70,8 +70,8 @@
         <button id="send-image-btn" class="btn btn-primary">🗺️ Send Image</button>
       </div>
     </section>
-    <section class="panel">
-      <h2>Initiative Tracker</h2>
+    <section class="panel" id="section-initiative" draggable="true">
+      <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Initiative Tracker</h2>
       <div id="init-list"></div>
       <div class="init-add">
         <input type="text" id="init-name" placeholder="Name" />
@@ -84,8 +84,8 @@
         <button id="init-clear-btn" class="btn btn-warning">Clear</button>
       </div>
     </section>
-    <section class="panel">
-      <h2>Dice Roller</h2>
+    <section class="panel" id="section-dice" draggable="true">
+      <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Dice Roller</h2>
       <div class="dice-buttons">
         <button class="btn-dice" data-die="4">d4</button>
         <button class="btn-dice" data-die="6">d6</button>

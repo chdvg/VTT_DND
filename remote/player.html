@@ -70,7 +70,7 @@
       position: absolute;
       inset: 0;
       z-index: 200;
-      background: black;
+      background: rgba(0,0,0,0.92);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -80,15 +80,15 @@
     }
     #tap-overlay.hidden { display: none; }
     #tap-overlay .tap-icon {
-      font-size: 3rem;
-      margin-bottom: 1rem;
-      color: #555;
+      font-size: 4rem;
+      margin-bottom: 1.5rem;
     }
     #tap-overlay .tap-text {
-      font-family: serif;
-      font-size: 1.2rem;
-      color: #444;
-      letter-spacing: 0.15em;
+      font-family: 'Georgia', serif;
+      font-size: 1.6rem;
+      color: #d4af37;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
     }
 
     #status {
@@ -104,20 +104,48 @@
       bottom: 0;
       left: 0;
       right: 0;
-      background: rgba(255,255,255,0.07);
-      color: #555;
+      background: rgba(212,175,55,0.15);
+      color: #888;
       font-family: monospace;
-      font-size: 11px;
+      font-size: 12px;
       text-align: center;
-      padding: 4px;
+      padding: 6px;
       cursor: pointer;
       z-index: 500;
+      transition: background 0.3s;
     }
+    #unlock-bar:hover { background: rgba(212,175,55,0.25); }
+
+    #popup-overlay {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 300;
+      background: rgba(10,10,20,0.93);
+      border: 2px solid #d4af37;
+      border-radius: 10px;
+      padding: 2rem 2.5rem;
+      min-width: 320px;
+      max-width: 560px;
+      max-height: 80vh;
+      overflow-y: auto;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      box-shadow: 0 0 40px rgba(212,175,55,0.25);
+    }
+    #popup-overlay.visible { opacity: 1; }
   </style>
 </head>
 <body>
+  <div id="tap-overlay">
+    <div class="tap-icon">🎲</div>
+    <div class="tap-text">tap to begin session</div>
+  </div>
   <div id="scene"></div>
-  <div id="unlock-bar">tap to enable audio</div>
+  <div id="popup-overlay"></div>
+  <div id="unlock-bar" style="display:none"></div>
   <div id="status">connecting...</div>
 
   <script src="/remote/player.js"></script>

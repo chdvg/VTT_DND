@@ -1,20 +1,63 @@
 [
   {
-    "id": "phandalin/stonehill-inn-ground-floor-1775339107776",
+    "id": "phandalin/stonehill-inn-1775339107776",
     "tab": "Phandalin",
     "label": "Stonehill Inn",
     "views": [
       {
-        "id": "phandalin/stonehill-inn-ground-floor-1775339107776-view-0",
+        "id": "phandalin/stonehill-inn-1775339107776-view-0",
         "label": "Groundfloor",
         "image": "/assets/maps/stonehill_ground.png",
         "audio": "/assets/audio/tavern-ambience.wav",
+        "fog": false,
+        "audioLoop": false
+      },
+      {
+        "id": "phandalin/stonehill-inn-1775339107776-view-1",
+        "label": "Upstairs",
+        "image": "/assets/maps/stonehill_upstairs.png",
+        "audio": null,
+        "fog": false
+      }
+    ]
+  },
+  {
+    "id": "phandalin/redbrand-hideout-1775400000000",
+    "tab": "Phandalin",
+    "label": "Redbrand Hideout",
+    "views": [
+      {
+        "id": "phandalin/redbrand-hideout-1775400000000-view-0",
+        "label": "RedBrand Hideout",
+        "image": "/assets/maps/redbrand_hideout.png",
+        "audio": null,
+        "fog": true
+      },
+      {
+        "id": "phandalin/redbrand-hideout-1775400000000-view-1",
+        "label": "Tresandor_Manor",
+        "image": "/assets/maps/tresandor_manor_exterior.webp",
+        "audio": null,
+        "fog": false
+      }
+    ]
+  },
+  {
+    "id": "phandalin-orchard-1775350349884",
+    "tab": "Phandalin",
+    "label": "Orchard",
+    "views": [
+      {
+        "id": "phandalin-orchard-1775350349884-view-0",
+        "label": "Orchard approach",
+        "image": "/assets/maps/orchard_entry.jpg",
+        "audio": "/assets/audio/mixkit-little-birds-singing-in-the-trees-17.wav",
         "fog": false
       },
       {
-        "id": "phandalin/stonehill-inn-ground-floor-1775339107776-view-1",
-        "label": "Upstairs",
-        "image": "/assets/maps/stonehill_upstairs.png",
+        "id": "phandalin-orchard-1775350349884-view-1",
+        "label": "Orchard",
+        "image": "/assets/maps/orchard.jpg",
         "audio": null,
         "fog": false
       }

@@ -89,10 +89,10 @@ sendTextBtn.addEventListener('click', function () {
   var raw   = document.getElementById('text-content').value.trim();
   if (!raw) return;
   var html = raw.replace(/\n/g, '<br>');
-  fetch('/api/show', {
+  fetch('/api/overlay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label: label || 'Text', data: html })
+    body: JSON.stringify({ title: label || '', data: html, duration: 15000 })
   });
 });
 
@@ -120,11 +120,11 @@ sendImageBtn.addEventListener('click', function () {
 
 function sendImage(label, src) {
   var html = '<div style="text-align:center;padding:1rem;"><img src="' + src +
-    '" style="max-width:100%;max-height:80vh;border-radius:8px;" /></div>';
-  fetch('/api/show', {
+    '" style="max-width:100%;max-height:60vh;border-radius:8px;" /></div>';
+  fetch('/api/overlay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label: label, data: html })
+    body: JSON.stringify({ title: label || '', data: html, duration: 20000 })
   });
 }
 
@@ -191,6 +191,8 @@ function renderSceneGroup(container, scene, sIdx) {
   sceneDiv.appendChild(titleRow);
 
   scene.views.forEach(function (view, vIdx) {
+    // In search mode, views may carry _origIdx (their position in the real scene.views array)
+    var realVIdx = (view._origIdx !== undefined) ? view._origIdx : vIdx;
     var row = document.createElement('div');
     row.className = 'view-row';
 
@@ -214,31 +216,80 @@ function renderSceneGroup(container, scene, sIdx) {
       audioIcon.title = 'Ambience: ' + view.audio.split('/').pop();
       audioIcon.style.cssText = 'cursor:help;flex-shrink:0;font-size:0.9rem;';
       rowTop.appendChild(audioIcon);
+
+      var loopToggle = document.createElement('button');
+      var isLoop = view.audioLoop !== false;
+      loopToggle.textContent = isLoop ? '🔁' : '▶️';
+      loopToggle.title = isLoop ? 'Ambience loops — click to play once' : 'Ambience plays once — click to loop';
+      loopToggle.className = 'btn btn-small';
+      loopToggle.style.cssText = 'padding:0.1rem 0.3rem;font-size:0.75rem;background:transparent;border:1px solid #555;margin-left:2px;';
+      loopToggle.onclick = (function (si, vi2, btn) {
+        return function (e) {
+          e.stopPropagation();
+          var scene = sceneData[si];
+          var v = scene.views[vi2];
+          v.audioLoop = !(v.audioLoop !== false);
+          btn.textContent = v.audioLoop ? '🔁' : '▶️';
+          btn.title = v.audioLoop ? 'Ambience loops — click to play once' : 'Ambience plays once — click to loop';
+          fetch('/api/scenes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenes: sceneData })
+          });
+        };
+      })(sIdx, realVIdx, loopToggle);
+      rowTop.appendChild(loopToggle);
     }
     row.appendChild(rowTop);
 
-    // Line 2: Show + chain dropdown
+    // Line 2: Show + fit toggle + chain dropdown
     var rowBtns = document.createElement('div');
     rowBtns.className = 'view-row-btns';
+
+    var fitModes = ['contain', 'cover', 'fill'];
+    var fitLabels = { contain: '📐 Fit', cover: '🔲 Cover', fill: '⬜ Fill' };
+    var curFit = view.fit || 'contain';
+    var fitBtn = document.createElement('button');
+    fitBtn.textContent = fitLabels[curFit];
+    fitBtn.title = 'Fit: contain (letterbox) | Cover: crop to fill | Fill: stretch';
+    fitBtn.className = 'btn btn-small';
+    fitBtn.style.cssText = 'font-size:0.7rem;background:transparent;border:1px solid #555;flex:none;width:auto;';
+    fitBtn.onclick = (function (si, vi2, btn) {
+      return function (e) {
+        e.stopPropagation();
+        var v = sceneData[si].views[vi2];
+        var idx = fitModes.indexOf(v.fit || 'contain');
+        v.fit = fitModes[(idx + 1) % fitModes.length];
+        btn.textContent = fitLabels[v.fit];
+        fetch('/api/scenes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenes: sceneData })
+        });
+      };
+    })(sIdx, realVIdx, fitBtn);
+    rowBtns.appendChild(fitBtn);
 
     var showBtn = document.createElement('button');
     showBtn.textContent = '▶ Show';
     showBtn.className = 'btn btn-primary btn-small';
     showBtn.onclick = (function (si, vi) {
       return function () { showSceneView(si, vi); };
-    })(sIdx, vIdx);
+    })(sIdx, realVIdx);
     rowBtns.appendChild(showBtn);
 
-    // Chain dropdown — visible only when scene has more than one view
-    if (scene.views.length > 1) {
+    // Chain dropdown — only show when scene has more than one view
+    // Use the full original scene.views list so chain targets are always correct
+    var originalViews = sceneData[sIdx] ? sceneData[sIdx].views : scene.views;
+    if (originalViews.length > 1) {
       var chainSel = document.createElement('select');
       chainSel.className = 'chain-select';
       var defOpt = document.createElement('option');
       defOpt.value = '';
       defOpt.textContent = '⛓ Chain to…';
       chainSel.appendChild(defOpt);
-      scene.views.forEach(function (v, vi2) {
-        if (vi2 === vIdx) return;
+      originalViews.forEach(function (v, vi2) {
+        if (vi2 === realVIdx) return;
         var opt = document.createElement('option');
         opt.value = vi2;
         opt.textContent = v.label || ('Map ' + (vi2 + 1));
@@ -291,8 +342,13 @@ function renderScenesPanel() {
             return;
           }
           // Otherwise filter to only views whose label matches
-          var matchingViews = (scene.views || []).filter(function (v) {
-            return (v.label || '').toLowerCase().indexOf(term) !== -1;
+          // Attach _origIdx so renderSceneGroup uses the correct index into sceneData
+          var matchingViews = [];
+          (scene.views || []).forEach(function (v, origIdx) {
+            if ((v.label || '').toLowerCase().indexOf(term) !== -1) {
+              var copy = Object.assign({}, v, { _origIdx: origIdx });
+              matchingViews.push(copy);
+            }
           });
           if (matchingViews.length) {
             hits.push({ scene: scene, sIdx: sIdx, filteredViews: matchingViews });
@@ -366,13 +422,18 @@ function showSceneView(sceneIdx, viewIdx) {
   var fogKey = view.id || (sceneIdx + '-' + viewIdx);
   var useFog = view.fog === true;
 
+  // Stop any playing audio before switching scene view
+  wsSend({ action: 'stop-audio' });
+
   // Pass fogKey so player can correlate fog updates
-  wsSend({ action: 'show-scene-view', image: view.image, audio: view.audio || null, fogKey: useFog ? fogKey : null });
+  wsSend({ action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fit: view.fit || 'contain', fogKey: useFog ? fogKey : null });
 
   // Only show fog controls if this view has fog enabled
   var fogContainer = document.getElementById('fog-controls-container');
   if (useFog) {
     renderFogControls(view.image, fogKey);
+    // Send initial fog state immediately so player screen shows fog on Show
+    sendFogUpdate(fogKey);
   } else {
     fogContainer.innerHTML = '';
   }
@@ -448,12 +509,22 @@ function applyAudioDisplay() {
       row.appendChild(preview);
 
       var btn = document.createElement('button');
-      btn.textContent = '▶ Play';
-      btn.className = 'btn btn-primary btn-small audio-play-btn';
+      btn.textContent = '→ Loop';
+      btn.title = 'Send to player screen (loops)';
+      btn.className = 'btn btn-secondary btn-small audio-play-btn';
       btn.onclick = (function (u) {
-        return function () { broadcastAudio(u); };
+        return function () { broadcastAudio(u, true); };
       })(url);
       row.appendChild(btn);
+
+      var btnOnce = document.createElement('button');
+      btnOnce.textContent = '→ Once';
+      btnOnce.title = 'Send to player screen (plays once)';
+      btnOnce.className = 'btn btn-secondary btn-small audio-play-btn';
+      btnOnce.onclick = (function (u) {
+        return function () { broadcastAudio(u, false); };
+      })(url);
+      row.appendChild(btnOnce);
 
       section.appendChild(row);
     });
@@ -468,8 +539,8 @@ function applyAudioDisplay() {
   });
 }
 
-function broadcastAudio(url) {
-  wsSend({ action: 'play-audio', url: url });
+function broadcastAudio(url, loop) {
+  wsSend({ action: 'play-audio', url: url, loop: loop !== false });
 }
 
 document.getElementById('stop-audio-btn').addEventListener('click', function () {
@@ -502,37 +573,48 @@ function renderFogControls(mapUrl, fogKey) {
   container.innerHTML = '';
 
   var title = document.createElement('div');
-  title.textContent = 'Fog of War — click cells to reveal/hide';
-  title.style.cssText = 'margin:0.75rem 0 0.25rem;font-size:0.8rem;color:#888;';
+  title.textContent = 'Fog of War — click cells to reveal (transparent) or hide (black)';
+  title.style.cssText = 'margin:0.75rem 0 0.4rem;font-size:0.8rem;color:#888;';
   container.appendChild(title);
 
+  // Map preview with fog grid overlaid
+  var mapWrap = document.createElement('div');
+  mapWrap.style.cssText = 'position:relative;display:inline-block;max-width:100%;margin-bottom:0.5rem;border:1px solid #444;';
+
+  var mapImg = document.createElement('img');
+  mapImg.src = mapUrl;
+  mapImg.style.cssText = 'display:block;max-width:100%;max-height:340px;object-fit:contain;user-select:none;pointer-events:none;';
+  mapWrap.appendChild(mapImg);
+
   var grid = document.createElement('div');
-  grid.style.cssText = 'display:grid;grid-template-columns:repeat(' + fogCols + ',15px);' +
-    'grid-template-rows:repeat(' + fogRows + ',15px);gap:1px;background:#222;border:1px solid #444;margin-bottom:0.5rem;';
+  grid.style.cssText = 'position:absolute;inset:0;display:grid;' +
+    'grid-template-columns:repeat(' + fogCols + ',1fr);' +
+    'grid-template-rows:repeat(' + fogRows + ',1fr);';
 
   for (var row = 0; row < fogRows; row++) {
     for (var col = 0; col < fogCols; col++) {
       (function (r, c) {
         var cell = document.createElement('div');
-        cell.style.cssText = 'width:15px;height:15px;cursor:pointer;background:' +
-          (fogGrid[r][c] ? 'transparent' : '#000') + ';';
+        cell.style.cssText = 'cursor:pointer;box-sizing:border-box;border:1px solid rgba(255,255,255,0.08);background:' +
+          (fogGrid[r][c] ? 'transparent' : 'rgba(0,0,0,0.85)') + ';transition:background 0.15s;';
         cell.onclick = function () {
           fogGrid[r][c] = !fogGrid[r][c];
-          cell.style.background = fogGrid[r][c] ? 'transparent' : '#000';
+          cell.style.background = fogGrid[r][c] ? 'transparent' : 'rgba(0,0,0,0.85)';
           sendFogUpdate(fogKey);
         };
         grid.appendChild(cell);
       })(row, col);
     }
   }
-  container.appendChild(grid);
+  mapWrap.appendChild(grid);
+  container.appendChild(mapWrap);
 
   var btnRow = document.createElement('div');
   btnRow.style.cssText = 'display:flex;gap:0.5rem;';
 
   var clearFogBtn = document.createElement('button');
   clearFogBtn.textContent = 'Clear Fog';
-  clearFogBtn.className = 'btn btn-warning btn-small';
+  clearFogBtn.className = 'btn btn-warning';
   clearFogBtn.onclick = function () {
     window.fogStates[fogKey] = [];
     for (var r = 0; r < fogRows; r++) {
@@ -546,7 +628,7 @@ function renderFogControls(mapUrl, fogKey) {
 
   var revealBtn = document.createElement('button');
   revealBtn.textContent = 'Reveal All';
-  revealBtn.className = 'btn btn-secondary btn-small';
+  revealBtn.className = 'btn btn-secondary';
   revealBtn.onclick = function () {
     window.fogStates[fogKey] = [];
     for (var r = 0; r < fogRows; r++) {
@@ -791,11 +873,22 @@ function saveScene() {
     updatedScenes = sceneData.concat([newScene]);
   }
 
-  fetch('/api/scenes', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scenes: updatedScenes })
-  })
+  fetch('/api/scenes')
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      var currentScenes = data.scenes || [];
+      var updatedScenes;
+      if (sbEditingId) {
+        updatedScenes = currentScenes.map(function (s) { return s.id === sbEditingId ? newScene : s; });
+      } else {
+        updatedScenes = currentScenes.concat([newScene]);
+      }
+      return fetch('/api/scenes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenes: updatedScenes })
+      });
+    })
     .then(function (r) { return r.json(); })
     .then(function (resp) {
       if (!resp.ok) { alert('Error saving: ' + (resp.error || 'unknown')); return; }
@@ -812,6 +905,96 @@ function saveScene() {
     .catch(function (e) { alert('Network error: ' + e.message); });
 }
 
+// ── Section Drag & Drop ──────────────────────────────────
+(function () {
+  var STORAGE_KEY = 'dm-panel-order';
+  var grid = document.querySelector('.panel-grid');
+  var dragSrc = null;
+  var dropTarget = null;
+  var canDrag = false;
+
+  function restoreOrder() {
+    var saved;
+    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) { saved = null; }
+    if (!Array.isArray(saved) || !saved.length) return;
+    saved.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) grid.appendChild(el);
+    });
+  }
+
+  function saveOrder() {
+    var ids = Array.from(grid.querySelectorAll(':scope > section')).map(function (s) { return s.id; }).filter(Boolean);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+  }
+
+  // Only allow drag when mousedown originates on the handle
+  document.addEventListener('mousedown', function (e) {
+    canDrag = !!(e.target.closest && e.target.closest('.drag-handle'));
+  });
+
+  grid.addEventListener('dragstart', function (e) {
+    if (!canDrag) { e.preventDefault(); return; }
+    var el = e.target;
+    while (el && el.tagName !== 'SECTION') el = el.parentElement;
+    if (!el || !grid.contains(el)) return;
+    dragSrc = el;
+    el.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', el.id);
+  });
+
+  grid.addEventListener('dragend', function () {
+    grid.querySelectorAll('section').forEach(function (s) {
+      s.classList.remove('dragging');
+      s.classList.remove('drag-over');
+    });
+    if (dragSrc) saveOrder();
+    dragSrc = null;
+    dropTarget = null;
+    canDrag = false;
+  });
+
+  // dragover: just highlight the target — do NOT reorder DOM here
+  grid.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (!dragSrc) return;
+    var el = e.target;
+    while (el && el !== grid) {
+      if (el.tagName === 'SECTION' && el !== dragSrc) break;
+      el = el.parentElement;
+    }
+    if (!el || el === grid || el === dragSrc) return;
+    if (el === dropTarget) return;
+    dropTarget = el;
+    grid.querySelectorAll('section').forEach(function (s) { s.classList.remove('drag-over'); });
+    el.classList.add('drag-over');
+  });
+
+  grid.addEventListener('dragleave', function (e) {
+    if (!grid.contains(e.relatedTarget)) {
+      grid.querySelectorAll('section').forEach(function (s) { s.classList.remove('drag-over'); });
+      dropTarget = null;
+    }
+  });
+
+  // drop: insert the dragged section before or after the target
+  grid.addEventListener('drop', function (e) {
+    e.preventDefault();
+    if (!dragSrc || !dropTarget) return;
+    var rect = dropTarget.getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height / 2) {
+      grid.insertBefore(dragSrc, dropTarget);
+    } else {
+      grid.insertBefore(dragSrc, dropTarget.nextSibling);
+    }
+    dropTarget = null;
+  });
+
+  restoreOrder();
+}());
+
 // ============================================================
 // Dice Roller
 // ============================================================
@@ -821,12 +1004,12 @@ document.querySelectorAll('.btn-dice').forEach(function (btn) {
     var roll = Math.floor(Math.random() * die) + 1;
     diceResult.textContent = 'D' + die + ': ' + roll;
     if (document.getElementById('dice-broadcast').checked) {
-      var html = '<div style="text-align:center;font-size:4rem;padding:2rem;color:#d4af37;">🎲 d' +
+      var html = '<div style="text-align:center;font-size:3.5rem;padding:1rem;color:#d4af37;">🎲 d' +
         die + ': <strong>' + roll + '</strong></div>';
-      fetch('/api/show', {
+      fetch('/api/overlay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label: 'Dice Roll', data: html })
+        body: JSON.stringify({ title: 'Dice Roll', data: html, duration: 8000 })
       });
     }
   });
@@ -892,10 +1075,10 @@ function sendInitiative() {
       initiative[i].name + (active ? ' ⬅️' : '') + '</span></div>';
   }
   html += '</div>';
-  fetch('/api/show', {
+  fetch('/api/overlay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label: 'Initiative Order', data: html })
+    body: JSON.stringify({ title: 'Initiative Order', data: html, duration: 12000 })
   });
 }
 
