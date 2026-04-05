@@ -457,13 +457,22 @@ function applyAudioDisplay() {
       row.appendChild(preview);
 
       var btn = document.createElement('button');
-      btn.textContent = '→ Player';
-      btn.title = 'Send to player screen';
+      btn.textContent = '→ Loop';
+      btn.title = 'Send to player screen (loops)';
       btn.className = 'btn btn-secondary btn-small audio-play-btn';
       btn.onclick = (function (u) {
-        return function () { broadcastAudio(u); };
+        return function () { broadcastAudio(u, true); };
       })(url);
       row.appendChild(btn);
+
+      var btnOnce = document.createElement('button');
+      btnOnce.textContent = '→ Once';
+      btnOnce.title = 'Send to player screen (plays once)';
+      btnOnce.className = 'btn btn-secondary btn-small audio-play-btn';
+      btnOnce.onclick = (function (u) {
+        return function () { broadcastAudio(u, false); };
+      })(url);
+      row.appendChild(btnOnce);
 
       section.appendChild(row);
     });
@@ -478,8 +487,8 @@ function applyAudioDisplay() {
   });
 }
 
-function broadcastAudio(url) {
-  wsSend({ action: 'play-audio', url: url });
+function broadcastAudio(url, loop) {
+  wsSend({ action: 'play-audio', url: url, loop: loop !== false });
 }
 
 document.getElementById('stop-audio-btn').addEventListener('click', function () {

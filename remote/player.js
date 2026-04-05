@@ -19,9 +19,9 @@ document.addEventListener('click', function () {
     if (tapOverlay) tapOverlay.classList.add('hidden');
   }
   if (pendingAudio) {
-    var url = pendingAudio;
+    var p = pendingAudio;
     pendingAudio = null;
-    playAudio(url);
+    playAudio(p.url, p.loop);
   }
 });
 
@@ -72,18 +72,19 @@ function renderFogOverlay(fogGrid) {
 }
 
 // ── Audio ─────────────────────────────────────────────────────
-function playAudio(url) {
+function playAudio(url, loop) {
+  var shouldLoop = loop !== false;
   if (!audioUnlocked) {
-    pendingAudio = url;
+    pendingAudio = { url: url, loop: shouldLoop };
     return;
   }
   if (globalAudio) { globalAudio.pause(); globalAudio = null; }
   globalAudio = new Audio(url);
-  globalAudio.loop = true;
+  globalAudio.loop = shouldLoop;
   globalAudio.volume = 0.7;
   globalAudio.play().catch(function (err) {
     console.warn('Audio play blocked:', err);
-    pendingAudio = url;
+    pendingAudio = { url: url, loop: shouldLoop };
   });
 }
 
@@ -121,7 +122,7 @@ function handleMessage(msg) {
   switch (msg.type) {
     case 'SHOW_SCENE_VIEW':
       showImage(msg.image, msg.fogKey || null);
-      if (msg.audio) playAudio(msg.audio);
+      if (msg.audio) playAudio(msg.audio, msg.audioLoop !== false);
       break;
     case 'UPDATE_FOG':
       if (msg.fogKey) {
@@ -130,7 +131,7 @@ function handleMessage(msg) {
       }
       break;
     case 'PLAY_AUDIO':
-      if (msg.url) playAudio(msg.url);
+      if (msg.url) playAudio(msg.url, msg.loop !== false);
       break;
     case 'STOP_AUDIO':
       stopAudio();

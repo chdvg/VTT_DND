@@ -63,12 +63,12 @@ wss.on('connection', (ws) => {
           currentSceneId = message.sceneId || null;
           broadcast({ type: 'SHOW_SCENE', sceneId: currentSceneId }); break;
         case 'show-scene-view':
-          broadcast({ type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null }); break;
+          broadcast({ type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: true }); break;
         case 'clear':
           currentSceneId = null;
           broadcast({ type: 'BLACKOUT' }); break;
         case 'play-audio':
-          if (message.url) broadcast({ type: 'PLAY_AUDIO', url: message.url }); break;
+          if (message.url) broadcast({ type: 'PLAY_AUDIO', url: message.url, loop: message.loop !== false }); break;
         case 'stop-audio':
           broadcast({ type: 'STOP_AUDIO' }); break;
         case 'update-fog':
