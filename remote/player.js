@@ -205,7 +205,6 @@ function handleMessage(msg) {
   // Start hidden; appears on first mouse move
   btn.classList.add('hidden');
 }());
-}
 
 // ── WebSocket ─────────────────────────────────────────────────
 function connect() {
