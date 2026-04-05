@@ -9,7 +9,8 @@
         "label": "Groundfloor",
         "image": "/assets/maps/stonehill_ground.png",
         "audio": "/assets/audio/tavern-ambience.wav",
-        "fog": false
+        "fog": false,
+        "audioLoop": false
       },
       {
         "id": "phandalin/stonehill-inn-1775339107776-view-1",
