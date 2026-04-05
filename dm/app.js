@@ -242,11 +242,30 @@ function renderSceneGroup(container, scene, sIdx) {
     }
     row.appendChild(rowTop);
 
-    // Line 2: Show + chain dropdown
-    var rowBtns = document.createElement('div');
-    rowBtns.className = 'view-row-btns';
-
-    var showBtn = document.createElement('button');
+    // Fit mode toggle
+    var fitModes = ['contain', 'cover', 'fill'];
+    var fitLabels = { contain: '📐 Fit', cover: '🔲 Cover', fill: '⬜ Fill' };
+    var fitBtn = document.createElement('button');
+    var curFit = view.fit || 'contain';
+    fitBtn.textContent = fitLabels[curFit];
+    fitBtn.title = 'Fit: contain (letterbox) | Cover: crop to fill | Fill: stretch';
+    fitBtn.className = 'btn btn-small';
+    fitBtn.style.cssText = 'font-size:0.7rem;background:transparent;border:1px solid #555;margin-bottom:4px;flex:none;width:auto;';
+    fitBtn.onclick = (function (si, vi2, btn) {
+      return function (e) {
+        e.stopPropagation();
+        var v = sceneData[si].views[vi2];
+        var idx = fitModes.indexOf(v.fit || 'contain');
+        v.fit = fitModes[(idx + 1) % fitModes.length];
+        btn.textContent = fitLabels[v.fit];
+        fetch('/api/scenes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenes: sceneData })
+        });
+      };
+    })(sIdx, realVIdx, fitBtn);
+    rowBtns.appendChild(fitBtn);
     showBtn.textContent = '▶ Show';
     showBtn.className = 'btn btn-primary btn-small';
     showBtn.onclick = (function (si, vi) {
@@ -399,7 +418,7 @@ function showSceneView(sceneIdx, viewIdx) {
   var useFog = view.fog === true;
 
   // Pass fogKey so player can correlate fog updates
-  wsSend({ action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fogKey: useFog ? fogKey : null });
+  wsSend({ action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fit: view.fit || 'contain', fogKey: useFog ? fogKey : null });
 
   // Only show fog controls if this view has fog enabled
   var fogContainer = document.getElementById('fog-controls-container');

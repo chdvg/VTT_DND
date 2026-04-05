@@ -28,13 +28,13 @@ document.addEventListener('click', function () {
 });
 
 // ── Image display ────────────────────────────────────────────
-function showImage(imageUrl, fogKey) {
+function showImage(imageUrl, fogKey, fit) {
   sceneEl.classList.add('fading');
   setTimeout(function () {
     sceneEl.innerHTML = '';
     var img = document.createElement('img');
     img.src = imageUrl;
-    img.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;';
+    img.style.cssText = 'width:100%;height:100%;object-fit:' + (fit || 'contain') + ';display:block;';
     sceneEl.appendChild(img);
     sceneEl.classList.remove('fading');
     currentFogKey = fogKey || null;
@@ -136,7 +136,7 @@ function handleMessage(msg) {
   statusEl.textContent = msg.type;
   switch (msg.type) {
     case 'SHOW_SCENE_VIEW':
-      showImage(msg.image, msg.fogKey || null);
+      showImage(msg.image, msg.fogKey || null, msg.fit || 'contain');
       if (msg.audio) playAudio(msg.audio, msg.audioLoop !== false);
       break;
     case 'UPDATE_FOG':
