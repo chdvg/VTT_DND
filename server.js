@@ -80,14 +80,36 @@ function requireDm(req, res, next) {
 }
 
 app.use('/assets', express.static(path.join(__dirname, 'public/assets')));
+// Fallback: also serve maps from subdirectories at the flat /assets/maps/ URL path.
+// Scenes saved with flat filenames (e.g. /assets/maps/redbrand_hideout.png) still resolve
+// even when the physical files live inside Phandalin/, Cragmaw/, etc.
+const _mapsDir = path.join(__dirname, 'public/assets/maps');
+if (fs.existsSync(_mapsDir)) {
+  for (const _sub of fs.readdirSync(_mapsDir)) {
+    const _subPath = path.join(_mapsDir, _sub);
+    if (fs.statSync(_subPath).isDirectory()) {
+      app.use('/assets/maps', express.static(_subPath));
+    }
+  }
+}
 app.use(express.static(path.join(__dirname)));
 
 function listFiles(dir, exts) {
   const fullDir = path.join(__dirname, dir);
   if (!fs.existsSync(fullDir)) return [];
-  return fs.readdirSync(fullDir)
-    .filter(f => exts.some(ext => f.toLowerCase().endsWith(ext)))
-    .map(f => `/assets/${dir.split('/').pop()}/${f}`);
+  const urlPrefix = `/assets/${dir.split('/').pop()}/`;
+  const results = [];
+  (function scan(d, urlPath) {
+    for (const f of fs.readdirSync(d)) {
+      const fp = path.join(d, f);
+      if (fs.statSync(fp).isDirectory()) {
+        scan(fp, urlPath + f + '/');
+      } else if (exts.some(ext => f.toLowerCase().endsWith(ext))) {
+        results.push(urlPath + f);
+      }
+    }
+  })(fullDir, urlPrefix);
+  return results;
 }
 
 let currentState = { nowShowing: '—', content: '', blackout: false };
