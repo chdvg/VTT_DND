@@ -62,5 +62,19 @@
         "fog": false
       }
     ]
+  },
+  {
+    "id": "travel-in-the-woods-1775354955380",
+    "tab": "Travel",
+    "label": "In the woods",
+    "views": [
+      {
+        "id": "travel-in-the-woods-1775354955380-view-0",
+        "label": "road",
+        "image": "/assets/maps/travel.webp",
+        "audio": "/assets/audio/mixkit-little-birds-singing-in-the-trees-17.wav",
+        "fog": false
+      }
+    ]
   }
 ]
