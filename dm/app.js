@@ -89,10 +89,10 @@ sendTextBtn.addEventListener('click', function () {
   var raw   = document.getElementById('text-content').value.trim();
   if (!raw) return;
   var html = raw.replace(/\n/g, '<br>');
-  fetch('/api/show', {
+  fetch('/api/overlay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label: label || 'Text', data: html })
+    body: JSON.stringify({ title: label || '', data: html, duration: 15000 })
   });
 });
 
@@ -120,11 +120,11 @@ sendImageBtn.addEventListener('click', function () {
 
 function sendImage(label, src) {
   var html = '<div style="text-align:center;padding:1rem;"><img src="' + src +
-    '" style="max-width:100%;max-height:80vh;border-radius:8px;" /></div>';
-  fetch('/api/show', {
+    '" style="max-width:100%;max-height:60vh;border-radius:8px;" /></div>';
+  fetch('/api/overlay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ label: label, data: html })
+    body: JSON.stringify({ title: label || '', data: html, duration: 20000 })
   });
 }
 
