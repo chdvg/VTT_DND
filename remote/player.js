@@ -73,18 +73,17 @@ function renderFogOverlay(fogGrid) {
 
 // ── Audio ─────────────────────────────────────────────────────
 function playAudio(url, loop) {
-  var shouldLoop = loop !== false;
   if (!audioUnlocked) {
-    pendingAudio = { url: url, loop: shouldLoop };
+    pendingAudio = { url: url, loop: !!loop };
     return;
   }
   if (globalAudio) { globalAudio.pause(); globalAudio = null; }
   globalAudio = new Audio(url);
-  globalAudio.loop = shouldLoop;
+  globalAudio.loop = !!loop;
   globalAudio.volume = 0.7;
   globalAudio.play().catch(function (err) {
     console.warn('Audio play blocked:', err);
-    pendingAudio = { url: url, loop: shouldLoop };
+    pendingAudio = { url: url, loop: !!loop };
   });
 }
 
@@ -131,7 +130,7 @@ function handleMessage(msg) {
       }
       break;
     case 'PLAY_AUDIO':
-      if (msg.url) playAudio(msg.url, msg.loop !== false);
+      if (msg.url) playAudio(msg.url, msg.loop === true);
       break;
     case 'STOP_AUDIO':
       stopAudio();

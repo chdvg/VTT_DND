@@ -216,6 +216,29 @@ function renderSceneGroup(container, scene, sIdx) {
       audioIcon.title = 'Ambience: ' + view.audio.split('/').pop();
       audioIcon.style.cssText = 'cursor:help;flex-shrink:0;font-size:0.9rem;';
       rowTop.appendChild(audioIcon);
+
+      var loopToggle = document.createElement('button');
+      var isLoop = view.audioLoop !== false;
+      loopToggle.textContent = isLoop ? '🔁' : '▶️';
+      loopToggle.title = isLoop ? 'Ambience loops — click to play once' : 'Ambience plays once — click to loop';
+      loopToggle.className = 'btn btn-small';
+      loopToggle.style.cssText = 'padding:0.1rem 0.3rem;font-size:0.75rem;background:transparent;border:1px solid #555;margin-left:2px;';
+      loopToggle.onclick = (function (si, vi2, btn) {
+        return function (e) {
+          e.stopPropagation();
+          var scene = sceneData[si];
+          var v = scene.views[vi2];
+          v.audioLoop = !(v.audioLoop !== false);
+          btn.textContent = v.audioLoop ? '🔁' : '▶️';
+          btn.title = v.audioLoop ? 'Ambience loops — click to play once' : 'Ambience plays once — click to loop';
+          fetch('/api/scenes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenes: sceneData })
+          });
+        };
+      })(sIdx, realVIdx, loopToggle);
+      rowTop.appendChild(loopToggle);
     }
     row.appendChild(rowTop);
 
@@ -376,7 +399,7 @@ function showSceneView(sceneIdx, viewIdx) {
   var useFog = view.fog === true;
 
   // Pass fogKey so player can correlate fog updates
-  wsSend({ action: 'show-scene-view', image: view.image, audio: view.audio || null, fogKey: useFog ? fogKey : null });
+  wsSend({ action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fogKey: useFog ? fogKey : null });
 
   // Only show fog controls if this view has fog enabled
   var fogContainer = document.getElementById('fog-controls-container');
