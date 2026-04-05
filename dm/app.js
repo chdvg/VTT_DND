@@ -903,6 +903,75 @@ function saveScene() {
       renderScenesPanel();
     })
     .catch(function (e) { alert('Network error: ' + e.message); });
+
+// ── Section Drag & Drop ──────────────────────────────────
+(function () {
+  var STORAGE_KEY = 'dm-panel-order';
+  var grid = document.querySelector('.panel-grid');
+  var dragSrc = null;
+  var lastMousedownTarget = null;
+
+  // Restore saved order on load
+  function restoreOrder() {
+    var saved;
+    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) { saved = null; }
+    if (!Array.isArray(saved)) return;
+    saved.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) grid.appendChild(el);
+    });
+  }
+
+  function saveOrder() {
+    var ids = Array.from(grid.querySelectorAll(':scope > section')).map(function (s) { return s.id; });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+  }
+
+  // Track where the mousedown happened so we only drag from the handle
+  grid.addEventListener('mousedown', function (e) { lastMousedownTarget = e.target; });
+
+  grid.addEventListener('dragstart', function (e) {
+    var section = e.target.closest ? e.target.closest('section') : null;
+    if (!section) return;
+    var fromHandle = lastMousedownTarget && (lastMousedownTarget.classList.contains('drag-handle') || lastMousedownTarget.closest('.drag-handle'));
+    if (!fromHandle) { e.preventDefault(); return; }
+    dragSrc = section;
+    dragSrc.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', section.id); // required for Firefox
+  });
+
+  grid.addEventListener('dragend', function () {
+    if (dragSrc) dragSrc.classList.remove('dragging');
+    grid.querySelectorAll('section').forEach(function (s) { s.classList.remove('drag-over'); });
+    saveOrder();
+    dragSrc = null;
+  });
+
+  grid.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    if (!dragSrc) return;
+    var target = e.target.closest ? e.target.closest('section') : null;
+    if (!target || target === dragSrc) return;
+    grid.querySelectorAll('section').forEach(function (s) { s.classList.remove('drag-over'); });
+    target.classList.add('drag-over');
+    var rect = target.getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height / 2) {
+      grid.insertBefore(dragSrc, target);
+    } else {
+      grid.insertBefore(dragSrc, target.nextSibling);
+    }
+  });
+
+  grid.addEventListener('dragleave', function (e) {
+    var target = e.target.closest ? e.target.closest('section') : null;
+    if (target) target.classList.remove('drag-over');
+  });
+
+  grid.addEventListener('drop', function (e) { e.preventDefault(); });
+
+  restoreOrder();
+}());
 }
 
 // ============================================================

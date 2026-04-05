@@ -88,6 +88,13 @@ label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; col
 .sb-action-row { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
 .sb-action-row .btn { flex: 1; min-width: 0; padding: 0.5rem 0.75rem; font-size: 0.8rem; white-space: nowrap; }
 .chain-select { padding:0.3rem 0.4rem; background:#21262d; border:1px solid #444c56; border-radius:4px; color:#e6e6e6; font-size:0.75rem; flex:1; min-width:80px; cursor:pointer; }
+
+/* ── Section Drag & Drop ────────────────────────────────── */
+.drag-handle { cursor: grab; color: #555; font-size: 1.1rem; margin-right: 0.5rem; user-select: none; transition: color 0.2s; vertical-align: middle; }
+.drag-handle:hover { color: #d4af37; }
+.drag-handle:active { cursor: grabbing; }
+.panel.dragging { opacity: 0.35; border-color: #d4af37; border-style: dashed; }
+.panel.drag-over { border-color: #d4af37; box-shadow: 0 0 10px rgba(212,175,55,0.35); }
 .chain-select:focus { outline:none; border-color:#d4af37; }
 .search-input { width:100%; padding:0.45rem 0.65rem; background:#0d1117; border:1px solid #30363d; border-radius:4px; color:#e6e6e6; font-size:0.82rem; margin-bottom:0.5rem; }
 .search-input:focus { outline:none; border-color:#d4af37; }
