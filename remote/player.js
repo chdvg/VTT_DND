@@ -168,6 +168,7 @@ function handleMessage(msg) {
   statusEl.textContent = msg.type;
   switch (msg.type) {
     case 'SHOW_SCENE_VIEW':
+      document.getElementById('blackout-overlay').style.display = 'none';
       showImage(msg.image, msg.fogKey || null, msg.fit || 'contain');
       if (msg.audio) playAudio(msg.audio, msg.audioLoop !== false);
       break;
@@ -188,6 +189,7 @@ function handleMessage(msg) {
       if (msg.active) stopAudio();
       break;
     case 'CLEAR':
+      document.getElementById('blackout-overlay').style.display = 'none';
       if (popupTimer) { clearTimeout(popupTimer); popupTimer = null; }
       popupEl.classList.remove('visible');
       break;

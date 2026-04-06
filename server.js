@@ -151,19 +151,24 @@ wss.on('connection', (ws) => {
           ws.send(JSON.stringify({ type: 'clients', count: clients.size - dmClients.size }));
           break;
         case 'blackout':
-          broadcast({ type: 'BLACKOUT' }); break;
+          currentState.blackout = !currentState.blackout;
+          broadcast({ type: 'BLACKOUT', active: currentState.blackout }); break;
         case 'show':
           currentSceneId = message.sceneId || null;
           broadcast({ type: 'SHOW_SCENE', sceneId: currentSceneId }); break;
         case 'show-scene-view':
+          currentState.blackout = false;
           broadcast({ type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain' }); break;
         case 'clear':
           currentSceneId = null;
-          broadcast({ type: 'BLACKOUT' }); break;
+          currentState.blackout = false;
+          broadcast({ type: 'CLEAR' }); break;
         case 'play-audio':
           if (message.url) broadcast({ type: 'PLAY_AUDIO', url: message.url, loop: message.loop !== false }); break;
         case 'stop-audio':
           broadcast({ type: 'STOP_AUDIO' }); break;
+        case 'send-overlay':
+          broadcast({ type: 'OVERLAY', title: message.title || '', data: message.data || '', duration: message.duration || 10000 }); break;
         case 'update-fog':
           broadcast({ type: 'UPDATE_FOG', fogGrid: message.fogGrid, fogKey: message.fogKey }); break;
       }
