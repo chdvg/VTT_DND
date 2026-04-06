@@ -91,35 +91,35 @@
         "fog": false
       },
       {
-        "id": "phandalin-orchard-1775350349884-view-10",
+        "id": "phandalin-orchard-1775350349884-view-9",
         "label": "Phandalin Town Map",
         "image": "/assets/maps/phandalin_town.png",
         "audio": null,
         "fog": false
       },
       {
-        "id": "phandalin-orchard-1775350349884-view-11",
+        "id": "phandalin-orchard-1775350349884-view-10",
         "label": "Shrine of Luck",
         "image": "/assets/maps/shrine-of-luck.webp",
         "audio": null,
         "fog": false
       },
       {
-        "id": "phandalin-orchard-1775350349884-view-12",
+        "id": "phandalin-orchard-1775350349884-view-11",
         "label": "Sister Garaeles",
         "image": "/assets/maps/SisterGaraelesHome.png",
         "audio": null,
         "fog": false
       },
       {
-        "id": "phandalin-orchard-1775350349884-view-13",
+        "id": "phandalin-orchard-1775350349884-view-12",
         "label": "Town Master Haraell",
         "image": "/assets/maps/TownMasterHall.png",
         "audio": null,
         "fog": false
       },
       {
-        "id": "phandalin-orchard-1775350349884-view-14",
+        "id": "phandalin-orchard-1775350349884-view-13",
         "label": "Umbridge Hill",
         "image": "/assets/maps/UmbrageHill.png",
         "audio": null,
@@ -159,18 +159,6 @@
         "image": "/assets/maps/stonehill_upstairs.png",
         "audio": null,
         "fog": false
-      }
-    ]
-  },
-  {
-    "id": "nowheresville-1775437921902",
-    "label": "NoWheresVille",
-    "views": [
-      {
-        "id": "nowheresville-1775437921902-view-0",
-        "label": "dufus",
-        "image": "/assets/maps/remove_anothermap.png",
-        "fog": true
       }
     ]
   }
