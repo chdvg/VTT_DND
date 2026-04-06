@@ -222,6 +222,13 @@ const MAX_UNDO  = 40;
 let isPainting  = false;
 let paintValue  = null; // tile id being painted (null = erase)
 
+// Fog of War state
+let fogEnabled     = false;
+let fogIsPainting  = false;
+let fogPaintValue  = false;
+const FOG_KEY      = 'builder-live';
+let fogBuilderGrid = [];   // [row][col] = true (revealed) / false (hidden)
+
 // WebSocket
 let ws = null;
 function connectWS() {
@@ -240,6 +247,7 @@ const tokenLayer   = document.getElementById('token-layer');
 const labelLayer   = document.getElementById('label-layer');
 const container    = document.getElementById('canvas-container');
 const coordsEl     = document.getElementById('coords');
+const fogLayer     = document.getElementById('fog-layer');
 
 const bgCtx     = bgCanvas.getContext('2d');
 const tileCtx   = tileCanvas.getContext('2d');
@@ -255,6 +263,7 @@ function initGrid() {
   tokens = [];
   labels = [];
   undoStack = [];
+  initFogGrid();
   applySize();
 }
 
@@ -269,6 +278,7 @@ function applySize() {
   });
   container.style.width  = w + 'px';
   container.style.height = h + 'px';
+  if (fogEnabled) renderFogLayer();
   renderAll();
 }
 
@@ -578,6 +588,93 @@ document.getElementById('remove-bg-btn').addEventListener('click', () => {
   setBgImage(null);
 });
 
+// ── Fog of War (Map Builder) ────────────────────────────────
+function initFogGrid() {
+  fogBuilderGrid = [];
+  for (let r = 0; r < rows; r++) {
+    fogBuilderGrid.push(new Array(cols).fill(false));
+  }
+}
+
+function renderFogLayer() {
+  fogLayer.innerHTML = '';
+  fogLayer.style.display = 'grid';
+  fogLayer.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  fogLayer.style.gridTemplateRows    = `repeat(${rows}, 1fr)`;
+  fogLayer.style.pointerEvents = 'auto';
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      (function (row, col) {
+        const cell = document.createElement('div');
+        cell.style.cssText = 'cursor:crosshair;box-sizing:border-box;border:1px solid rgba(255,255,255,0.04);' +
+          'background:' + (fogBuilderGrid[row][col] ? 'transparent' : 'rgba(0,0,0,0.82)') + ';transition:background 0.1s;';
+        cell.addEventListener('mousedown', e => {
+          e.preventDefault();
+          fogIsPainting = true;
+          fogPaintValue = !fogBuilderGrid[row][col];
+          fogBuilderGrid[row][col] = fogPaintValue;
+          cell.style.background = fogPaintValue ? 'transparent' : 'rgba(0,0,0,0.82)';
+          scheduleFogSend();
+        });
+        cell.addEventListener('mouseenter', () => {
+          if (!fogIsPainting) return;
+          if (fogBuilderGrid[row][col] === fogPaintValue) return;
+          fogBuilderGrid[row][col] = fogPaintValue;
+          cell.style.background = fogPaintValue ? 'transparent' : 'rgba(0,0,0,0.82)';
+          scheduleFogSend();
+        });
+        fogLayer.appendChild(cell);
+      })(r, c);
+    }
+  }
+}
+
+document.addEventListener('mouseup', () => { fogIsPainting = false; });
+
+let _fogSendTimer = null;
+function scheduleFogSend() {
+  if (_fogSendTimer) return;
+  _fogSendTimer = setTimeout(() => {
+    _fogSendTimer = null;
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ action: 'update-fog', fogKey: FOG_KEY, fogGrid: fogBuilderGrid }));
+    }
+  }, 60);
+}
+
+function setFogMode(on) {
+  fogEnabled = on;
+  const toggleBtn = document.getElementById('fog-toggle-btn');
+  const revealBtn = document.getElementById('fog-reveal-btn');
+  const hideBtn   = document.getElementById('fog-hide-btn');
+  toggleBtn.classList.toggle('active', fogEnabled);
+  toggleBtn.textContent = fogEnabled ? '🌫 Fog ON' : '🌫 Fog';
+  revealBtn.style.display = fogEnabled ? '' : 'none';
+  hideBtn.style.display   = fogEnabled ? '' : 'none';
+  if (!fogEnabled) {
+    fogLayer.innerHTML = '';
+    fogLayer.style.pointerEvents = 'none';
+    fogLayer.style.display = 'none';
+  } else {
+    renderFogLayer();
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ action: 'update-fog', fogKey: FOG_KEY, fogGrid: fogBuilderGrid }));
+    }
+  }
+}
+
+document.getElementById('fog-toggle-btn').addEventListener('click', () => setFogMode(!fogEnabled));
+document.getElementById('fog-reveal-btn').addEventListener('click', () => {
+  for (let r = 0; r < rows; r++) fogBuilderGrid[r].fill(true);
+  renderFogLayer();
+  scheduleFogSend();
+});
+document.getElementById('fog-hide-btn').addEventListener('click', () => {
+  for (let r = 0; r < rows; r++) fogBuilderGrid[r].fill(false);
+  renderFogLayer();
+  scheduleFogSend();
+});
+
 // ── Tool buttons ──────────────────────────────────────────────
 document.querySelectorAll('.tool-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -635,6 +732,7 @@ document.getElementById('apply-grid-btn').addEventListener('click', () => {
       tileMap[r][c] = (r < oldRows && c < oldCols) ? oldMap[r][c] : null;
     }
   }
+  initFogGrid();
   applySize();
 });
 
@@ -712,7 +810,8 @@ document.getElementById('send-live-btn').addEventListener('click', () => {
   if (!ws || ws.readyState !== 1) { alert('Not connected to server.'); return; }
   const comp = buildComposite();
   const dataUrl = comp.toDataURL('image/png');
-  ws.send(JSON.stringify({ action: 'show-scene-view', image: dataUrl, fit: 'contain' }));
+  ws.send(JSON.stringify({ action: 'show-scene-view', image: dataUrl, fit: 'contain', fogKey: fogEnabled ? FOG_KEY : null }));
+  if (fogEnabled) scheduleFogSend();
   document.getElementById('send-live-btn').textContent = '✓ Sent!';
   setTimeout(() => { document.getElementById('send-live-btn').textContent = '📡 Send Live'; }, 2000);
 });
@@ -766,7 +865,7 @@ document.getElementById('save-confirm-btn').addEventListener('click', async () =
         id: newId + '-view-0',
         label,
         image: json.webPath,
-        fog: false,
+        fog: !!document.getElementById('save-fog').checked,
       });
       await fetch('/api/scenes', {
         method: 'POST',
