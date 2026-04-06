@@ -1186,6 +1186,14 @@ document.getElementById('init-add-all-btn').addEventListener('click', function (
   if (!added) alert('Enter roll values for the players you want to add.');
 });
 
+document.getElementById('init-roll-all-btn').addEventListener('click', function () {
+  if (!playerRoster.length) { alert('No players in roster.'); return; }
+  playerRoster.forEach(function (p) {
+    var roll = Math.floor(Math.random() * 20) + 1;
+    addToInitiative(p.name, roll, true);
+  });
+});
+
 // ── Round management ──────────────────────────────────────────
 var INIT_STORAGE_KEY = 'dm-initiative';
 
