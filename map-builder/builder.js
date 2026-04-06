@@ -505,6 +505,13 @@ function applyPaint(col, row) {
   // Repaint just that cell
   if (val === null) {
     tileCtx.clearRect(col * cellSize, row * cellSize, cellSize, cellSize);
+    // Also remove any tokens or labels on this cell
+    const prevTokenCount = tokens.length;
+    const prevLabelCount = labels.length;
+    tokens = tokens.filter(t => !(t.col === col && t.row === row));
+    labels = labels.filter(l => !(l.col === col && l.row === row));
+    if (tokens.length !== prevTokenCount) renderTokens();
+    if (labels.length !== prevLabelCount) renderLabels();
   } else {
     drawTile(tileCtx, activeTile, col * cellSize, row * cellSize, cellSize);
   }
