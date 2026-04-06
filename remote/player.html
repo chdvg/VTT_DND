@@ -125,14 +125,14 @@
       /* Size to show the full parchment image (1200×1000, 6:5 ratio).
          Take the largest square that fits 90% of the shorter viewport side,
          then apply the 6:5 ratio. */
-      width: min(45vw, 45vh * 1.2);
-      height: min(45vw / 1.2, 45vh);
+      width: min(54vw, 54vh * 1.2);
+      max-height: 82vh;
       background-image: url('/assets/maps/Parchment.jpg');
       background-size: 100% 100%;   /* stretch to fill box exactly — no cropping */
       border: 3px solid #7a5c2e;
       border-radius: 4px;
       padding: 8% 10%;              /* proportional so text stays inside the scroll edging */
-      overflow-y: auto;
+      overflow-y: hidden;
       box-sizing: border-box;
       pointer-events: none;
       opacity: 0;

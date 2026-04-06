@@ -1212,18 +1212,16 @@ window.removeInit = function (i) {
 
 function sendInitiative() {
   if (!initiative.length) return;
-  var html = '<div style="max-width:400px;margin:0 auto;">' +
-    '<h2 style="text-align:center;color:#d4af37;margin-bottom:1rem;">⚔️ Initiative Order</h2>';
+  var html = '';
   for (var i = 0; i < initiative.length; i++) {
     var active = i === currentTurn;
-    html += '<div style="display:flex;gap:0.75rem;padding:0.6rem 1rem;margin-bottom:0.35rem;' +
-      'background:' + (active ? '#1a1a2e' : '#111') + ';border:1px solid ' +
-      (active ? '#d4af37' : '#333') + ';border-radius:4px;">' +
-      '<span style="color:#d4af37;font-weight:bold;min-width:30px;">' + initiative[i].roll + '</span>' +
-      '<span style="flex:1;' + (active ? 'color:#d4af37;font-weight:bold;' : '') + '">' +
-      initiative[i].name + (active ? ' ⬅️' : '') + '</span></div>';
+    html += '<div style="display:flex;align-items:center;gap:0.6rem;padding:0.45rem 0.7rem;margin-bottom:0.3rem;' +
+      'background:' + (active ? 'rgba(212,175,55,0.18)' : 'rgba(0,0,0,0.18)') + ';border:1px solid ' +
+      (active ? 'rgba(212,175,55,0.7)' : 'rgba(90,50,10,0.35)') + ';border-radius:3px;font-size:1rem;">' +
+      '<span style="font-weight:bold;min-width:26px;font-size:0.95rem;">' + initiative[i].roll + '</span>' +
+      '<span style="flex:1;' + (active ? 'font-weight:bold;' : '') + '">' +
+      initiative[i].name + (active ? '  ◀' : '') + '</span></div>';
   }
-  html += '</div>';
   fetch('/api/overlay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
