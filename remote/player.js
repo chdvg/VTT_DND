@@ -169,6 +169,12 @@ function handleMessage(msg) {
   switch (msg.type) {
     case 'SHOW_SCENE_VIEW':
       document.getElementById('blackout-overlay').style.display = 'none';
+      // Immediately clear fog if the fog key is changing or cleared
+      if ((msg.fogKey || null) !== currentFogKey) {
+        var oldFog = sceneEl.querySelector('.fog-overlay');
+        if (oldFog) oldFog.remove();
+        currentFogKey = msg.fogKey || null;
+      }
       showImage(msg.image, msg.fogKey || null, msg.fit || 'contain');
       if (msg.audio) playAudio(msg.audio, msg.audioLoop !== false);
       break;
