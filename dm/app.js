@@ -407,6 +407,7 @@ function renderScenesPanel() {
             wsSend({ action: 'update-fog', fogKey: activeFogKey, fogGrid: null });
             activeFogKey = null;
           }
+          document.getElementById('fog-controls-container').innerHTML = '';
           currentTab = tab;
           renderScenesPanel();
         };
@@ -429,7 +430,13 @@ function showSceneView(sceneIdx, viewIdx) {
   var view   = scene.views[viewIdx];
   var fogKey = view.id || (sceneIdx + '-' + viewIdx);
   var useFog = view.fog === true;
-  activeFogKey = useFog ? fogKey : null;
+  var newFogKey = useFog ? fogKey : null;
+
+  // If switching away from a fog scene, clear the player's fog overlay
+  if (activeFogKey && activeFogKey !== newFogKey) {
+    wsSend({ action: 'update-fog', fogKey: activeFogKey, fogGrid: null });
+  }
+  activeFogKey = newFogKey;
 
   // Stop any playing audio before switching scene view
   wsSend({ action: 'stop-audio' });
