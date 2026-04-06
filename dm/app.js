@@ -211,6 +211,14 @@ function renderSceneGroup(container, scene, sIdx) {
     lbl.className = 'view-label';
     rowTop.appendChild(lbl);
 
+    if (view.fog) {
+      var fogIcon = document.createElement('span');
+      fogIcon.textContent = '🌫️';
+      fogIcon.title = 'Fog of War enabled';
+      fogIcon.style.cssText = 'cursor:help;flex-shrink:0;font-size:0.9rem;';
+      rowTop.appendChild(fogIcon);
+    }
+
     if (view.audio) {
       var audioIcon = document.createElement('span');
       audioIcon.textContent = '🎵';
