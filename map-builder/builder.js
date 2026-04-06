@@ -500,18 +500,22 @@ function pushUndo() {
 function applyPaint(col, row) {
   if (col < 0 || row < 0 || col >= cols || row >= rows) return;
   const val = activeTool === 'erase' ? null : activeTile.id;
-  if (tileMap[row][col] === val) return;
-  tileMap[row][col] = val;
-  // Repaint just that cell
+
+  // When erasing, always remove tokens/labels on this cell first,
+  // regardless of whether there is a tile underneath
   if (val === null) {
-    tileCtx.clearRect(col * cellSize, row * cellSize, cellSize, cellSize);
-    // Also remove any tokens or labels on this cell
     const prevTokenCount = tokens.length;
     const prevLabelCount = labels.length;
     tokens = tokens.filter(t => !(t.col === col && t.row === row));
     labels = labels.filter(l => !(l.col === col && l.row === row));
     if (tokens.length !== prevTokenCount) renderTokens();
     if (labels.length !== prevLabelCount) renderLabels();
+  }
+
+  if (tileMap[row][col] === val) return;
+  tileMap[row][col] = val;
+  if (val === null) {
+    tileCtx.clearRect(col * cellSize, row * cellSize, cellSize, cellSize);
   } else {
     drawTile(tileCtx, activeTile, col * cellSize, row * cellSize, cellSize);
   }
