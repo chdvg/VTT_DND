@@ -108,6 +108,7 @@ header input[type="number"] {
 #tile-canvas  { z-index: 2; }
 #token-layer  { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 #label-layer  { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+#fog-layer    { position: absolute; inset: 0; z-index: 7; pointer-events: none; display: none; }
 #grid-canvas  { z-index: 5; pointer-events: none; }
 #cursor-canvas{ z-index: 6; }
 

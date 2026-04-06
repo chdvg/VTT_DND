@@ -20,6 +20,9 @@
     <button class="btn btn-secondary btn-small" id="apply-grid-btn">Apply</button>
   </div>
   <div class="header-right">
+    <button class="btn btn-secondary btn-small" id="fog-toggle-btn" title="Toggle Fog of War painting mode">🌫 Fog</button>
+    <button class="btn btn-secondary btn-small" id="fog-reveal-btn" title="Reveal all fog cells" style="display:none;">👁 Reveal All</button>
+    <button class="btn btn-warning btn-small"   id="fog-hide-btn"   title="Hide all fog cells"   style="display:none;">🌑 Hide All</button>
     <button class="btn btn-secondary btn-small" id="undo-btn">↩ Undo</button>
     <button class="btn btn-warning btn-small"   id="clear-canvas-btn">🗑 Clear</button>
     <button class="btn btn-secondary btn-small" id="send-live-btn">📡 Send Live</button>
@@ -100,6 +103,7 @@
         <div id="label-layer"></div>
         <canvas id="grid-canvas"></canvas>
         <canvas id="cursor-canvas"></canvas>
+        <div id="fog-layer"></div>
       </div>
     </div>
     <div id="coords">0, 0</div>
@@ -118,6 +122,9 @@
     <div id="save-scene-opts">
       <input type="text" id="save-scene-area"  placeholder="Area (e.g. Phandalin)" />
       <input type="text" id="save-scene-label" placeholder="Scene label" />
+      <label style="margin-top:0.4rem;font-size:0.875rem;display:flex;align-items:center;gap:0.4rem;">
+        <input type="checkbox" id="save-fog" checked /> Enable Fog of War
+      </label>
     </div>
     <div class="btn-row" style="margin-top:1rem;">
       <button class="btn btn-primary"   id="save-confirm-btn">Save</button>
