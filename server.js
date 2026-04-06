@@ -251,6 +251,29 @@ app.post('/api/scenes', requireDm, express.json({ limit: '1mb' }), (req, res) =>
   }
 });
 
+// ── Map Builder ───────────────────────────────────────────────
+app.get('/map-builder', requireDm, (req, res) => {
+  res.sendFile(path.join(__dirname, 'map-builder', 'index.html'));
+});
+
+// Save exported map PNG from canvas dataURL
+app.post('/api/map-builder/save', requireDm, express.json({ limit: '50mb' }), (req, res) => {
+  try {
+    const { dataUrl, filename } = req.body;
+    if (!dataUrl || !filename) return res.status(400).json({ error: 'dataUrl and filename required' });
+    const safeName = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
+    if (!safeName.match(/\.(png|jpg|jpeg)$/i)) return res.status(400).json({ error: 'filename must end in .png or .jpg' });
+    const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+    const buf = Buffer.from(base64, 'base64');
+    const destDir = path.join(__dirname, 'public', 'assets', 'maps');
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+    fs.writeFileSync(path.join(destDir, safeName), buf);
+    res.json({ ok: true, webPath: '/assets/maps/' + safeName });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/', requireDm, (req, res) => { res.sendFile(path.join(__dirname, 'dm', 'index.html')); });
 app.use('/dm', requireDm);
 app.get('/remote', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'index.html')); });
