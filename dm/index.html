@@ -40,6 +40,10 @@
         <button id="blackout-btn" class="btn btn-danger">⬛ BLACKOUT</button>
         <button id="clear-btn" class="btn btn-warning">🧹 CLEAR</button>
       </div>
+      <div class="btn-row" style="margin-top:0.4rem;">
+        <button id="qa-init-send-btn" class="btn btn-primary">⚔️ Send Initiative</button>
+        <button id="qa-init-next-btn" class="btn btn-secondary">⏭️ Next Initiative</button>
+      </div>
     </section>
     <section class="panel panel-full" id="section-scene-builder">
       <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Scene Builder</h2>
@@ -74,17 +78,39 @@
     </section>
     <section class="panel" id="section-initiative">
       <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Initiative Tracker</h2>
+
+      <!-- Active round list -->
       <div id="init-list"></div>
-      <div class="init-add">
-        <input type="text" id="init-name" placeholder="Name" />
-        <input type="number" id="init-roll" placeholder="Roll" min="1" max="30" />
-        <button id="init-add-btn" class="btn btn-small btn-primary">+ Add</button>
-      </div>
-      <div class="btn-row">
+
+      <!-- Controls row -->
+      <div class="btn-row" style="margin-top:0.4rem;">
         <button id="init-send-btn" class="btn btn-primary">⚔️ Send</button>
         <button id="init-next-btn" class="btn btn-secondary">⏭️ Next</button>
-        <button id="init-clear-btn" class="btn btn-warning">Clear</button>
       </div>
+      <div class="btn-row" style="margin-top:0.35rem;">
+        <button id="init-clear-btn" class="btn btn-warning">🧹 Clear Mobs</button>
+        <button id="init-reset-btn" class="btn btn-danger" title="Remove all entries including players">🔄 Hard Reset</button>
+      </div>
+
+      <!-- Quick-add a mob to the round -->
+      <div class="init-add" style="margin-top:0.75rem;">
+        <input type="text"   id="init-name" placeholder="Mob / NPC name" />
+        <input type="number" id="init-roll" placeholder="Roll" min="1" max="30" />
+        <button id="init-add-btn" class="btn btn-small btn-primary">+ Add Mob</button>
+      </div>
+
+      <!-- Players roster (persisted) -->
+      <details id="init-players-details" style="margin-top:0.9rem;">
+        <summary style="cursor:pointer;color:#d4af37;font-size:0.82rem;user-select:none;">👥 Player Roster</summary>
+        <div id="init-player-list" style="margin-top:0.5rem;"></div>
+        <div class="init-add" style="margin-top:0.5rem;">
+          <input type="text" id="init-player-name" placeholder="Player name" />
+          <button id="init-player-add-btn" class="btn btn-small btn-secondary">+ Add Player</button>
+        </div>
+        <button id="init-add-all-btn" class="btn btn-small btn-primary" style="margin-top:0.4rem;width:100%;">
+          ⚡ Add All Players to Round
+        </button>
+      </details>
     </section>
     <section class="panel" id="section-dice">
       <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Dice Roller</h2>

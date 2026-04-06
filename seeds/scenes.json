@@ -9,14 +9,16 @@
         "label": "RedBrand Hideout",
         "image": "/assets/maps/redbrand_hideout.png",
         "audio": null,
-        "fog": true
+        "fog": true,
+        "fit": "contain"
       },
       {
         "id": "phandalin/redbrand-hideout-1775400000000-view-1",
         "label": "Tresandor_Manor",
         "image": "/assets/maps/tresandor_manor_exterior.webp",
         "audio": null,
-        "fog": false
+        "fog": false,
+        "fit": "contain"
       }
     ]
   },
@@ -157,6 +159,18 @@
         "image": "/assets/maps/stonehill_upstairs.png",
         "audio": null,
         "fog": false
+      }
+    ]
+  },
+  {
+    "id": "nowheresville-1775437921902",
+    "label": "NoWheresVille",
+    "views": [
+      {
+        "id": "nowheresville-1775437921902-view-0",
+        "label": "dufus",
+        "image": "/assets/maps/remove_anothermap.png",
+        "fog": true
       }
     ]
   }

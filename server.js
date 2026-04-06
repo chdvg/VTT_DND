@@ -197,13 +197,13 @@ app.post('/api/stopaudio', requireDm, (req, res) => {
 
 app.post('/api/blackout', requireDm, (req, res) => {
   currentState.blackout = !currentState.blackout;
-  broadcast({ type: 'BLACKOUT' });
+  broadcast({ type: 'BLACKOUT', active: currentState.blackout });
   res.json({ ok: true, blackout: currentState.blackout });
 });
 
 app.post('/api/clear', requireDm, (req, res) => {
   currentState.nowShowing = '—'; currentState.content = ''; currentState.blackout = false;
-  broadcast({ type: 'BLACKOUT' });
+  broadcast({ type: 'CLEAR' });
   res.json({ ok: true });
 });
 
@@ -248,6 +248,25 @@ app.post('/api/scenes', requireDm, express.json({ limit: '1mb' }), (req, res) =>
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to save scenes.json' });
+  }
+});
+
+// ── Players roster ────────────────────────────────────────────
+const PLAYERS_FILE = path.join(__dirname, 'seeds', 'players.json');
+function loadPlayers() {
+  try { return JSON.parse(fs.readFileSync(PLAYERS_FILE, 'utf8')); } catch { return []; }
+}
+app.get('/api/players', requireDm, (req, res) => {
+  res.json({ players: loadPlayers() });
+});
+app.post('/api/players', requireDm, express.json({ limit: '64kb' }), (req, res) => {
+  try {
+    const players = req.body.players;
+    if (!Array.isArray(players)) return res.status(400).json({ error: 'players must be an array' });
+    fs.writeFileSync(PLAYERS_FILE, JSON.stringify(players, null, 2), 'utf8');
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to save players.json' });
   }
 });
 

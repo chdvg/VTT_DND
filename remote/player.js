@@ -184,9 +184,12 @@ function handleMessage(msg) {
       stopAudio();
       break;
     case 'BLACKOUT':
-      clearScene();
-      stopAudio();
-      currentFogKey = null;
+      document.getElementById('blackout-overlay').style.display = msg.active ? 'block' : 'none';
+      if (msg.active) stopAudio();
+      break;
+    case 'CLEAR':
+      if (popupTimer) { clearTimeout(popupTimer); popupTimer = null; }
+      popupEl.classList.remove('visible');
       break;
     case 'OVERLAY':
       showOverlay(msg.title, msg.data, msg.duration);
