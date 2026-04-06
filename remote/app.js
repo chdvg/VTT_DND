@@ -1,480 +1,325 @@
-let layout = null;
-let currentSceneId = null;
-let currentFogGrid = null; // fog grid for the active scene
-let initiativeData = { list: [], currentTurn: 0 };
-let partyItemsData = [];
+﻿'use strict';
 
-const nowShowingEl = document.getElementById('now-showing');
+// ── State ──────────────────────────────────────────────────
+let ws            = null;
+let scenes        = [];
+let nowShowing    = null; // { label }
+let initiative    = [];
+let initTurn      = 0;
+
 const statusDotEl  = document.getElementById('status-dot');
+const nowShowingEl = document.getElementById('now-showing');
 const contentEl    = document.getElementById('content');
 
 // ── WebSocket ──────────────────────────────────────────────
+function wsSend(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(protocol + '//' + location.host + '/ws');
+  ws = new WebSocket(protocol + '//' + location.host + '/ws');
 
-  ws.onopen  = () => statusDotEl.className = 'status-dot on';
-  ws.onclose = () => { statusDotEl.className = 'status-dot off'; setTimeout(connect, 2000); };
+  ws.onopen  = () => { statusDotEl.className = 'status-dot on'; };
+  ws.onclose = () => { statusDotEl.className = 'status-dot off'; ws = null; setTimeout(connect, 2000); };
   ws.onerror = () => ws.close();
 
   ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
-      if (msg.type === 'SHOW_SCENE') {
-        currentSceneId = msg.sceneId ?? null;
-        currentFogGrid = null;
-        updateNowShowing();
-        highlightActive();
-        hideFogPanel();
-      } else if (msg.type === 'BLACKOUT') {
-        currentSceneId = null;
-        currentFogGrid = null;
-        updateNowShowing();
-        highlightActive();
-        hideFogPanel();
-      } else if (msg.type === 'UPDATE_FOG') {
-        if (msg.sceneId === currentSceneId) {
-          currentFogGrid = msg.fogGrid ?? null;
-          const panel = document.querySelector(`.fog-panel[data-scene-id="${msg.sceneId}"]`);
-          if (panel) panel.classList.remove('hidden');
-          refreshFogPanel(msg.sceneId);
+      if (msg.type === 'SHOW_SCENE_VIEW') {
+        // Find which scene/view matches this image
+        let found = null;
+        for (const sc of scenes) {
+          for (const v of (sc.views || [])) {
+            if (v.image && msg.image && v.image === msg.image) { found = sc.label + (sc.views.length > 1 ? ' — ' + v.label : ''); break; }
+          }
+          if (found) break;
         }
-      } else if (msg.type === 'DATA_UPDATED') {
-        fetchLayout().then(render);
-      } else if (msg.type === 'UPDATE_INITIATIVE') {
-        initiativeData = { list: msg.list, currentTurn: msg.currentTurn };
-        renderInitiativePanel();
-      } else if (msg.type === 'UPDATE_ITEMS') {
-        partyItemsData = msg.items;
-        renderItemsPanel();
+        nowShowing = found || msg.image || '—';
+        nowShowingEl.textContent = nowShowing;
+        document.querySelectorAll('.view-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.image === msg.image);
+        });
+      } else if (msg.type === 'BLACKOUT') {
+        if (msg.active) { nowShowingEl.textContent = '⬛ BLACKOUT'; }
+        else { nowShowingEl.textContent = nowShowing || '—'; }
+      } else if (msg.type === 'CLEAR') {
+        nowShowingEl.textContent = nowShowing || '—';
       }
     } catch (_) {}
   };
 }
 
-// ── API ────────────────────────────────────────────────────
-async function api(path, body = {}) {
+// ── Scene / audio loaders ──────────────────────────────────
+async function loadScenes() {
   try {
-    await fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-  } catch (_) {}
+    const res = await fetch('/api/scenes');
+    const data = await res.json();
+    scenes = data.scenes || [];
+  } catch (_) { scenes = []; }
 }
 
-// ── Helpers ────────────────────────────────────────────────
-function updateNowShowing() {
-  const scene = layout?.scenes?.find(s => s.id === currentSceneId);
-  nowShowingEl.textContent = scene ? scene.label : '—';
+async function loadAudio() {
+  try {
+    const res = await fetch('/api/audio');
+    const data = await res.json();
+    return data.categories || [];
+  } catch (_) { return []; }
 }
 
-function highlightActive() {
-  document.querySelectorAll('.scene-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.sceneId === currentSceneId);
-  });
-}
-
-function typeIcon(type) {
-  return { map: '🗺', video: '🎬', text: '📜', utility: '⚙️', audio: '🔊' }[type] ?? '•';
-}
-
-// ── Fog of War helpers ─────────────────────────────────────
-function hideFogPanel() {
-  document.querySelectorAll('.fog-panel').forEach(el => el.classList.add('hidden'));
-}
-
-function refreshFogPanel(sceneId) {
-  const panel = document.querySelector(`.fog-panel[data-scene-id="${sceneId}"]`);
-  if (!panel || !currentFogGrid) return;
-  const cells = panel.querySelectorAll('.fog-cell');
-  const cols = currentFogGrid[0]?.length ?? 0;
-  cells.forEach((cell, i) => {
-    const r = Math.floor(i / cols);
-    const c = i % cols;
-    cell.classList.toggle('revealed', !!(currentFogGrid[r] && currentFogGrid[r][c]));
-  });
-}
-
-function buildFogPanel(scene) {
-  const panel = document.createElement('div');
-  panel.className = 'fog-panel hidden';
-  panel.dataset.sceneId = scene.id;
-
-  const rows = scene.fogRows ?? 8;
-  const cols = scene.fogCols ?? 10;
-
-  // Map thumbnail
-  if (scene.mediaPath) {
-    const src = scene.mediaPath.startsWith('/') ? scene.mediaPath : '/' + scene.mediaPath;
-    const thumb = document.createElement('img');
-    thumb.src = src;
-    thumb.className = 'fog-map-thumb';
-    panel.appendChild(thumb);
+// ── Render ─────────────────────────────────────────────────
+function renderScenes() {
+  // Group by tab (area)
+  const tabs = {};
+  for (const sc of scenes) {
+    const tab = sc.tab || 'Scenes';
+    if (!tabs[tab]) tabs[tab] = [];
+    tabs[tab].push(sc);
   }
 
-  // Action buttons row
-  const actions = document.createElement('div');
-  actions.className = 'fog-actions';
-
-  const revealBtn = document.createElement('button');
-  revealBtn.className = 'fog-action-btn reveal';
-  revealBtn.textContent = 'Reveal All';
-  revealBtn.onclick = () => api('/api/fog/set-all', { sceneId: scene.id, revealed: true });
-
-  const hideBtn = document.createElement('button');
-  hideBtn.className = 'fog-action-btn hide';
-  hideBtn.textContent = 'Hide All';
-  hideBtn.onclick = () => api('/api/fog/set-all', { sceneId: scene.id, revealed: false });
-
-  actions.appendChild(revealBtn);
-  actions.appendChild(hideBtn);
-  panel.appendChild(actions);
-
-  // Grid
-  const grid = document.createElement('div');
-  grid.className = 'fog-grid';
-  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const cell = document.createElement('div');
-      cell.className = 'fog-cell';
-      cell.dataset.row = r;
-      cell.dataset.col = c;
-      cell.onclick = () => {
-        const revealed = !cell.classList.contains('revealed');
-        api('/api/fog/toggle-cell', { sceneId: scene.id, row: r, col: c, revealed });
-      };
-      grid.appendChild(cell);
-    }
-  }
-
-  panel.appendChild(grid);
-  return panel;
-}
-
-// ── Build UI ───────────────────────────────────────────────
-async function fetchLayout() {
-  const res = await fetch('/api/layout');
-  layout = await res.json();
-  return layout;
-}
-
-function makeSceneCard(scene) {
-  const card = document.createElement('div');
-  card.className = 'scene-card';
-
-  const btn = document.createElement('button');
-  btn.className = 'scene-btn';
-  btn.dataset.sceneId = scene.id;
-  btn.innerHTML = `<span class="scene-icon">${typeIcon(scene.type)}</span><span class="scene-label">${scene.label}</span>`;
-  btn.onclick = () => api('/api/show-scene', { sceneId: scene.id });
-  card.appendChild(btn);
-
-  if (scene.views && scene.views.length > 0) {
-    const toggle = document.createElement('button');
-    toggle.className = 'views-toggle';
-    toggle.textContent = '▸ ' + scene.views.length + ' view' + (scene.views.length > 1 ? 's' : '');
-
-    const viewList = document.createElement('div');
-    viewList.className = 'view-list hidden';
-
-    scene.views.forEach(v => {
-      const vBtn = document.createElement('button');
-      vBtn.className = 'view-btn';
-      vBtn.textContent = v.label;
-      vBtn.onclick = () => api('/api/show-scene', { sceneId: scene.id, mediaPath: v.mediaPath, fit: v.fit ?? null });
-      viewList.appendChild(vBtn);
-    });
-
-    toggle.onclick = () => {
-      const open = viewList.classList.toggle('hidden') === false;
-      toggle.textContent = (open ? '▾ ' : '▸ ') + scene.views.length + ' view' + (scene.views.length > 1 ? 's' : '');
-    };
-
-    card.appendChild(toggle);
-    card.appendChild(viewList);
-  }
-
-  if (scene.type === 'map' && scene.fogEnabled) {
-    card.appendChild(buildFogPanel(scene));
-  }
-
-  return card;
-}
-
-function makeAudioSection(title, scenes, audioType, cssClass) {
-  if (!scenes.length) return null;
-
-  const section = document.createElement('section');
-  const header = document.createElement('h2');
-  header.className = 'section-header ' + cssClass;
-  header.textContent = title;
-  section.appendChild(header);
-
-  const grid = document.createElement('div');
-  grid.className = 'audio-grid';
-  scenes.forEach(s => {
-    const btn = document.createElement('button');
-    btn.className = 'audio-btn audio-' + audioType;
-    btn.dataset.sceneId = s.id;
-    btn.textContent = s.label;
-    btn.onclick = () => api('/api/play-audio', { sceneId: s.id, audioType });
-    grid.appendChild(btn);
-  });
-  section.appendChild(grid);
-
-  const stopBtn = document.createElement('button');
-  stopBtn.className = 'stop-btn';
-  stopBtn.textContent = '■ Stop ' + title;
-  stopBtn.onclick = () => api('/api/stop-audio', { audioType });
-  section.appendChild(stopBtn);
-
-  return section;
-}
-
-function render() {
-  contentEl.innerHTML = '';
-
-  if (!layout) {
-    contentEl.innerHTML = '<p class="empty">No active layout found.</p>';
-    return;
-  }
-
-  const visual   = layout.scenes.filter(s => ['map','video','text','utility'].includes(s.type));
-  const ambience = layout.scenes.filter(s => s.type === 'audio' && s.options?.audioType === 'ambience');
-  const music    = layout.scenes.filter(s => s.type === 'audio' && s.options?.audioType === 'music');
-  const sfx      = layout.scenes.filter(s => s.type === 'audio' && s.options?.audioType === 'sfx');
-
-  // ── Initiative Tracker section ──
-  contentEl.appendChild(buildInitiativeSection());
-
-  if (visual.length) {
+  for (const [tab, scList] of Object.entries(tabs)) {
     const section = document.createElement('section');
-    const header = document.createElement('h2');
+
+    const header = document.createElement('div');
     header.className = 'section-header';
-    header.textContent = 'Scenes';
+    header.textContent = tab;
     section.appendChild(header);
-    visual.forEach(s => section.appendChild(makeSceneCard(s)));
+
+    for (const sc of scList) {
+      const views = sc.views || [];
+      if (!views.length) continue;
+
+      const card = document.createElement('div');
+      card.className = 'scene-card';
+
+      if (views.length === 1) {
+        // Single view — just one button
+        const btn = document.createElement('button');
+        btn.className = 'scene-btn view-btn';
+        btn.dataset.image = views[0].image || '';
+        btn.innerHTML = `<span class="scene-icon">🗺</span><span class="scene-label">${sc.label}</span>`;
+        btn.onclick = () => sendView(sc, views[0]);
+        card.appendChild(btn);
+      } else {
+        // Multiple views — scene header + expandable view list
+        const btn = document.createElement('button');
+        btn.className = 'scene-btn';
+        btn.innerHTML = `<span class="scene-icon">🗺</span><span class="scene-label">${sc.label}</span>`;
+
+        const viewList = document.createElement('div');
+        viewList.className = 'view-list hidden';
+
+        views.forEach(v => {
+          const vBtn = document.createElement('button');
+          vBtn.className = 'view-btn';
+          vBtn.dataset.image = v.image || '';
+          vBtn.textContent = v.label || sc.label;
+          vBtn.onclick = () => sendView(sc, v);
+          viewList.appendChild(vBtn);
+        });
+
+        btn.onclick = () => {
+          const open = viewList.classList.toggle('hidden') === false;
+          btn.querySelector('.scene-label').textContent = (open ? '▾ ' : '▸ ') + sc.label;
+        };
+        btn.querySelector('.scene-label').textContent = '▸ ' + sc.label;
+
+        card.appendChild(btn);
+        card.appendChild(viewList);
+      }
+
+      section.appendChild(card);
+    }
+
     contentEl.appendChild(section);
   }
+}
 
-  const ambiSection = makeAudioSection('Ambience', ambience, 'ambience', 'ambience');
-  if (ambiSection) contentEl.appendChild(ambiSection);
+function sendView(sc, view) {
+  wsSend({
+    action: 'show-scene-view',
+    image: view.image || null,
+    audio: view.audio || null,
+    audioLoop: view.audioLoop !== false,
+    fogKey: view.fog ? sc.id : null,
+    fit: view.fit || 'contain'
+  });
+  nowShowing = sc.label + (sc.views && sc.views.length > 1 ? ' — ' + view.label : '');
+  nowShowingEl.textContent = nowShowing;
+  document.querySelectorAll('.view-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.image === (view.image || ''));
+  });
+}
 
-  const musicSection = makeAudioSection('Music', music, 'music', 'music');
-  if (musicSection) contentEl.appendChild(musicSection);
+async function renderAudio() {
+  const categories = await loadAudio();
+  if (!categories.length) return;
 
-  // SFX: no stop button needed (one-shots)
-  if (sfx.length) {
+  for (const { cat, files } of categories) {
+    // Determine category type by name convention
+    const catLow = cat.toLowerCase();
+    const audioType = catLow.includes('battle') || catLow.includes('music') ? 'music'
+      : catLow.includes('sfx') || catLow.includes('effect') ? 'sfx'
+      : 'ambience';
+
     const section = document.createElement('section');
-    const header = document.createElement('h2');
-    header.className = 'section-header sfx';
-    header.textContent = 'SFX';
+    const header = document.createElement('div');
+    header.className = 'section-header ' + audioType;
+    header.textContent = cat;
     section.appendChild(header);
+
     const grid = document.createElement('div');
     grid.className = 'audio-grid';
-    sfx.forEach(s => {
+    files.forEach(url => {
+      const name = url.split('/').pop().replace(/\.[^.]+$/, '');
+      const title = name.includes(' - ') ? name.split(' - ').slice(1).join(' - ') : name;
       const btn = document.createElement('button');
-      btn.className = 'audio-btn audio-sfx';
-      btn.textContent = s.label;
-      btn.onclick = () => api('/api/play-audio', { sceneId: s.id, audioType: 'sfx' });
+      btn.className = 'audio-btn audio-' + audioType;
+      btn.textContent = title;
+      btn.onclick = () => wsSend({ action: 'play-audio', url, loop: audioType !== 'sfx' });
       grid.appendChild(btn);
     });
     section.appendChild(grid);
+
+    const stopBtn = document.createElement('button');
+    stopBtn.className = 'stop-btn';
+    stopBtn.textContent = '■ Stop ' + cat;
+    stopBtn.onclick = () => wsSend({ action: 'stop-audio' });
+    section.appendChild(stopBtn);
+
     contentEl.appendChild(section);
   }
-
-  updateNowShowing();
-  highlightActive();
-  // Re-show fog panel for the active scene if it has fog
-  if (currentSceneId && currentFogGrid) {
-    const panel = document.querySelector(`.fog-panel[data-scene-id="${currentSceneId}"]`);
-    if (panel) {
-      panel.classList.remove('hidden');
-      refreshFogPanel(currentSceneId);
-    }
-  }
-
-  // ── Party Items section ──
-  contentEl.appendChild(buildItemsSection());
 }
 
-// ── Initiative Panel ───────────────────────────────────────
+// ── Initiative Tracker ─────────────────────────────────────
+function renderInitiativePanel() {
+  const list = document.getElementById('init-list');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!initiative.length) {
+    list.innerHTML = '<div class="init-empty" style="padding:8px 16px;color:#666;font-size:0.85rem;">No entries yet</div>';
+    return;
+  }
+  initiative.forEach((entry, i) => {
+    const row = document.createElement('div');
+    row.className = 'init-entry' + (i === initTurn ? ' active' : '');
+    row.innerHTML = `
+      <span class="init-roll">${entry.roll}</span>
+      <span class="init-name">${entry.name}</span>
+      <button class="init-remove" data-i="${i}" style="background:none;border:none;color:#c0392b;font-size:1rem;cursor:pointer;margin-left:auto;">✕</button>
+    `;
+    row.querySelector('.init-remove').onclick = () => {
+      initiative.splice(i, 1);
+      if (initTurn >= initiative.length) initTurn = 0;
+      renderInitiativePanel();
+    };
+    list.appendChild(row);
+  });
+}
+
 function buildInitiativeSection() {
   const section = document.createElement('section');
-  section.id = 'initiative-section';
 
-  const header = document.createElement('h2');
-  header.className = 'section-header initiative';
-  header.textContent = 'Initiative Tracker';
+  const header = document.createElement('div');
+  header.className = 'section-header';
+  header.textContent = '⚔️ Initiative Tracker';
   section.appendChild(header);
 
-  // Add form
   const form = document.createElement('div');
   form.className = 'init-form';
   form.innerHTML = `
     <input id="init-name" class="init-input" placeholder="Name" />
     <input id="init-roll" class="init-input init-input-sm" placeholder="Roll" type="number" />
-    <input id="init-hp" class="init-input init-input-sm" placeholder="HP" type="number" />
-    <input id="init-maxhp" class="init-input init-input-sm" placeholder="Max" type="number" />
     <button id="init-add-btn" class="init-action-btn add">+ Add</button>
   `;
   section.appendChild(form);
 
-  // List container
   const list = document.createElement('div');
   list.id = 'init-list';
   section.appendChild(list);
 
-  // Action buttons
   const actions = document.createElement('div');
   actions.className = 'init-actions';
   actions.innerHTML = `
-    <button id="init-next-btn" class="init-action-btn next">Next Turn ▶</button>
-    <button id="init-clear-btn" class="init-action-btn clear">Clear All</button>
+    <button id="init-send-btn" class="init-action-btn next">⚔️ Send to Players</button>
+    <button id="init-next-btn" class="init-action-btn next" style="flex:0 0 auto;">⏭ Next</button>
+    <button id="init-clear-btn" class="init-action-btn clear">Clear</button>
   `;
   section.appendChild(actions);
 
-  // Wire up events after DOM insertion
   setTimeout(() => {
-    document.getElementById('init-add-btn')?.addEventListener('click', () => {
+    document.getElementById('init-add-btn').onclick = () => {
       const name = document.getElementById('init-name').value.trim();
-      const roll = document.getElementById('init-roll').value;
-      const hp = document.getElementById('init-hp').value;
-      const maxHp = document.getElementById('init-maxhp').value;
-      if (!name || !roll) return;
-      const body = { name, roll: Number(roll) };
-      if (hp) body.hp = Number(hp);
-      if (maxHp) body.maxHp = Number(maxHp);
-      api('/api/initiative/add', body);
+      const roll = parseInt(document.getElementById('init-roll').value);
+      if (!name || isNaN(roll)) return;
+      initiative.push({ name, roll });
+      initiative.sort((a, b) => b.roll - a.roll);
+      initTurn = 0;
       document.getElementById('init-name').value = '';
       document.getElementById('init-roll').value = '';
-      document.getElementById('init-hp').value = '';
-      document.getElementById('init-maxhp').value = '';
-    });
-    document.getElementById('init-next-btn')?.addEventListener('click', () => api('/api/initiative/next'));
-    document.getElementById('init-clear-btn')?.addEventListener('click', () => api('/api/initiative/clear'));
-
-    // Load current state
-    fetch('/api/initiative').then(r => r.json()).then(data => {
-      initiativeData = data;
       renderInitiativePanel();
-    });
-  }, 0);
-
-  return section;
-}
-
-function renderInitiativePanel() {
-  const list = document.getElementById('init-list');
-  if (!list) return;
-  list.innerHTML = '';
-
-  if (initiativeData.list.length === 0) {
-    list.innerHTML = '<div class="init-empty">No entries</div>';
-    return;
-  }
-
-  initiativeData.list.forEach((entry, i) => {
-    const row = document.createElement('div');
-    row.className = 'init-entry' + (i === initiativeData.currentTurn ? ' active' : '');
-    let hpHtml = '';
-    if (entry.hp != null) {
-      hpHtml = `<span class="init-hp">${entry.hp}${entry.maxHp != null ? '/' + entry.maxHp : ''} HP</span>`;
-    }
-    row.innerHTML = `
-      <span class="init-roll">${entry.roll}</span>
-      <span class="init-name">${entry.name}</span>
-      ${hpHtml}
-      <button class="init-remove" data-index="${i}">✕</button>
-    `;
-    row.querySelector('.init-remove').onclick = () => api('/api/initiative/remove', { index: i });
-    list.appendChild(row);
-  });
-}
-
-// ── Party Items Panel ──────────────────────────────────────
-function buildItemsSection() {
-  const section = document.createElement('section');
-  section.id = 'items-section';
-
-  const header = document.createElement('h2');
-  header.className = 'section-header items';
-  header.textContent = 'Party Items';
-  section.appendChild(header);
-
-  // Add form
-  const form = document.createElement('div');
-  form.className = 'items-form';
-  form.innerHTML = `
-    <input id="item-name" class="init-input" placeholder="Item name" />
-    <input id="item-qty" class="init-input init-input-sm" placeholder="Qty" type="number" value="1" />
-    <input id="item-notes" class="init-input" placeholder="Notes" />
-    <button id="item-add-btn" class="init-action-btn add">+ Add</button>
-  `;
-  section.appendChild(form);
-
-  // List container
-  const list = document.createElement('div');
-  list.id = 'items-list';
-  section.appendChild(list);
-
-  setTimeout(() => {
-    document.getElementById('item-add-btn')?.addEventListener('click', () => {
-      const name = document.getElementById('item-name').value.trim();
-      const qty = document.getElementById('item-qty').value || '1';
-      const notes = document.getElementById('item-notes').value.trim();
-      if (!name) return;
-      api('/api/items/add', { name, qty: Number(qty), notes: notes || undefined });
-      document.getElementById('item-name').value = '';
-      document.getElementById('item-qty').value = '1';
-      document.getElementById('item-notes').value = '';
-    });
-
-    fetch('/api/items').then(r => r.json()).then(data => {
-      partyItemsData = data;
-      renderItemsPanel();
-    });
-  }, 0);
-
-  return section;
-}
-
-function renderItemsPanel() {
-  const list = document.getElementById('items-list');
-  if (!list) return;
-  list.innerHTML = '';
-
-  if (partyItemsData.length === 0) {
-    list.innerHTML = '<div class="init-empty">No items</div>';
-    return;
-  }
-
-  partyItemsData.forEach(item => {
-    const row = document.createElement('div');
-    row.className = 'item-entry';
-    let notesHtml = item.notes ? `<span class="item-notes">${item.notes}</span>` : '';
-    row.innerHTML = `
-      <span class="item-qty">${item.qty}×</span>
-      <span class="item-name">${item.name}</span>
-      ${notesHtml}
-      <button class="item-btn plus" data-id="${item.id}">+</button>
-      <button class="item-btn minus" data-id="${item.id}">−</button>
-      <button class="init-remove" data-id="${item.id}">✕</button>
-    `;
-    row.querySelector('.plus').onclick = () => api('/api/items/update', { id: item.id, qty: item.qty + 1 });
-    row.querySelector('.minus').onclick = () => {
-      if (item.qty <= 1) api('/api/items/remove', { id: item.id });
-      else api('/api/items/update', { id: item.id, qty: item.qty - 1 });
     };
-    row.querySelector('.init-remove').onclick = () => api('/api/items/remove', { id: item.id });
-    list.appendChild(row);
+    document.getElementById('init-next-btn').onclick = () => {
+      if (!initiative.length) return;
+      initTurn = (initTurn + 1) % initiative.length;
+      renderInitiativePanel();
+      sendInitiativeOverlay();
+    };
+    document.getElementById('init-send-btn').onclick = sendInitiativeOverlay;
+    document.getElementById('init-clear-btn').onclick = () => {
+      initiative = []; initTurn = 0; renderInitiativePanel();
+    };
+    renderInitiativePanel();
+  }, 0);
+
+  return section;
+}
+
+function sendInitiativeOverlay() {
+  if (!initiative.length) return;
+  const rows = initiative.map((e, i) =>
+    `<div style="display:flex;align-items:center;gap:12px;padding:6px 0;${i===initTurn?'color:#d4af37;font-weight:bold;':''}">
+      <span style="min-width:28px;text-align:right;font-size:0.95rem;">${e.roll}</span>
+      <span>${i===initTurn ? '▶ ' : ''}${e.name}</span>
+    </div>`
+  ).join('');
+  wsSend({
+    action: 'send-overlay',
+    title: '⚔️ Initiative Order',
+    data: rows,
+    duration: 12000
   });
 }
 
-// ── Init ───────────────────────────────────────────────────
-document.getElementById('blackout-btn').onclick = () => api('/api/blackout');
-fetchLayout().then(render);
-connect();
+// ── Quick Actions bar (clear/stop audio) ──────────────────
+function buildQuickBar() {
+  const bar = document.createElement('div');
+  bar.style.cssText = 'display:flex;gap:8px;padding:10px 16px;background:var(--bg2);border-bottom:1px solid var(--border);';
+
+  const clearBtn = document.createElement('button');
+  clearBtn.textContent = '🧹 Clear Popups';
+  clearBtn.style.cssText = 'flex:1;padding:10px;background:var(--orange);border:1px solid var(--orange-bright);border-radius:var(--radius);color:#f0c080;font-size:0.85rem;font-weight:600;cursor:pointer;';
+  clearBtn.onclick = () => wsSend({ action: 'clear' });
+
+  const stopBtn = document.createElement('button');
+  stopBtn.textContent = '⏹ Stop Audio';
+  stopBtn.style.cssText = 'flex:1;padding:10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-dim);font-size:0.85rem;font-weight:600;cursor:pointer;';
+  stopBtn.onclick = () => wsSend({ action: 'stop-audio' });
+
+  bar.appendChild(clearBtn);
+  bar.appendChild(stopBtn);
+  return bar;
+}
+
+// ── Boot ───────────────────────────────────────────────────
+document.getElementById('blackout-btn').onclick = () => wsSend({ action: 'blackout' });
+
+(async () => {
+  await loadScenes();
+  contentEl.appendChild(buildQuickBar());
+  contentEl.appendChild(buildInitiativeSection());
+  renderScenes();
+  await renderAudio();
+  connect();
+})();
