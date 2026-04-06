@@ -45,6 +45,8 @@ label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; col
 .init-add input { margin-bottom: 0; }
 .init-add input[type="text"] { flex: 2; }
 .init-add input[type="number"] { flex: 1; }
+#section-initiative .btn-row .btn { font-size: 0.73rem; letter-spacing: 0; padding: 0.5rem 0.4rem; }
+#section-initiative .init-add .btn-small { min-width: 90px; }
 #image-preview { margin-bottom: 0.75rem; text-align: center; }
 #image-preview img { max-width: 100%; max-height: 200px; border-radius: 4px; border: 1px solid #30363d; }
 
