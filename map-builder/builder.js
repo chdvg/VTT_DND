@@ -858,7 +858,7 @@ document.getElementById('save-confirm-btn').addEventListener('click', async () =
       // Find or create area group
       let group = scenes.find(s => s.label.toLowerCase() === area.toLowerCase());
       if (!group) {
-        group = { id: newId, label: area, views: [] };
+        group = { id: newId, label: area, tab: area, views: [] };
         scenes.push(group);
       }
       group.views.push({

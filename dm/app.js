@@ -856,7 +856,7 @@ function addViewRow() {
 function editScene(sceneIdx) {
   var scene = sceneData[sceneIdx];
   sbEditingId = scene.id;
-  document.getElementById('sb-tab').value   = scene.tab   || '';
+  document.getElementById('sb-tab').value   = scene.tab || scene.label || '';
   document.getElementById('sb-scene-label').value = scene.label || '';
   // Deep-copy views so edits don't affect original until saved
   sbViews = scene.views.map(function (v) {
@@ -1063,14 +1063,118 @@ document.querySelectorAll('.btn-dice').forEach(function (btn) {
 // ============================================================
 // Initiative Tracker
 // ============================================================
-document.getElementById('init-add-btn').addEventListener('click', function () {
-  var name = document.getElementById('init-name').value.trim();
-  var roll = parseInt(document.getElementById('init-roll').value);
-  if (!name || isNaN(roll)) return;
+
+// ── Persistent player roster ──────────────────────────────────
+var playerRoster = [];   // [{ name }]
+
+function loadPlayerRoster() {
+  fetch('/api/players')
+    .then(function (r) { return r.json(); })
+    .then(function (d) { playerRoster = d.players || []; renderPlayerRoster(); })
+    .catch(function () {});
+}
+
+function savePlayerRoster() {
+  fetch('/api/players', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ players: playerRoster })
+  }).catch(function () {});
+}
+
+function renderPlayerRoster() {
+  var list = document.getElementById('init-player-list');
+  if (!list) return;
+  list.innerHTML = '';
+  playerRoster.forEach(function (p, idx) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-bottom:0.25rem;';
+
+    var lbl = document.createElement('span');
+    lbl.textContent = p.name;
+    lbl.style.cssText = 'flex:1;font-size:0.85rem;color:#e6e6e6;';
+    row.appendChild(lbl);
+
+    // Roll input (per-player, cleared each round)
+    var rollInput = document.createElement('input');
+    rollInput.type = 'number';
+    rollInput.placeholder = 'Roll';
+    rollInput.min = 1; rollInput.max = 30;
+    rollInput.style.cssText = 'width:54px;padding:0.2rem 0.35rem;font-size:0.8rem;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6e6e6;';
+    rollInput.dataset.playerIdx = idx;
+    row.appendChild(rollInput);
+
+    // Add this single player to round
+    var addBtn = document.createElement('button');
+    addBtn.textContent = '→';
+    addBtn.title = 'Add to round';
+    addBtn.className = 'btn btn-small btn-secondary';
+    addBtn.style.padding = '0.18rem 0.5rem';
+    addBtn.onclick = (function (name, input) {
+      return function () {
+        var roll = parseInt(input.value);
+        if (isNaN(roll)) { input.focus(); return; }
+        addToInitiative(name, roll);
+        input.value = '';
+      };
+    })(p.name, rollInput);
+    row.appendChild(addBtn);
+
+    // Remove from roster
+    var delBtn = document.createElement('button');
+    delBtn.textContent = '✕';
+    delBtn.title = 'Remove from roster';
+    delBtn.className = 'btn btn-small btn-warning';
+    delBtn.style.padding = '0.18rem 0.4rem';
+    delBtn.onclick = (function (i) {
+      return function () {
+        playerRoster.splice(i, 1);
+        savePlayerRoster();
+        renderPlayerRoster();
+      };
+    })(idx);
+    row.appendChild(delBtn);
+
+    list.appendChild(row);
+  });
+}
+
+document.getElementById('init-player-add-btn').addEventListener('click', function () {
+  var name = document.getElementById('init-player-name').value.trim();
+  if (!name) return;
+  playerRoster.push({ name: name });
+  savePlayerRoster();
+  renderPlayerRoster();
+  document.getElementById('init-player-name').value = '';
+});
+
+document.getElementById('init-add-all-btn').addEventListener('click', function () {
+  // For each player that has a roll filled in, add them to the round
+  var inputs = document.querySelectorAll('#init-player-list input[type=number]');
+  var added = 0;
+  inputs.forEach(function (input, idx) {
+    var roll = parseInt(input.value);
+    if (isNaN(roll)) return;
+    addToInitiative(playerRoster[idx].name, roll);
+    input.value = '';
+    added++;
+  });
+  if (!added) alert('Enter roll values for the players you want to add.');
+});
+
+// ── Round management ──────────────────────────────────────────
+function addToInitiative(name, roll) {
   initiative.push({ name: name, roll: roll });
   initiative.sort(function (a, b) { return b.roll - a.roll; });
   currentTurn = 0;
   renderInitiative();
+}
+
+document.getElementById('init-add-btn').addEventListener('click', function () {
+  var name = document.getElementById('init-name').value.trim();
+  var roll = parseInt(document.getElementById('init-roll').value);
+  if (!name || isNaN(roll)) return;
+  addToInitiative(name, roll);
   document.getElementById('init-name').value = '';
   document.getElementById('init-roll').value = '';
 });
@@ -1147,3 +1251,4 @@ connectWebSocket();
 renderScenesPanel();
 renderAudioPanel();
 initSceneBuilder();
+loadPlayerRoster();
