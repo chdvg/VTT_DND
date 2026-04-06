@@ -13,6 +13,7 @@ var fogGrid       = null;
 var fogRows       = 20;
 var fogCols       = 20;
 var fogMapUrl     = null;
+var activeFogKey  = null;
 
 // Scene Builder working state
 var sbViews       = [];   // array of { label, image, audio }
@@ -401,7 +402,14 @@ function renderScenesPanel() {
           btn.appendChild(tImg);
         }
         btn.appendChild(document.createTextNode(tab));
-        btn.onclick = function () { currentTab = tab; renderScenesPanel(); };
+        btn.onclick = function () {
+          if (activeFogKey) {
+            wsSend({ action: 'update-fog', fogKey: activeFogKey, fogGrid: null });
+            activeFogKey = null;
+          }
+          currentTab = tab;
+          renderScenesPanel();
+        };
         tabBar.appendChild(btn);
       });
       mapList.appendChild(tabBar);
@@ -421,6 +429,7 @@ function showSceneView(sceneIdx, viewIdx) {
   var view   = scene.views[viewIdx];
   var fogKey = view.id || (sceneIdx + '-' + viewIdx);
   var useFog = view.fog === true;
+  activeFogKey = useFog ? fogKey : null;
 
   // Stop any playing audio before switching scene view
   wsSend({ action: 'stop-audio' });
