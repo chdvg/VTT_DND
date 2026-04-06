@@ -53,8 +53,8 @@ function connectWebSocket() {
       clientCount.textContent = msg.count + ' connected';
     }
     if (msg.type === 'BLACKOUT') {
-      isBlackout = true;
-      blackoutBtn.classList.add('active');
+      isBlackout = msg.active;
+      blackoutBtn.classList.toggle('active', !!msg.active);
     }
   };
   ws.onclose = function () {
@@ -1114,7 +1114,7 @@ function renderPlayerRoster() {
       return function () {
         var roll = parseInt(input.value);
         if (isNaN(roll)) { input.focus(); return; }
-        addToInitiative(name, roll);
+        addToInitiative(name, roll, true);
         input.value = '';
       };
     })(p.name, rollInput);
@@ -1155,7 +1155,7 @@ document.getElementById('init-add-all-btn').addEventListener('click', function (
   inputs.forEach(function (input, idx) {
     var roll = parseInt(input.value);
     if (isNaN(roll)) return;
-    addToInitiative(playerRoster[idx].name, roll);
+    addToInitiative(playerRoster[idx].name, roll, true);
     input.value = '';
     added++;
   });
@@ -1163,10 +1163,29 @@ document.getElementById('init-add-all-btn').addEventListener('click', function (
 });
 
 // ── Round management ──────────────────────────────────────────
-function addToInitiative(name, roll) {
-  initiative.push({ name: name, roll: roll });
+var INIT_STORAGE_KEY = 'dm-initiative';
+
+function saveInitiative() {
+  try {
+    localStorage.setItem(INIT_STORAGE_KEY, JSON.stringify({ initiative: initiative, currentTurn: currentTurn }));
+  } catch (e) {}
+}
+
+function loadInitiative() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(INIT_STORAGE_KEY));
+    if (saved && Array.isArray(saved.initiative)) {
+      initiative   = saved.initiative;
+      currentTurn  = saved.currentTurn || 0;
+    }
+  } catch (e) {}
+}
+
+function addToInitiative(name, roll, isPlayer) {
+  initiative.push({ name: name, roll: roll, isPlayer: !!isPlayer });
   initiative.sort(function (a, b) { return b.roll - a.roll; });
   currentTurn = 0;
+  saveInitiative();
   renderInitiative();
 }
 
@@ -1180,25 +1199,41 @@ document.getElementById('init-add-btn').addEventListener('click', function () {
 });
 
 document.getElementById('init-clear-btn').addEventListener('click', function () {
-  initiative = []; currentTurn = 0; renderInitiative();
+  // Remove only mobs — keep players in the round
+  initiative = initiative.filter(function (e) { return e.isPlayer; });
+  currentTurn = 0;
+  saveInitiative();
+  renderInitiative();
 });
 
-document.getElementById('init-next-btn').addEventListener('click', function () {
+document.getElementById('init-reset-btn').addEventListener('click', function () {
+  if (!confirm('Hard reset — remove ALL entries including players?')) return;
+  initiative = []; currentTurn = 0;
+  saveInitiative();
+  renderInitiative();
+});
+
+function nextInitiativeTurn() {
   if (!initiative.length) return;
   currentTurn = (currentTurn + 1) % initiative.length;
+  saveInitiative();
   renderInitiative();
   sendInitiative();
-});
+}
 
+document.getElementById('init-next-btn').addEventListener('click', nextInitiativeTurn);
 document.getElementById('init-send-btn').addEventListener('click', sendInitiative);
+document.getElementById('qa-init-send-btn').addEventListener('click', sendInitiative);
+document.getElementById('qa-init-next-btn').addEventListener('click', nextInitiativeTurn);
 
 function renderInitiative() {
   var html = '';
   for (var i = 0; i < initiative.length; i++) {
     var active = i === currentTurn ? ' active-turn' : '';
+    var playerTag = initiative[i].isPlayer ? ' <span style="font-size:0.65rem;color:#888;border:1px solid #444;border-radius:2px;padding:0 3px;vertical-align:middle;">PC</span>' : '';
     html += '<div class="init-entry' + active + '">' +
       '<span class="init-order">' + initiative[i].roll + '</span>' +
-      '<span class="init-entry-name">' + initiative[i].name + '</span>' +
+      '<span class="init-entry-name">' + initiative[i].name + playerTag + '</span>' +
       '<button class="init-remove" onclick="removeInit(' + i + ')">&#x2715;</button></div>';
   }
   initList.innerHTML = html;
@@ -1207,6 +1242,7 @@ function renderInitiative() {
 window.removeInit = function (i) {
   initiative.splice(i, 1);
   if (currentTurn >= initiative.length) currentTurn = 0;
+  saveInitiative();
   renderInitiative();
 };
 
@@ -1250,3 +1286,5 @@ renderScenesPanel();
 renderAudioPanel();
 initSceneBuilder();
 loadPlayerRoster();
+loadInitiative();
+renderInitiative();
