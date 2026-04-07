@@ -98,11 +98,43 @@ sendTextBtn.addEventListener('click', function () {
 });
 
 // ============================================================
+// Send Image — populate map library dropdown
+// ============================================================
+(function loadMapDropdown() {
+  fetch('/api/maps')
+    .then(function (r) { return r.json(); })
+    .catch(function () { return { maps: [] }; })
+    .then(function (data) {
+      var sel = document.getElementById('image-map-select');
+      if (!sel) return;
+      (data.maps || []).forEach(function (url) {
+        var label = url.split('/').pop().replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ');
+        var opt = document.createElement('option');
+        opt.value = url;
+        opt.textContent = label;
+        sel.appendChild(opt);
+      });
+    });
+})();
+
+document.getElementById('image-map-select').addEventListener('change', function () {
+  var url = this.value;
+  if (!url) return;
+  document.getElementById('image-url').value = url;
+  imagePreview.innerHTML = '<img src="' + url + '" />';
+  // Clear file picker so it doesn't conflict
+  imageFile.value = '';
+});
+
+// ============================================================
 // Send Image — auto-fill URL from file picker
 // ============================================================
 imageFile.addEventListener('change', function (e) {
   var file = e.target.files[0];
   if (!file) return;
+  // Clear dropdown so it doesn't conflict
+  var sel = document.getElementById('image-map-select');
+  if (sel) sel.value = '';
   document.getElementById('image-url').value = '/assets/maps/' + file.name;
   imagePreview.innerHTML = '<img src="' + URL.createObjectURL(file) + '" />';
 });
