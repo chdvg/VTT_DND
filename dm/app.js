@@ -15,6 +15,19 @@ var fogCols       = 20;
 var fogMapUrl     = null;
 var activeFogKey  = null;
 
+// Token overlay state
+var tokenState         = {};     // mapKey -> array of {id,x,y,color,label}
+var activeTokenMapKey  = null;
+var selectedTokenColor = 'red';
+var selectedPlayerName = null;
+var activeTokenMapUrl  = null;
+
+// Draw / Annotation state
+var drawStrokes          = {};    // mapKey -> [{color, width, erase, points:[{x,y}]}]
+var activeDrawMapKey     = null;
+var drawTool             = { color: '#ef4444', width: 0.006, erase: false };
+var drawControlsExpanded = false;
+
 // Scene Builder working state
 var sbViews       = [];   // array of { label, image, audio }
 var sbAudioList   = [];   // populated from /api/audio
@@ -184,8 +197,21 @@ function renderSceneGroup(container, scene, sIdx) {
   var sceneDiv = document.createElement('div');
   sceneDiv.className = 'scene-group';
 
+  // Persist collapsed state per scene id across re-renders
+  var collapseKey = 'scene-collapsed-' + (scene.id || sIdx);
+  var isCollapsed = sessionStorage.getItem(collapseKey) === '1';
+
   var titleRow = document.createElement('div');
   titleRow.className = 'scene-title';
+  titleRow.style.cursor = 'pointer';
+  titleRow.title = 'Click to collapse / expand';
+
+  // Chevron
+  var chev = document.createElement('span');
+  chev.style.cssText = 'font-size:0.6rem;color:#888;margin-right:4px;display:inline-block;transition:transform 0.15s;flex-shrink:0;';
+  chev.textContent = '▾';
+  if (isCollapsed) chev.style.transform = 'rotate(-90deg)';
+  titleRow.appendChild(chev);
   var firstViewImg = scene.views && scene.views.length ? scene.views[0].image : '';
   if (firstViewImg) {
     var sceneThumb = document.createElement('img');
@@ -222,6 +248,19 @@ function renderSceneGroup(container, scene, sIdx) {
   titleRow.appendChild(editBtn);
   titleRow.appendChild(delBtn);
   sceneDiv.appendChild(titleRow);
+
+  // Views wrapper — collapsible
+  var viewsWrap = document.createElement('div');
+  viewsWrap.style.display = isCollapsed ? 'none' : '';
+
+  // Toggle on title click (but not on action buttons)
+  titleRow.addEventListener('click', function (e) {
+    if (e.target.closest('.btn')) return;
+    var nowCollapsed = viewsWrap.style.display !== 'none';
+    viewsWrap.style.display = nowCollapsed ? 'none' : '';
+    chev.style.transform = nowCollapsed ? 'rotate(-90deg)' : '';
+    sessionStorage.setItem(collapseKey, nowCollapsed ? '1' : '0');
+  });
 
   scene.views.forEach(function (view, vIdx) {
     // In search mode, views may carry _origIdx (their position in the real scene.views array)
@@ -351,9 +390,10 @@ function renderSceneGroup(container, scene, sIdx) {
     }
 
     row.appendChild(rowBtns);
-    sceneDiv.appendChild(row);
+    viewsWrap.appendChild(row);
   });
 
+  sceneDiv.appendChild(viewsWrap);
   container.appendChild(sceneDiv);
 }
 
@@ -448,6 +488,13 @@ function renderScenesPanel() {
             activeFogKey = null;
           }
           document.getElementById('fog-controls-container').innerHTML = '';
+          document.getElementById('token-controls-container').innerHTML = '';
+          var dcEl = document.getElementById('draw-controls-container');
+          if (dcEl) dcEl.innerHTML = '';
+          var mcg = document.getElementById('map-control-grid');
+          if (mcg) mcg.style.display = 'none';
+          var mct = document.getElementById('map-control-title');
+          if (mct) mct.textContent = 'no map active';
           currentTab = tab;
           renderScenesPanel();
         };
@@ -481,8 +528,8 @@ function showSceneView(sceneIdx, viewIdx) {
   // Stop any playing audio before switching scene view
   wsSend({ action: 'stop-audio' });
 
-  // Pass fogKey so player can correlate fog updates
-  wsSend({ action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fit: view.fit || 'contain', fogKey: useFog ? fogKey : null });
+  // Pass fogKey (fog) and mapKey (tokens) so player can correlate overlays
+  wsSend({ action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fit: view.fit || 'contain', fogKey: useFog ? fogKey : null, mapKey: fogKey });
 
   // Only show fog controls if this view has fog enabled
   var fogContainer = document.getElementById('fog-controls-container');
@@ -493,6 +540,260 @@ function showSceneView(sceneIdx, viewIdx) {
   } else {
     fogContainer.innerHTML = '';
   }
+
+  // Always show token controls for the active map
+  renderTokenControls(view.image, fogKey);
+  // Immediately sync tokens for this map (may be empty, which clears any old tokens on players)
+  sendTokenUpdate(fogKey);
+
+  // Draw / annotation controls — reset collapsed state on new map
+  if (activeDrawMapKey !== fogKey) drawControlsExpanded = false;
+  renderDrawControls(view.image, fogKey);
+  sendDrawUpdate(fogKey);
+
+  // Show the Map Control panel and label it with the view name
+  var mapControlGrid  = document.getElementById('map-control-grid');
+  var mapControlTitle = document.getElementById('map-control-title');
+  if (mapControlGrid)  { mapControlGrid.style.display = 'grid'; }
+  if (mapControlTitle) { mapControlTitle.textContent = view.label || 'Active Map'; }
+}
+
+// ============================================================
+// Draw / Annotation Controls
+// ============================================================
+function sendDrawUpdate(mapKey) {
+  wsSend({ action: 'update-drawing', strokes: drawStrokes[mapKey] || [], mapKey: mapKey });
+}
+
+function renderDrawControls(mapUrl, mapKey) {
+  activeDrawMapKey = mapKey;
+  if (!drawStrokes[mapKey]) drawStrokes[mapKey] = [];
+
+  var container = document.getElementById('draw-controls-container');
+  if (!container) return;
+  container.innerHTML = '';
+
+  // Collapsible header
+  var strokeCount = (drawStrokes[mapKey] || []).length;
+  var toggleHeader = document.createElement('div');
+  toggleHeader.style.cssText = 'display:flex;align-items:center;gap:0.5rem;cursor:pointer;padding:0.5rem 0;color:#aaa;font-size:0.8rem;user-select:none;border-top:1px solid #21262d;';
+  var chevron = drawControlsExpanded ? '▼' : '▶';
+  var strokeBadge = strokeCount ? ' <span style="color:#facc15;font-size:0.7rem;margin-left:0.25rem;">(' + strokeCount + ' stroke' + (strokeCount !== 1 ? 's' : '') + ')</span>' : '';
+  toggleHeader.innerHTML = '<span style="font-size:0.65rem">' + chevron + '</span> ✏️ Annotations — draw on map' + strokeBadge;
+  toggleHeader.onclick = function () {
+    drawControlsExpanded = !drawControlsExpanded;
+    renderDrawControls(mapUrl, mapKey);
+  };
+  container.appendChild(toggleHeader);
+  if (!drawControlsExpanded) return;
+
+  // ── Tool row ─────────────────────────────────────────────────
+  var toolRow = document.createElement('div');
+  toolRow.style.cssText = 'display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.5rem;align-items:center;';
+
+  var colorOpts = [
+    { color: '#ef4444', label: '🔴 Red'    },
+    { color: '#facc15', label: '🟡 Yellow' },
+    { color: '#ffffff', label: '⚪ White'  },
+    { color: '#38bdf8', label: '🔵 Cyan'   },
+    { color: '#4ade80', label: '🟢 Green'  },
+  ];
+  colorOpts.forEach(function (opt) {
+    var btn = document.createElement('button');
+    btn.textContent = opt.label;
+    var isActive = !drawTool.erase && drawTool.color === opt.color;
+    btn.style.cssText = [
+      'flex:none', 'white-space:nowrap', 'padding:0.25rem 0.65rem',
+      'font-size:0.78rem', 'font-weight:bold', 'border-radius:4px',
+      'border:2px solid ' + opt.color, 'cursor:pointer', 'color:#fff',
+      'background:' + (isActive ? opt.color : 'rgba(0,0,0,0.4)'),
+      isActive ? 'box-shadow:0 0 7px ' + opt.color : ''
+    ].join(';') + ';';
+    btn.onclick = function () { drawTool.color = opt.color; drawTool.erase = false; renderDrawControls(mapUrl, mapKey); };
+    toolRow.appendChild(btn);
+  });
+
+  // Eraser
+  var eraserBtn = document.createElement('button');
+  eraserBtn.textContent = '🧹 Erase';
+  var eraserActive = drawTool.erase;
+  eraserBtn.style.cssText = [
+    'flex:none', 'white-space:nowrap', 'padding:0.25rem 0.65rem',
+    'font-size:0.78rem', 'font-weight:bold', 'border-radius:4px',
+    'border:2px solid #888', 'cursor:pointer', 'color:#fff',
+    'background:' + (eraserActive ? '#555' : 'rgba(0,0,0,0.4)'),
+    eraserActive ? 'box-shadow:0 0 7px #aaa' : ''
+  ].join(';') + ';';
+  eraserBtn.onclick = function () { drawTool.erase = true; renderDrawControls(mapUrl, mapKey); };
+  toolRow.appendChild(eraserBtn);
+
+  var sep = document.createElement('span');
+  sep.style.cssText = 'color:#444;margin:0 0.25rem;';
+  sep.textContent = '|';
+  toolRow.appendChild(sep);
+
+  // Width buttons
+  [{ label: '— Thin', val: 0.003 }, { label: '— Med', val: 0.007 }, { label: '— Thick', val: 0.015 }].forEach(function (w) {
+    var btn = document.createElement('button');
+    btn.textContent = w.label;
+    var isActive = drawTool.width === w.val;
+    btn.style.cssText = [
+      'flex:none', 'padding:0.25rem 0.55rem', 'font-size:0.78rem',
+      'border-radius:4px', 'cursor:pointer', 'color:#ccc',
+      'border:1px solid ' + (isActive ? '#aaa' : '#555'),
+      'background:' + (isActive ? '#374151' : 'transparent')
+    ].join(';') + ';';
+    btn.onclick = function () { drawTool.width = w.val; renderDrawControls(mapUrl, mapKey); };
+    toolRow.appendChild(btn);
+  });
+
+  // Undo + Clear
+  var undoBtn = document.createElement('button');
+  undoBtn.textContent = '↩ Undo';
+  undoBtn.className = 'btn btn-secondary btn-small';
+  undoBtn.style.cssText = 'margin-left:auto;flex:none;white-space:nowrap;';
+  undoBtn.onclick = function () {
+    if (drawStrokes[mapKey] && drawStrokes[mapKey].length) {
+      drawStrokes[mapKey].pop();
+      sendDrawUpdate(mapKey);
+      renderDrawControls(mapUrl, mapKey);
+    }
+  };
+  toolRow.appendChild(undoBtn);
+
+  var clearBtn = document.createElement('button');
+  clearBtn.textContent = '🗑 Clear';
+  clearBtn.className = 'btn btn-danger btn-small';
+  clearBtn.style.cssText = 'flex:none;white-space:nowrap;';
+  clearBtn.onclick = function () {
+    drawStrokes[mapKey] = [];
+    sendDrawUpdate(mapKey);
+    renderDrawControls(mapUrl, mapKey);
+  };
+  toolRow.appendChild(clearBtn);
+  container.appendChild(toolRow);
+
+  // ── Map preview + drawing canvas ─────────────────────────────
+  var mapWrap = document.createElement('div');
+  mapWrap.style.cssText = 'position:relative;display:inline-block;max-width:100%;border:1px solid #444;';
+
+  var mapImg = document.createElement('img');
+  mapImg.src = mapUrl;
+  mapImg.style.cssText = 'display:block;max-width:100%;max-height:260px;object-fit:contain;user-select:none;pointer-events:none;';
+  mapWrap.appendChild(mapImg);
+
+  var drawCanvas = document.createElement('canvas');
+  drawCanvas.style.cssText = 'position:absolute;inset:0;cursor:crosshair;';
+  mapWrap.appendChild(drawCanvas);
+  container.appendChild(mapWrap);
+
+  var ctx = drawCanvas.getContext('2d');
+
+  function getRect() {
+    var cW = mapWrap.offsetWidth, cH = mapWrap.offsetHeight;
+    var iW = mapImg.naturalWidth,  iH = mapImg.naturalHeight;
+    if (!iW || !iH) return { offX: 0, offY: 0, rendW: cW, rendH: cH };
+    var scale = Math.min(cW / iW, cH / iH);
+    var rendW = iW * scale, rendH = iH * scale;
+    return { offX: (cW - rendW) / 2, offY: (cH - rendH) / 2, rendW: rendW, rendH: rendH };
+  }
+
+  function canvasToNorm(px, py) {
+    var r = getRect();
+    return { x: (px - r.offX) / r.rendW, y: (py - r.offY) / r.rendH };
+  }
+
+  function normToCanvas(nx, ny) {
+    var r = getRect();
+    return { x: r.offX + nx * r.rendW, y: r.offY + ny * r.rendH };
+  }
+
+  function redrawCanvas() {
+    if (!drawCanvas.width || !drawCanvas.height) return;
+    ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    var strokes = drawStrokes[mapKey] || [];
+    var r = getRect();
+    strokes.forEach(function (stroke) {
+      if (!stroke.points || stroke.points.length < 2) return;
+      ctx.save();
+      ctx.strokeStyle = stroke.erase ? 'rgba(0,0,0,1)' : stroke.color;
+      ctx.lineWidth   = Math.max(2, stroke.width * Math.min(r.rendW, r.rendH));
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.globalCompositeOperation = stroke.erase ? 'destination-out' : 'source-over';
+      ctx.beginPath();
+      var p0 = normToCanvas(stroke.points[0].x, stroke.points[0].y);
+      ctx.moveTo(p0.x, p0.y);
+      for (var i = 1; i < stroke.points.length; i++) {
+        var pt = normToCanvas(stroke.points[i].x, stroke.points[i].y);
+        ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
+
+  function sizeCanvas() {
+    drawCanvas.width  = mapWrap.offsetWidth;
+    drawCanvas.height = mapWrap.offsetHeight;
+    redrawCanvas();
+  }
+  mapImg.onload = sizeCanvas;
+  if (mapImg.complete && mapImg.naturalWidth) setTimeout(sizeCanvas, 10);
+
+  // ── Mouse drawing ──────────────────────────────────────────
+  var drawing = false;
+  var currentStroke = null;
+
+  function getMousePos(e) {
+    var rect = drawCanvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  drawCanvas.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    drawing = true;
+    var pos = getMousePos(e);
+    currentStroke = { color: drawTool.color, width: drawTool.width, erase: drawTool.erase, points: [canvasToNorm(pos.x, pos.y)] };
+  });
+
+  drawCanvas.addEventListener('mousemove', function (e) {
+    if (!drawing || !currentStroke) return;
+    var pos = getMousePos(e);
+    currentStroke.points.push(canvasToNorm(pos.x, pos.y));
+    // Live preview: replay all saved strokes then draw in-progress stroke on top
+    redrawCanvas();
+    var r = getRect();
+    ctx.save();
+    ctx.strokeStyle = currentStroke.erase ? 'rgba(0,0,0,1)' : currentStroke.color;
+    ctx.lineWidth   = Math.max(2, currentStroke.width * Math.min(r.rendW, r.rendH));
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.globalCompositeOperation = currentStroke.erase ? 'destination-out' : 'source-over';
+    ctx.beginPath();
+    var pts = currentStroke.points;
+    var p0 = normToCanvas(pts[0].x, pts[0].y);
+    ctx.moveTo(p0.x, p0.y);
+    for (var i = 1; i < pts.length; i++) {
+      var pt = normToCanvas(pts[i].x, pts[i].y);
+      ctx.lineTo(pt.x, pt.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  function finishStroke() {
+    if (!drawing || !currentStroke) return;
+    drawing = false;
+    if (currentStroke.points.length > 1) {
+      if (!drawStrokes[mapKey]) drawStrokes[mapKey] = [];
+      drawStrokes[mapKey].push(currentStroke);
+      sendDrawUpdate(mapKey);
+    }
+    currentStroke = null;
+    redrawCanvas();
+  }
+  drawCanvas.addEventListener('mouseup',    finishStroke);
+  drawCanvas.addEventListener('mouseleave', finishStroke);
 }
 
 // ============================================================
@@ -735,6 +1036,257 @@ function sendFogUpdate(fogKey) {
     wsSend({ action: 'update-fog', mapUrl: fogMapUrl, fogGrid: fogGrid, fogKey: fogKey });
   }
 }
+
+function sendFogUpdate(fogKey) {
+  if (ws && ws.readyState === 1 && fogMapUrl) {
+    wsSend({ action: 'update-fog', mapUrl: fogMapUrl, fogGrid: fogGrid, fogKey: fogKey });
+  }
+}
+
+// ============================================================
+// Mob Token Overlay
+// ============================================================
+function tokenCssColor(color) {
+  return color === 'red' ? '#dc2626'
+       : color === 'blue' ? '#2563eb'
+       : color === 'green' ? '#16a34a'
+       : '#ca8a04';
+}
+
+function sendTokenUpdate(mapKey) {
+  wsSend({ action: 'update-tokens', tokens: tokenState[mapKey] || [], mapKey: mapKey });
+}
+
+function renderTokenControls(mapUrl, mapKey) {
+  activeTokenMapKey = mapKey;
+  activeTokenMapUrl = mapUrl;
+  if (!tokenState[mapKey]) tokenState[mapKey] = [];
+
+  var container = document.getElementById('token-controls-container');
+  container.innerHTML = '';
+
+  var title = document.createElement('div');
+  title.style.cssText = 'margin:0.75rem 0 0.4rem;font-size:0.8rem;color:#888;';
+  title.textContent = 'Mob Tokens — click map to place, click token to remove';
+  container.appendChild(title);
+
+  // Color picker buttons
+  var colorRow = document.createElement('div');
+  colorRow.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap;';
+  [
+    { color: 'red',    label: '🔴 Enemy'   },
+    { color: 'blue',   label: '🔵 Friend'  },
+    { color: 'yellow', label: '🟡 Unknown' },
+    { color: 'green',  label: '🟢 Player'  }
+  ].forEach(function (opt) {
+    var btn = document.createElement('button');
+    btn.textContent = opt.label;
+    var bg = tokenCssColor(opt.color);
+    var isActive = selectedTokenColor === opt.color;
+    btn.style.cssText = [
+      'flex:none',
+      'white-space:nowrap',
+      'padding:0.35rem 0.85rem',
+      'font-size:0.8rem',
+      'font-weight:bold',
+      'border-radius:4px',
+      'border:2px solid ' + bg,
+      'cursor:pointer',
+      'color:#fff',
+      'background:' + (isActive ? bg : 'rgba(0,0,0,0.4)'),
+      'letter-spacing:0.3px',
+      'transition:background 0.15s',
+      isActive ? 'box-shadow:0 0 8px ' + bg : ''
+    ].join(';') + ';';
+    btn.onclick = function () {
+      selectedTokenColor = opt.color;
+      selectedPlayerName = null;
+      renderTokenControls(mapUrl, mapKey);
+    };
+    colorRow.appendChild(btn);
+  });
+  container.appendChild(colorRow);
+
+  // Player quick-place buttons (only shown when Player color is active)
+  if (selectedTokenColor === 'green' && playerRoster.length) {
+    var playerPickRow = document.createElement('div');
+    playerPickRow.style.cssText = 'display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.5rem;' +
+      'padding:0.5rem;background:#0d1117;border:1px solid #16a34a;border-radius:6px;';
+    var pickLabel = document.createElement('div');
+    pickLabel.textContent = 'Click a player then click the map:';
+    pickLabel.style.cssText = 'width:100%;font-size:0.72rem;color:#888;margin-bottom:0.3rem;';
+    playerPickRow.appendChild(pickLabel);
+    playerRoster.forEach(function (p) {
+      var pb = document.createElement('button');
+      pb.style.cssText = [
+        'flex:none',
+        'white-space:nowrap',
+        'padding:0.3rem 0.7rem',
+        'font-size:0.78rem',
+        'font-weight:bold',
+        'border-radius:4px',
+        'border:2px solid ' + (selectedPlayerName === p.name ? '#16a34a' : '#374151'),
+        'cursor:pointer',
+        'color:#fff',
+        'background:' + (selectedPlayerName === p.name ? '#16a34a' : 'rgba(0,0,0,0.4)'),
+        selectedPlayerName === p.name ? 'box-shadow:0 0 8px #16a34a' : ''
+      ].join(';') + ';';
+      pb.textContent = p.name + (p.cls ? ' · ' + p.cls : '');
+      pb.onclick = function () {
+        selectedPlayerName = (selectedPlayerName === p.name) ? null : p.name;
+        renderTokenControls(mapUrl, mapKey);
+      };
+      playerPickRow.appendChild(pb);
+    });
+    container.appendChild(playerPickRow);
+  }
+
+  // Map preview with token overlay
+  var mapWrap = document.createElement('div');
+  mapWrap.style.cssText = 'position:relative;display:inline-block;max-width:100%;' +
+    'margin-bottom:0.5rem;border:1px solid #444;cursor:crosshair;';
+
+  var mapImg = document.createElement('img');
+  mapImg.src = mapUrl;
+  mapImg.style.cssText = 'display:block;max-width:100%;max-height:200px;user-select:none;pointer-events:none;';
+  mapWrap.appendChild(mapImg);
+
+  // Token dots on the DM preview — draggable
+  var previewOverlay = document.createElement('div');
+  previewOverlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+
+  var wasDragging = false; // prevent map click after a drag
+
+  function makeDot(tok) {
+    var dot = document.createElement('div');
+    dot.style.cssText = 'position:absolute;width:20px;height:20px;border-radius:50%;' +
+      'background:' + tokenCssColor(tok.color) + ';border:2px solid rgba(255,255,255,0.9);' +
+      'box-shadow:0 1px 6px rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;' +
+      'left:' + (tok.x * 100) + '%;top:' + (tok.y * 100) + '%;transform:translate(-50%,-50%);' +
+      'cursor:move;pointer-events:auto;z-index:10;user-select:none;';
+    if (tok.label) {
+      var lbl = document.createElement('span');
+      lbl.textContent = tok.label;
+      lbl.style.cssText = 'color:#fff;font-weight:bold;font-size:8px;font-family:sans-serif;' +
+        'line-height:1;user-select:none;pointer-events:none;';
+      dot.appendChild(lbl);
+    }
+    // Stop map click from firing when clicking a dot
+    dot.addEventListener('click', function (e) { e.stopPropagation(); });
+
+    dot.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var didMove = false;
+
+      function onMove(ev) {
+        var rect = mapWrap.getBoundingClientRect();
+        tok.x = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+        tok.y = Math.max(0, Math.min(1, (ev.clientY - rect.top)  / rect.height));
+        dot.style.left = (tok.x * 100) + '%';
+        dot.style.top  = (tok.y * 100) + '%';
+        didMove = true;
+        wasDragging = true;
+        dot.style.boxShadow = '0 0 10px rgba(255,255,255,0.6)';
+      }
+
+      function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        dot.style.boxShadow = '0 1px 6px rgba(0,0,0,0.9)';
+        if (didMove) {
+          sendTokenUpdate(mapKey);
+        }
+        setTimeout(function () { wasDragging = false; }, 80);
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+    return dot;
+  }
+
+  (tokenState[mapKey] || []).forEach(function (tok) {
+    previewOverlay.appendChild(makeDot(tok));
+  });
+  mapWrap.appendChild(previewOverlay);
+
+  // Click on empty map area to place a new token
+  mapWrap.addEventListener('click', function (e) {
+    if (wasDragging) return;
+    var rect = mapWrap.getBoundingClientRect();
+    var x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    var y = Math.max(0, Math.min(1, (e.clientY - rect.top)  / rect.height));
+    var label;
+    if (selectedTokenColor === 'green') {
+      if (!selectedPlayerName) return; // must pick a player first
+      // Only one token per player — move if already exists
+      var existing = tokenState[mapKey].find(function (t) { return t.color === 'green' && t.label === selectedPlayerName; });
+      if (existing) {
+        existing.x = x; existing.y = y;
+        sendTokenUpdate(mapKey);
+        renderTokenControls(mapUrl, mapKey);
+        return;
+      }
+      label = selectedPlayerName;
+    } else {
+      var prefix = { red: 'E', blue: 'F', yellow: 'U' }[selectedTokenColor] || '?';
+      var count  = tokenState[mapKey].filter(function (t) { return t.color === selectedTokenColor; }).length + 1;
+      label = prefix + count;
+    }
+    var id = 'tok-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    tokenState[mapKey].push({ id: id, x: x, y: y, color: selectedTokenColor, label: label });
+    sendTokenUpdate(mapKey);
+    renderTokenControls(mapUrl, mapKey);
+  });
+
+  container.appendChild(mapWrap);
+
+  // Token list
+  var tokens = tokenState[mapKey] || [];
+  if (tokens.length) {
+    var listDiv = document.createElement('div');
+    listDiv.style.cssText = 'margin-top:0.25rem;';
+    tokens.forEach(function (tok, idx) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-bottom:0.25rem;';
+      var dot = document.createElement('span');
+      dot.style.cssText = 'width:14px;height:14px;border-radius:50%;flex-shrink:0;' +
+        'background:' + tokenCssColor(tok.color) + ';border:2px solid rgba(255,255,255,0.4);';
+      row.appendChild(dot);
+      var lbl = document.createElement('span');
+      lbl.style.cssText = 'flex:1;font-size:0.75rem;color:#ccc;';
+      lbl.textContent = tok.label + ' (' + tok.color + ')';
+      row.appendChild(lbl);
+      var rmBtn = document.createElement('button');
+      rmBtn.textContent = '✕';
+      rmBtn.className = 'btn btn-danger btn-small';
+      rmBtn.style.cssText = 'padding:0.1rem 0.4rem;min-width:0;flex:none;';
+      rmBtn.onclick = (function (i) {
+        return function () {
+          tokenState[mapKey].splice(i, 1);
+          sendTokenUpdate(mapKey);
+          renderTokenControls(mapUrl, mapKey);
+        };
+      })(idx);
+      row.appendChild(rmBtn);
+      listDiv.appendChild(row);
+    });
+
+    var clearAllBtn = document.createElement('button');
+    clearAllBtn.textContent = '🗑 Clear All Tokens';
+    clearAllBtn.className = 'btn btn-warning btn-small';
+    clearAllBtn.style.marginTop = '0.3rem';
+    clearAllBtn.onclick = function () {
+      tokenState[mapKey] = [];
+      sendTokenUpdate(mapKey);
+      renderTokenControls(mapUrl, mapKey);
+    };
+    listDiv.appendChild(clearAllBtn);
+    container.appendChild(listDiv);
+  }
+}
+
 
 // ============================================================
 // Scene Builder
@@ -1144,11 +1696,18 @@ function renderPlayerRoster() {
   list.innerHTML = '';
   playerRoster.forEach(function (p, idx) {
     var row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-bottom:0.25rem;';
+    row.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-bottom:0.25rem;flex-wrap:wrap;';
 
+    // Name + class label
     var lbl = document.createElement('span');
+    lbl.style.cssText = 'flex:1;font-size:0.85rem;color:#e6e6e6;min-width:80px;';
     lbl.textContent = p.name;
-    lbl.style.cssText = 'flex:1;font-size:0.85rem;color:#e6e6e6;';
+    if (p.cls) {
+      var clsTag = document.createElement('span');
+      clsTag.textContent = p.cls;
+      clsTag.style.cssText = 'margin-left:0.4rem;font-size:0.7rem;color:#d4af37;border:1px solid #d4af37;border-radius:3px;padding:0 4px;vertical-align:middle;';
+      lbl.appendChild(clsTag);
+    }
     row.appendChild(lbl);
 
     // Roll input (per-player, cleared each round)
@@ -1166,14 +1725,14 @@ function renderPlayerRoster() {
     addBtn.title = 'Add to round';
     addBtn.className = 'btn btn-small btn-secondary';
     addBtn.style.padding = '0.18rem 0.5rem';
-    addBtn.onclick = (function (name, input) {
+    addBtn.onclick = (function (player, input) {
       return function () {
         var roll = parseInt(input.value);
         if (isNaN(roll)) { input.focus(); return; }
-        addToInitiative(name, roll, true);
+        addToInitiative(player.name, roll, true, player.cls);
         input.value = '';
       };
-    })(p.name, rollInput);
+    })(p, rollInput);
     row.appendChild(addBtn);
 
     // Remove from roster
@@ -1187,6 +1746,10 @@ function renderPlayerRoster() {
         playerRoster.splice(i, 1);
         savePlayerRoster();
         renderPlayerRoster();
+        // Refresh token controls if a map is currently showing
+        if (activeTokenMapKey && activeTokenMapUrl) {
+          renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+        }
       };
     })(idx);
     row.appendChild(delBtn);
@@ -1197,11 +1760,17 @@ function renderPlayerRoster() {
 
 document.getElementById('init-player-add-btn').addEventListener('click', function () {
   var name = document.getElementById('init-player-name').value.trim();
+  var cls  = document.getElementById('init-player-class').value.trim();
   if (!name) return;
-  playerRoster.push({ name: name });
+  playerRoster.push({ name: name, cls: cls });
   savePlayerRoster();
   renderPlayerRoster();
+  // Refresh token controls if a map is active
+  if (activeTokenMapKey && activeTokenMapUrl) {
+    renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+  }
   document.getElementById('init-player-name').value = '';
+  document.getElementById('init-player-class').value = '';
 });
 
 document.getElementById('init-add-all-btn').addEventListener('click', function () {
@@ -1211,7 +1780,7 @@ document.getElementById('init-add-all-btn').addEventListener('click', function (
   inputs.forEach(function (input, idx) {
     var roll = parseInt(input.value);
     if (isNaN(roll)) return;
-    addToInitiative(playerRoster[idx].name, roll, true);
+    addToInitiative(playerRoster[idx].name, roll, true, playerRoster[idx].cls);
     input.value = '';
     added++;
   });
@@ -1222,7 +1791,7 @@ document.getElementById('init-roll-all-btn').addEventListener('click', function 
   if (!playerRoster.length) { alert('No players in roster.'); return; }
   playerRoster.forEach(function (p) {
     var roll = Math.floor(Math.random() * 20) + 1;
-    addToInitiative(p.name, roll, true);
+    addToInitiative(p.name, roll, true, p.cls);
   });
 });
 
@@ -1245,8 +1814,8 @@ function loadInitiative() {
   } catch (e) {}
 }
 
-function addToInitiative(name, roll, isPlayer) {
-  initiative.push({ name: name, roll: roll, isPlayer: !!isPlayer });
+function addToInitiative(name, roll, isPlayer, cls) {
+  initiative.push({ name: name, roll: roll, isPlayer: !!isPlayer, cls: cls || '' });
   initiative.sort(function (a, b) { return b.roll - a.roll; });
   currentTurn = 0;
   saveInitiative();
@@ -1287,17 +1856,23 @@ function nextInitiativeTurn() {
 
 document.getElementById('init-next-btn').addEventListener('click', nextInitiativeTurn);
 document.getElementById('init-send-btn').addEventListener('click', sendInitiative);
-document.getElementById('qa-init-send-btn').addEventListener('click', sendInitiative);
-document.getElementById('qa-init-next-btn').addEventListener('click', nextInitiativeTurn);
+document.getElementById('qa-init-next-btn') && document.getElementById('qa-init-next-btn').addEventListener('click', nextInitiativeTurn);
+document.getElementById('qa-init-send-btn') && document.getElementById('qa-init-send-btn').addEventListener('click', sendInitiative);
 
 function renderInitiative() {
   var html = '';
   for (var i = 0; i < initiative.length; i++) {
     var active = i === currentTurn ? ' active-turn' : '';
-    var playerTag = initiative[i].isPlayer ? ' <span style="font-size:0.65rem;color:#888;border:1px solid #444;border-radius:2px;padding:0 3px;vertical-align:middle;">PC</span>' : '';
+    var tags = '';
+    if (initiative[i].isPlayer) {
+      tags += ' <span style="font-size:0.65rem;color:#4ade80;border:1px solid #4ade80;border-radius:2px;padding:0 3px;vertical-align:middle;">PC</span>';
+    }
+    if (initiative[i].cls) {
+      tags += ' <span style="font-size:0.65rem;color:#d4af37;border:1px solid #555;border-radius:2px;padding:0 3px;vertical-align:middle;">' + initiative[i].cls + '</span>';
+    }
     html += '<div class="init-entry' + active + '">' +
       '<span class="init-order">' + initiative[i].roll + '</span>' +
-      '<span class="init-entry-name">' + initiative[i].name + playerTag + '</span>' +
+      '<span class="init-entry-name">' + initiative[i].name + tags + '</span>' +
       '<button class="init-remove" onclick="removeInit(' + i + ')">&#x2715;</button></div>';
   }
   initList.innerHTML = html;
@@ -1315,12 +1890,14 @@ function sendInitiative() {
   var html = '';
   for (var i = 0; i < initiative.length; i++) {
     var active = i === currentTurn;
+    var nameHtml = initiative[i].name;
+    if (initiative[i].cls) nameHtml += ' <span style="font-size:0.75rem;opacity:0.75;">(' + initiative[i].cls + ')</span>';
     html += '<div style="display:flex;align-items:center;gap:0.6rem;padding:0.45rem 0.7rem;margin-bottom:0.3rem;' +
       'background:' + (active ? 'rgba(212,175,55,0.18)' : 'rgba(0,0,0,0.18)') + ';border:1px solid ' +
       (active ? 'rgba(212,175,55,0.7)' : 'rgba(90,50,10,0.35)') + ';border-radius:3px;font-size:1rem;">' +
       '<span style="font-weight:bold;min-width:26px;font-size:0.95rem;">' + initiative[i].roll + '</span>' +
       '<span style="flex:1;' + (active ? 'font-weight:bold;' : '') + '">' +
-      initiative[i].name + (active ? '  ◀' : '') + '</span></div>';
+      nameHtml + (active ? '  ◀' : '') + '</span></div>';
   }
   fetch('/api/overlay', {
     method: 'POST',
@@ -1352,3 +1929,79 @@ initSceneBuilder();
 loadPlayerRoster();
 loadInitiative();
 renderInitiative();
+
+// ── Sidebar toggle + resize ───────────────────────────────────
+(function () {
+  var sidebar = document.getElementById('sidebar');
+  var btn     = document.getElementById('sidebar-toggle');
+  var handle  = document.getElementById('sidebar-resize');
+  var inner   = sidebar ? sidebar.querySelector('.sidebar-inner') : null;
+  if (!sidebar || !btn) return;
+
+  var MIN_WIDTH = 180;
+  var MAX_WIDTH = 600;
+  var lastWidth = 300;
+
+  function setWidth(w) {
+    w = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w));
+    sidebar.style.width    = w + 'px';
+    sidebar.style.minWidth = w + 'px';
+    if (inner) inner.style.width = w + 'px';
+    lastWidth = w;
+  }
+
+  // Toggle collapse/expand
+  btn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    sidebar.classList.add('animating');
+    setTimeout(function () { sidebar.classList.remove('animating'); }, 220);
+    if (sidebar.classList.contains('collapsed')) {
+      sidebar.classList.remove('collapsed');
+      sidebar.style.width    = lastWidth + 'px';
+      sidebar.style.minWidth = lastWidth + 'px';
+      if (inner) inner.style.width = lastWidth + 'px';
+      btn.textContent = '‹';
+    } else {
+      sidebar.classList.add('collapsed');
+      btn.textContent = '›';
+    }
+  });
+
+  // Section collapse/expand
+  document.querySelectorAll('.sb-section-hdr').forEach(function (hdr) {
+    hdr.addEventListener('click', function (e) {
+      if (e.target.closest('.btn')) return;
+      hdr.closest('.sb-section').classList.toggle('collapsed');
+    });
+  });
+
+  // Drag-to-resize
+  if (!handle) return;
+  var resizing = false;
+  var startX   = 0;
+  var startW   = 0;
+
+  handle.addEventListener('mousedown', function (e) {
+    if (sidebar.classList.contains('collapsed')) return;
+    e.preventDefault();
+    resizing = true;
+    startX   = e.clientX;
+    startW   = sidebar.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor     = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', function (e) {
+    if (!resizing) return;
+    setWidth(startW + (e.clientX - startX));
+  });
+
+  document.addEventListener('mouseup', function () {
+    if (!resizing) return;
+    resizing = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor     = '';
+    document.body.style.userSelect = '';
+  });
+}());

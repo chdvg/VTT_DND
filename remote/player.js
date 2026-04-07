@@ -13,6 +13,9 @@ var pendingAudio   = null;   // queued until tap-overlay is dismissed
 var audioUnlocked  = false;
 var currentFogKey  = null;
 var fogStates      = {};
+var currentTokens  = [];
+var currentDrawing = [];
+var currentMapKey  = null;
 
 // Dismiss the tap-overlay on first click/touch, then play any queued audio
 document.addEventListener('click', function () {
@@ -37,13 +40,23 @@ function showImage(imageUrl, fogKey, fit) {
     sceneEl.appendChild(img);
     sceneEl.classList.remove('fading');
     currentFogKey = fogKey || null;
-    if (fogKey && fogStates[fogKey]) {
-      // Wait for image to load so we know its natural dimensions
-      if (img.complete && img.naturalWidth) {
+
+    function afterLoad() {
+      if (fogKey && fogStates[fogKey]) {
         renderFogOverlay(fogStates[fogKey], img);
-      } else {
-        img.onload = function () { renderFogOverlay(fogStates[fogKey], img); };
       }
+      if (currentTokens.length) {
+        renderTokenOverlay(currentTokens);
+      }
+      if (currentDrawing.length) {
+        renderDrawOverlay(currentDrawing, img);
+      }
+    }
+
+    if (img.complete && img.naturalWidth) {
+      afterLoad();
+    } else {
+      img.onload = afterLoad;
     }
     img.src = imageUrl;
   }, 150);
@@ -103,6 +116,127 @@ function renderFogOverlay(fogGrid, imgEl) {
     }
   }
   sceneEl.appendChild(overlay);
+}
+
+// ── Token overlay ─────────────────────────────────────────────
+var TOKEN_COLORS = { red: '#dc2626', blue: '#2563eb', yellow: '#ca8a04', green: '#16a34a' };
+
+function renderTokenOverlay(tokens) {
+  var existing = sceneEl.querySelector('.token-overlay');
+  if (existing) existing.remove();
+  if (!tokens || !tokens.length) return;
+
+  var overlay = document.createElement('div');
+  overlay.className = 'token-overlay';
+  overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden;';
+
+  // Calc rendered image rect (same letterbox logic as fog)
+  var imgEl = sceneEl.querySelector('img');
+  var offX = 0, offY = 0, rendW, rendH;
+  if (imgEl && imgEl.naturalWidth && imgEl.naturalHeight) {
+    var cW = sceneEl.offsetWidth;
+    var cH = sceneEl.offsetHeight;
+    var fitMode = imgEl.style.objectFit || 'contain';
+    var scale = fitMode === 'cover'
+      ? Math.max(cW / imgEl.naturalWidth, cH / imgEl.naturalHeight)
+      : Math.min(cW / imgEl.naturalWidth, cH / imgEl.naturalHeight);
+    rendW = imgEl.naturalWidth  * scale;
+    rendH = imgEl.naturalHeight * scale;
+    offX  = (cW - rendW) / 2;
+    offY  = (cH - rendH) / 2;
+  } else {
+    rendW = sceneEl.offsetWidth;
+    rendH = sceneEl.offsetHeight;
+  }
+
+  var tokenSize = Math.round(Math.min(rendW, rendH) * 0.05);
+  tokenSize = Math.max(20, Math.min(tokenSize, 60));
+  var fontSize = Math.max(9, Math.round(tokenSize * 0.42));
+
+  tokens.forEach(function (tok) {
+    var left  = offX + tok.x * rendW;
+    var top   = offY + tok.y * rendH;
+    var color = TOKEN_COLORS[tok.color] || '#888';
+
+    var dot = document.createElement('div');
+    dot.style.cssText = [
+      'position:absolute',
+      'width:'  + tokenSize + 'px',
+      'height:' + tokenSize + 'px',
+      'border-radius:50%',
+      'background:' + color,
+      'border:3px solid rgba(255,255,255,0.85)',
+      'box-shadow:0 2px 10px rgba(0,0,0,0.9)',
+      'left:'   + left + 'px',
+      'top:'    + top  + 'px',
+      'transform:translate(-50%,-50%)',
+      'display:flex',
+      'align-items:center',
+      'justify-content:center'
+    ].join(';') + ';';
+
+    if (tok.label) {
+      var lbl = document.createElement('span');
+      lbl.textContent = tok.label;
+      lbl.style.cssText = 'color:rgba(255,255,255,0.97);font-weight:bold;font-size:' +
+        fontSize + 'px;font-family:sans-serif;user-select:none;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,0.8);';
+      dot.appendChild(lbl);
+    }
+    overlay.appendChild(dot);
+  });
+
+  sceneEl.appendChild(overlay);
+}
+
+// ── Draw overlay ──────────────────────────────────────────
+function renderDrawOverlay(strokes, imgEl) {
+  var existing = sceneEl.querySelector('.draw-overlay');
+  if (existing) existing.remove();
+  if (!strokes || !strokes.length) return;
+
+  var cW = sceneEl.offsetWidth;
+  var cH = sceneEl.offsetHeight;
+  var drawCanvas = document.createElement('canvas');
+  drawCanvas.className = 'draw-overlay';
+  drawCanvas.width  = cW;
+  drawCanvas.height = cH;
+  drawCanvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:15;';
+
+  // Letterbox rect (same math as fog/token)
+  var offX = 0, offY = 0, rendW = cW, rendH = cH;
+  var el = imgEl || sceneEl.querySelector('img');
+  if (el && el.naturalWidth && el.naturalHeight) {
+    var fitMode = el.style.objectFit || 'contain';
+    var scale = fitMode === 'cover'
+      ? Math.max(cW / el.naturalWidth, cH / el.naturalHeight)
+      : Math.min(cW / el.naturalWidth, cH / el.naturalHeight);
+    rendW = el.naturalWidth  * scale;
+    rendH = el.naturalHeight * scale;
+    offX  = (cW - rendW) / 2;
+    offY  = (cH - rendH) / 2;
+  }
+
+  var ctx = drawCanvas.getContext('2d');
+  strokes.forEach(function (stroke) {
+    if (!stroke.points || stroke.points.length < 2) return;
+    ctx.save();
+    ctx.strokeStyle = stroke.erase ? 'rgba(0,0,0,1)' : (stroke.color || '#ef4444');
+    ctx.lineWidth   = Math.max(2, (stroke.width || 0.006) * Math.min(rendW, rendH));
+    ctx.lineCap  = 'round';
+    ctx.lineJoin = 'round';
+    ctx.globalCompositeOperation = stroke.erase ? 'destination-out' : 'source-over';
+    ctx.beginPath();
+    var p0 = stroke.points[0];
+    ctx.moveTo(offX + p0.x * rendW, offY + p0.y * rendH);
+    for (var i = 1; i < stroke.points.length; i++) {
+      var p = stroke.points[i];
+      ctx.lineTo(offX + p.x * rendW, offY + p.y * rendH);
+    }
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  sceneEl.appendChild(drawCanvas);
 }
 
 // ── Overlay popup (dice, initiative) ─────────────────────────
@@ -175,8 +309,46 @@ function handleMessage(msg) {
         if (oldFog) oldFog.remove();
         currentFogKey = msg.fogKey || null;
       }
+      // Clear tokens when switching maps
+      currentMapKey  = msg.mapKey || null;
+      currentTokens  = [];
+      currentDrawing = [];
+      var oldTok = sceneEl.querySelector('.token-overlay');
+      if (oldTok) oldTok.remove();
+      var oldDraw = sceneEl.querySelector('.draw-overlay');
+      if (oldDraw) oldDraw.remove();
       showImage(msg.image, msg.fogKey || null, msg.fit || 'contain');
       if (msg.audio) playAudio(msg.audio, msg.audioLoop !== false);
+      break;
+    case 'UPDATE_TOKENS':
+      if (msg.mapKey === currentMapKey || !currentMapKey) {
+        currentTokens = msg.tokens || [];
+        var imgEl2 = sceneEl.querySelector('img');
+        if (imgEl2 && imgEl2.naturalWidth) {
+          renderTokenOverlay(currentTokens);
+        } else if (imgEl2) {
+          var prevOnload = imgEl2.onload;
+          imgEl2.onload = function () {
+            if (prevOnload) prevOnload.call(this);
+            renderTokenOverlay(currentTokens);
+          };
+        }
+      }
+      break;
+    case 'UPDATE_DRAWING':
+      if (msg.mapKey === currentMapKey || !currentMapKey) {
+        currentDrawing = msg.strokes || [];
+        var imgElD = sceneEl.querySelector('img');
+        if (imgElD && imgElD.naturalWidth) {
+          renderDrawOverlay(currentDrawing, imgElD);
+        } else if (imgElD) {
+          var prevOnloadD = imgElD.onload;
+          imgElD.onload = function () {
+            if (prevOnloadD) prevOnloadD.call(this);
+            renderDrawOverlay(currentDrawing, imgElD);
+          };
+        }
+      }
       break;
     case 'UPDATE_FOG':
       if (msg.fogKey) {

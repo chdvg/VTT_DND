@@ -114,6 +114,10 @@ function listFiles(dir, exts) {
 
 let currentState = { nowShowing: '—', content: '', blackout: false };
 let currentSceneId = null;
+let currentTokens = [];
+let currentTokensMapKey = null;
+let currentDrawing    = [];
+let currentDrawingMapKey = null;
 const clients = new Set();
 const dmClients = new Set();
 
@@ -140,6 +144,12 @@ wss.on('connection', (ws) => {
   if (currentSceneId) {
     ws.send(JSON.stringify({ type: 'SHOW_SCENE', sceneId: currentSceneId }));
   }
+  if (currentTokens.length && currentTokensMapKey) {
+    ws.send(JSON.stringify({ type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey }));
+  }
+  if (currentDrawing.length) {
+    ws.send(JSON.stringify({ type: 'UPDATE_DRAWING', strokes: currentDrawing, mapKey: currentDrawingMapKey }));
+  }
 
   ws.on('message', (raw) => {
     try {
@@ -158,10 +168,20 @@ wss.on('connection', (ws) => {
           broadcast({ type: 'SHOW_SCENE', sceneId: currentSceneId }); break;
         case 'show-scene-view':
           currentState.blackout = false;
-          broadcast({ type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain' }); break;
+          currentTokens = [];
+          currentTokensMapKey = message.mapKey || null;
+          broadcast({ type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain', mapKey: message.mapKey || null });
+          broadcast({ type: 'UPDATE_TOKENS', tokens: [], mapKey: currentTokensMapKey });
+          currentDrawing = [];
+          currentDrawingMapKey = message.mapKey || null;
+          broadcast({ type: 'UPDATE_DRAWING', strokes: [], mapKey: currentDrawingMapKey }); break;
         case 'clear':
           currentSceneId = null;
           currentState.blackout = false;
+          currentTokens = [];
+          currentTokensMapKey = null;
+          currentDrawing = [];
+          currentDrawingMapKey = null;
           broadcast({ type: 'CLEAR' }); break;
         case 'play-audio':
           if (message.url) broadcast({ type: 'PLAY_AUDIO', url: message.url, loop: message.loop !== false }); break;
@@ -171,6 +191,14 @@ wss.on('connection', (ws) => {
           broadcast({ type: 'OVERLAY', title: message.title || '', data: message.data || '', duration: message.duration || 10000 }); break;
         case 'update-fog':
           broadcast({ type: 'UPDATE_FOG', fogGrid: message.fogGrid, fogKey: message.fogKey }); break;
+        case 'update-tokens':
+          currentTokens = Array.isArray(message.tokens) ? message.tokens : [];
+          currentTokensMapKey = message.mapKey || null;
+          broadcast({ type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey }); break;
+        case 'update-drawing':
+          currentDrawing = Array.isArray(message.strokes) ? message.strokes : [];
+          currentDrawingMapKey = message.mapKey || null;
+          broadcast({ type: 'UPDATE_DRAWING', strokes: currentDrawing, mapKey: currentDrawingMapKey }); break;
       }
     } catch (err) { console.error('Bad message:', err); }
   });

@@ -60,7 +60,8 @@
         "label": "Halia's Home",
         "image": "/assets/maps/HaliasHome.png",
         "audio": null,
-        "fog": false
+        "fog": false,
+        "fit": "fill"
       },
       {
         "id": "phandalin-orchard-1775350349884-view-5",
@@ -151,7 +152,8 @@
         "label": "Downstairs",
         "image": "/assets/maps/stonehill_ground.png",
         "audio": "/assets/audio/Atmosphere - tavern_ambience_inside_laughter.mp3",
-        "fog": false
+        "fog": false,
+        "audioLoop": false
       },
       {
         "id": "phandalin-stonehill-inn-1775357679767-view-1",
