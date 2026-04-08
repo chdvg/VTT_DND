@@ -16,6 +16,7 @@ var fogStates      = {};
 var currentTokens  = [];
 var currentDrawing = [];
 var currentMapKey  = null;
+var currentImageUrl = null;
 
 // Dismiss the tap-overlay on first click/touch, then play any queued audio
 document.addEventListener('click', function () {
@@ -32,6 +33,20 @@ document.addEventListener('click', function () {
 
 // ── Image display ────────────────────────────────────────────
 function showImage(imageUrl, fogKey, fit) {
+  var existingImg = sceneEl.querySelector('img');
+  // If the same image is already loaded, skip the fade/reload entirely.
+  // This prevents a long blank screen on WiFi reconnect when state is replayed.
+  // Overlays are cleared by the caller (SHOW_SCENE_VIEW) and will be re-applied
+  // by the UPDATE_TOKENS / UPDATE_DRAWING messages that follow immediately.
+  if (existingImg && existingImg.naturalWidth && currentImageUrl === imageUrl) {
+    currentFogKey = fogKey || null;
+    existingImg.style.objectFit = fit || 'contain';
+    if (fogKey && fogStates[fogKey]) {
+      renderFogOverlay(fogStates[fogKey], existingImg);
+    }
+    return;
+  }
+  currentImageUrl = imageUrl;
   sceneEl.classList.add('fading');
   setTimeout(function () {
     sceneEl.innerHTML = '';
@@ -63,6 +78,7 @@ function showImage(imageUrl, fogKey, fit) {
 }
 
 function clearScene() {
+  currentImageUrl = null;
   sceneEl.classList.add('fading');
   setTimeout(function () {
     sceneEl.innerHTML = '';
@@ -128,7 +144,7 @@ function renderTokenOverlay(tokens) {
 
   var overlay = document.createElement('div');
   overlay.className = 'token-overlay';
-  overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:10;';
+  overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:10;';
 
   // Calc rendered image rect (same letterbox logic as fog)
   var imgEl = sceneEl.querySelector('img');
@@ -499,6 +515,7 @@ function handleMessage(msg) {
 
 // ── WebSocket ─────────────────────────────────────────────────
 var _retryDelay = 1000;
+var _firstConnect = true;
 
 function connect() {
   var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -507,8 +524,13 @@ function connect() {
   ws.onopen = function () {
     statusEl.textContent = 'connected';
     _retryDelay = 1000; // reset backoff on successful connect
-    // Ask the server to replay full state (handles reconnects mid-session)
-    ws.send(JSON.stringify({ action: 'request-sync' }));
+    if (_firstConnect) {
+      // Server already calls sendFullState automatically on connection — no need to request again
+      _firstConnect = false;
+    } else {
+      // Reconnect: ask the server to replay full state
+      ws.send(JSON.stringify({ action: 'request-sync' }));
+    }
   };
 
   ws.onmessage = function (e) {
