@@ -114,6 +114,9 @@ function listFiles(dir, exts) {
 
 let currentState = { nowShowing: '—', content: '', blackout: false };
 let currentSceneId = null;
+let currentSceneView = null;   // full SHOW_SCENE_VIEW payload, restored on reconnect
+let currentFogStates = {};     // fogKey -> fogGrid
+let currentAudio = null;       // { url, loop } or null
 let currentTokens = [];
 let currentTokensMapKey = null;
 let currentDrawing    = [];
@@ -137,19 +140,38 @@ function broadcast(data) {
   }
 }
 
+function sendFullState(ws) {
+  // Blackout
+  if (currentState.blackout) {
+    ws.send(JSON.stringify({ type: 'BLACKOUT', active: true }));
+    return; // nothing to render under blackout
+  }
+  // Current scene view (map image, fog key, fit mode)
+  if (currentSceneView) {
+    ws.send(JSON.stringify(currentSceneView));
+  } else if (currentSceneId) {
+    ws.send(JSON.stringify({ type: 'SHOW_SCENE', sceneId: currentSceneId }));
+  }
+  // Fog states for every key we know about
+  for (const fogKey of Object.keys(currentFogStates)) {
+    ws.send(JSON.stringify({ type: 'UPDATE_FOG', fogKey, fogGrid: currentFogStates[fogKey] }));
+  }
+  // Tokens
+  if (currentTokensMapKey) {
+    ws.send(JSON.stringify({ type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey }));
+  }
+  // Annotations
+  if (currentDrawingMapKey) {
+    ws.send(JSON.stringify({ type: 'UPDATE_DRAWING', strokes: currentDrawing, mapKey: currentDrawingMapKey }));
+  }
+  // Audio — we don't restart audio on reconnect (too disruptive if it's mid-play)
+}
+
 wss.on('connection', (ws) => {
   clients.add(ws);
   console.log('Client connected. Total: ' + clients.size);
   broadcastClientCount();
-  if (currentSceneId) {
-    ws.send(JSON.stringify({ type: 'SHOW_SCENE', sceneId: currentSceneId }));
-  }
-  if (currentTokens.length && currentTokensMapKey) {
-    ws.send(JSON.stringify({ type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey }));
-  }
-  if (currentDrawing.length) {
-    ws.send(JSON.stringify({ type: 'UPDATE_DRAWING', strokes: currentDrawing, mapKey: currentDrawingMapKey }));
-  }
+  sendFullState(ws);
 
   ws.on('message', (raw) => {
     try {
@@ -160,36 +182,55 @@ wss.on('connection', (ws) => {
           // Send current state immediately so DM gets accurate count right away
           ws.send(JSON.stringify({ type: 'clients', count: clients.size - dmClients.size }));
           break;
+        case 'request-sync':
+          // Player explicitly asking for full state after reconnect
+          sendFullState(ws);
+          break;
         case 'blackout':
           currentState.blackout = !currentState.blackout;
           broadcast({ type: 'BLACKOUT', active: currentState.blackout }); break;
         case 'show':
           currentSceneId = message.sceneId || null;
           broadcast({ type: 'SHOW_SCENE', sceneId: currentSceneId }); break;
-        case 'show-scene-view':
+        case 'show-scene-view': {
           currentState.blackout = false;
           currentTokens = [];
           currentTokensMapKey = message.mapKey || null;
-          broadcast({ type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain', mapKey: message.mapKey || null });
-          broadcast({ type: 'UPDATE_TOKENS', tokens: [], mapKey: currentTokensMapKey });
           currentDrawing = [];
           currentDrawingMapKey = message.mapKey || null;
+          currentFogStates = {}; // new scene clears old fog keys
+          const sceneViewMsg = { type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain', mapKey: message.mapKey || null };
+          currentSceneView = sceneViewMsg;
+          currentAudio = message.audio ? { url: message.audio, loop: message.audioLoop !== false } : null;
+          broadcast(sceneViewMsg);
+          broadcast({ type: 'UPDATE_TOKENS', tokens: [], mapKey: currentTokensMapKey });
           broadcast({ type: 'UPDATE_DRAWING', strokes: [], mapKey: currentDrawingMapKey }); break;
+        }
         case 'clear':
           currentSceneId = null;
+          currentSceneView = null;
           currentState.blackout = false;
           currentTokens = [];
           currentTokensMapKey = null;
           currentDrawing = [];
           currentDrawingMapKey = null;
+          currentFogStates = {};
+          currentAudio = null;
           broadcast({ type: 'CLEAR' }); break;
         case 'play-audio':
-          if (message.url) broadcast({ type: 'PLAY_AUDIO', url: message.url, loop: message.loop !== false }); break;
+          if (message.url) {
+            currentAudio = { url: message.url, loop: message.loop !== false };
+            broadcast({ type: 'PLAY_AUDIO', url: message.url, loop: message.loop !== false });
+          } break;
         case 'stop-audio':
+          currentAudio = null;
           broadcast({ type: 'STOP_AUDIO' }); break;
         case 'send-overlay':
           broadcast({ type: 'OVERLAY', title: message.title || '', data: message.data || '', duration: message.duration || 10000 }); break;
         case 'update-fog':
+          if (message.fogKey) {
+            currentFogStates[message.fogKey] = message.fogGrid;
+          }
           broadcast({ type: 'UPDATE_FOG', fogGrid: message.fogGrid, fogKey: message.fogKey }); break;
         case 'update-tokens':
           currentTokens = Array.isArray(message.tokens) ? message.tokens : [];
@@ -220,6 +261,13 @@ app.post('/api/show', requireDm, express.json({ limit: '50mb' }), (req, res) => 
 app.post('/api/overlay', requireDm, express.json({ limit: '1mb' }), (req, res) => {
   const { title, data, duration } = req.body;
   broadcast({ type: 'OVERLAY', title: title || '', data: data || '', duration: duration || 10000 });
+  res.json({ ok: true });
+});
+
+app.post('/api/dice-roll', requireDm, express.json({ limit: '1mb' }), (req, res) => {
+  const die    = parseInt(req.body.die)    || 20;
+  const result = parseInt(req.body.result) || 1;
+  broadcast({ type: 'DICE_ROLL', die, result });
   res.json({ ok: true });
 });
 

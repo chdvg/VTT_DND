@@ -173,6 +173,102 @@
     }
     #fullscreen-btn.hidden { opacity: 0; pointer-events: none; }
     #fullscreen-btn:hover { background: rgba(212,175,55,0.2); }
+
+    /* ── 3D Dice Roll Overlay ── */
+    #dice-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 600;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      background: rgba(0,0,0,0);
+      pointer-events: none;
+    }
+    #dice-overlay.visible, #dice-overlay.hiding { display: flex; }
+    #dice-overlay.visible { animation: dice-bg-in  0.4s ease forwards; }
+    #dice-overlay.hiding  { animation: dice-bg-out 0.6s ease forwards; }
+    @keyframes dice-bg-in  { to   { background: rgba(0,0,0,0.88); } }
+    @keyframes dice-bg-out { from { background: rgba(0,0,0,0.88); } }
+    #dice-scene {
+      perspective: 900px;
+      perspective-origin: 50% 40%;
+    }
+    #dice-wrapper {
+      transform-style: preserve-3d;
+    }
+    #dice-wrapper.settling {
+      animation: dice-bounce 0.55s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+    }
+    @keyframes dice-bounce {
+      0%   { transform: scale(1.35); }
+      45%  { transform: scale(0.88); }
+      72%  { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
+    #dice-3d {
+      width: 160px;
+      height: 160px;
+      position: relative;
+      transform-style: preserve-3d;
+    }
+    #dice-3d.rolling {
+      animation: dice-tumble 1.9s cubic-bezier(0.1, 0.3, 0.22, 1) both;
+    }
+    @keyframes dice-tumble {
+      0%   { transform: rotateX(0deg)    rotateY(0deg)    rotateZ(0deg); }
+      22%  { transform: rotateX(450deg)  rotateY(260deg)  rotateZ(80deg); }
+      48%  { transform: rotateX(810deg)  rotateY(590deg)  rotateZ(175deg); }
+      70%  { transform: rotateX(990deg)  rotateY(900deg)  rotateZ(268deg); }
+      84%  { transform: rotateX(1048deg) rotateY(1018deg) rotateZ(335deg); }
+      93%  { transform: rotateX(1070deg) rotateY(1066deg) rotateZ(354deg); }
+      100% { transform: rotateX(1080deg) rotateY(1080deg) rotateZ(360deg); }
+    }
+    .dice-face {
+      position: absolute;
+      width: 160px;
+      height: 160px;
+      background: linear-gradient(145deg, #1c1c30, #10101c);
+      border: 2.5px solid #4a3818;
+      border-radius: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: Georgia, 'Palatino Linotype', serif;
+      font-size: 4.5rem;
+      font-weight: bold;
+      color: #7a6025;
+      backface-visibility: hidden;
+      box-shadow: inset 0 0 28px rgba(0,0,0,0.7);
+      user-select: none;
+    }
+    .dice-face.front  { transform: translateZ(80px); }
+    .dice-face.back   { transform: translateZ(-80px) rotateY(180deg); }
+    .dice-face.right  { transform: translateX(80px) rotateY(90deg); }
+    .dice-face.left   { transform: translateX(-80px) rotateY(-90deg); }
+    .dice-face.top    { transform: translateY(-80px) rotateX(90deg); }
+    .dice-face.bot    { transform: translateY(80px) rotateX(-90deg); }
+    .dice-face.front.settled {
+      color: #d4af37;
+      border-color: #d4af37;
+      box-shadow: inset 0 0 28px rgba(0,0,0,0.7),
+                  0 0 55px rgba(212,175,55,0.95),
+                  0 0 110px rgba(212,175,55,0.45);
+      transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+    #dice-result-label {
+      margin-top: 3.2rem;
+      font-family: Georgia, serif;
+      font-size: 3.2vmin;
+      color: #d4af37;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      text-shadow: 0 0 22px rgba(212,175,55,0.65);
+      opacity: 0;
+      transition: opacity 0.5s ease 0.1s;
+    }
+    #dice-result-label.visible { opacity: 1; }
   </style>
 </head>
 <body>
@@ -182,6 +278,21 @@
   </div>
   <div id="scene"></div>
   <div id="popup-overlay"></div>
+  <div id="dice-overlay">
+    <div id="dice-scene">
+      <div id="dice-wrapper">
+        <div id="dice-3d">
+          <div class="dice-face front"></div>
+          <div class="dice-face back"></div>
+          <div class="dice-face right"></div>
+          <div class="dice-face left"></div>
+          <div class="dice-face top"></div>
+          <div class="dice-face bot"></div>
+        </div>
+      </div>
+    </div>
+    <div id="dice-result-label"></div>
+  </div>
   <div id="blackout-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:#000;"></div>
   <div id="unlock-bar" style="display:none"></div>
   <div id="status">connecting...</div>

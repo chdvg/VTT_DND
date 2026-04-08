@@ -124,25 +124,33 @@
 
     <!-- ── Row 3: Send Text (wide) | Send Image (wide) ── -->
     <section class="panel panel-wide" id="section-send-text">
-      <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Send Text</h2>
-      <input type="text" id="text-label" placeholder="Label (e.g. Room Description)" />
-      <textarea id="text-content" rows="4" placeholder="Type content here..."></textarea>
-      <div class="btn-row">
-        <button id="send-text-btn" class="btn btn-primary">📜 Send Text</button>
-      </div>
+      <details>
+        <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠿</span>Send Text<span class="sb-chevron">▶</span></summary>
+        <div style="margin-top:1rem;">
+          <input type="text" id="text-label" placeholder="Label (e.g. Room Description)" />
+          <textarea id="text-content" rows="4" placeholder="Type content here..."></textarea>
+          <div class="btn-row">
+            <button id="send-text-btn" class="btn btn-primary">📜 Send Text</button>
+          </div>
+        </div>
+      </details>
     </section>
     <section class="panel panel-wide" id="section-send-image">
-      <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Send Image</h2>
-      <input type="text" id="image-label" placeholder="Label (e.g. Battle Map)" />
-      <input type="text" id="image-url" placeholder="Image URL" />
-      <div class="divider">— OR choose from library —</div>
-      <select id="image-map-select"><option value="">— Select a map —</option></select>
-      <div class="divider">— OR pick a file —</div>
-      <input type="file" id="image-file" accept="image/*" />
-      <div id="image-preview"></div>
-      <div class="btn-row">
-        <button id="send-image-btn" class="btn btn-primary">🗺️ Send Image</button>
-      </div>
+      <details>
+        <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠿</span>Send Image<span class="sb-chevron">▶</span></summary>
+        <div style="margin-top:1rem;">
+          <input type="text" id="image-label" placeholder="Label (e.g. Battle Map)" />
+          <input type="text" id="image-url" placeholder="Image URL" />
+          <div class="divider">— OR choose from library —</div>
+          <select id="image-map-select"><option value="">— Select a map —</option></select>
+          <div class="divider">— OR pick a file —</div>
+          <input type="file" id="image-file" accept="image/*" />
+          <div id="image-preview"></div>
+          <div class="btn-row">
+            <button id="send-image-btn" class="btn btn-primary">🗺️ Send Image</button>
+          </div>
+        </div>
+      </details>
     </section>
 
     <!-- ── Scene Builder — prep tool, collapsed by default ── -->

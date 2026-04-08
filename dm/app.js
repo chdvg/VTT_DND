@@ -27,6 +27,7 @@ var drawStrokes          = {};    // mapKey -> [{color, width, erase, points:[{x
 var activeDrawMapKey     = null;
 var drawTool             = { color: '#ef4444', width: 0.006, erase: false };
 var drawControlsExpanded = false;
+var drawModeActive       = false; // true = annotations canvas active on token map
 
 // Scene Builder working state
 var sbViews       = [];   // array of { label, image, audio }
@@ -245,8 +246,11 @@ function renderSceneGroup(container, scene, sIdx) {
   editBtn.onclick = (function (si) {
     return function () { editScene(si); };
   })(sIdx);
-  titleRow.appendChild(editBtn);
-  titleRow.appendChild(delBtn);
+  var sceneActions = document.createElement('div');
+  sceneActions.className = 'scene-actions';
+  sceneActions.appendChild(editBtn);
+  sceneActions.appendChild(delBtn);
+  titleRow.appendChild(sceneActions);
   sceneDiv.appendChild(titleRow);
 
   // Views wrapper — collapsible
@@ -547,7 +551,7 @@ function showSceneView(sceneIdx, viewIdx) {
   sendTokenUpdate(fogKey);
 
   // Draw / annotation controls — reset collapsed state on new map
-  if (activeDrawMapKey !== fogKey) drawControlsExpanded = false;
+  if (activeDrawMapKey !== fogKey) { drawControlsExpanded = false; drawModeActive = false; }
   renderDrawControls(view.image, fogKey);
   sendDrawUpdate(fogKey);
 
@@ -573,23 +577,44 @@ function renderDrawControls(mapUrl, mapKey) {
   if (!container) return;
   container.innerHTML = '';
 
-  // Collapsible header
+  // ── Header row with Draw Mode toggle ─────────────────────────
   var strokeCount = (drawStrokes[mapKey] || []).length;
-  var toggleHeader = document.createElement('div');
-  toggleHeader.style.cssText = 'display:flex;align-items:center;gap:0.5rem;cursor:pointer;padding:0.5rem 0;color:#aaa;font-size:0.8rem;user-select:none;border-top:1px solid #21262d;';
-  var chevron = drawControlsExpanded ? '▼' : '▶';
-  var strokeBadge = strokeCount ? ' <span style="color:#facc15;font-size:0.7rem;margin-left:0.25rem;">(' + strokeCount + ' stroke' + (strokeCount !== 1 ? 's' : '') + ')</span>' : '';
-  toggleHeader.innerHTML = '<span style="font-size:0.65rem">' + chevron + '</span> ✏️ Annotations — draw on map' + strokeBadge;
-  toggleHeader.onclick = function () {
-    drawControlsExpanded = !drawControlsExpanded;
+  var headerRow = document.createElement('div');
+  headerRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;' +
+    'padding:0.5rem 0;border-top:1px solid #21262d;';
+
+  var strokeBadge = strokeCount
+    ? '<span style="color:#facc15;font-size:0.7rem;margin-left:0.25rem;">(' + strokeCount + ' stroke' + (strokeCount !== 1 ? 's' : '') + ')</span>'
+    : '';
+  var headerLabel = document.createElement('span');
+  headerLabel.style.cssText = 'color:#aaa;font-size:0.8rem;user-select:none;';
+  headerLabel.innerHTML = '✏️ Annotations' + strokeBadge;
+  headerRow.appendChild(headerLabel);
+
+  // Draw mode toggle button — activates/deactivates the canvas on the token map
+  var drawToggleBtn = document.createElement('button');
+  drawToggleBtn.textContent = drawModeActive ? '🖊 Draw Mode ON' : '🖊 Draw Mode OFF';
+  drawToggleBtn.style.cssText = [
+    'flex:none', 'white-space:nowrap', 'padding:0.25rem 0.75rem',
+    'font-size:0.78rem', 'font-weight:bold', 'border-radius:4px', 'cursor:pointer',
+    'border:2px solid ' + (drawModeActive ? '#facc15' : '#555'),
+    'color:' + (drawModeActive ? '#facc15' : '#888'),
+    'background:' + (drawModeActive ? 'rgba(250,204,21,0.12)' : 'transparent'),
+    drawModeActive ? 'box-shadow:0 0 6px rgba(250,204,21,0.4)' : ''
+  ].join(';') + ';';
+  drawToggleBtn.onclick = function () {
+    drawModeActive = !drawModeActive;
+    renderTokenControls(mapUrl, mapKey);
     renderDrawControls(mapUrl, mapKey);
   };
-  container.appendChild(toggleHeader);
-  if (!drawControlsExpanded) return;
+  headerRow.appendChild(drawToggleBtn);
+
+  container.appendChild(headerRow);
+  if (!drawModeActive) return; // tools only shown when draw mode is on
 
   // ── Tool row ─────────────────────────────────────────────────
   var toolRow = document.createElement('div');
-  toolRow.style.cssText = 'display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.5rem;align-items:center;';
+  toolRow.style.cssText = 'display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem;align-items:center;';
 
   var colorOpts = [
     { color: '#ef4444', label: '🔴 Red'    },
@@ -672,128 +697,6 @@ function renderDrawControls(mapUrl, mapKey) {
   };
   toolRow.appendChild(clearBtn);
   container.appendChild(toolRow);
-
-  // ── Map preview + drawing canvas ─────────────────────────────
-  var mapWrap = document.createElement('div');
-  mapWrap.style.cssText = 'position:relative;display:inline-block;max-width:100%;border:1px solid #444;';
-
-  var mapImg = document.createElement('img');
-  mapImg.src = mapUrl;
-  mapImg.style.cssText = 'display:block;max-width:100%;max-height:260px;object-fit:contain;user-select:none;pointer-events:none;';
-  mapWrap.appendChild(mapImg);
-
-  var drawCanvas = document.createElement('canvas');
-  drawCanvas.style.cssText = 'position:absolute;inset:0;cursor:crosshair;';
-  mapWrap.appendChild(drawCanvas);
-  container.appendChild(mapWrap);
-
-  var ctx = drawCanvas.getContext('2d');
-
-  function getRect() {
-    var cW = mapWrap.offsetWidth, cH = mapWrap.offsetHeight;
-    var iW = mapImg.naturalWidth,  iH = mapImg.naturalHeight;
-    if (!iW || !iH) return { offX: 0, offY: 0, rendW: cW, rendH: cH };
-    var scale = Math.min(cW / iW, cH / iH);
-    var rendW = iW * scale, rendH = iH * scale;
-    return { offX: (cW - rendW) / 2, offY: (cH - rendH) / 2, rendW: rendW, rendH: rendH };
-  }
-
-  function canvasToNorm(px, py) {
-    var r = getRect();
-    return { x: (px - r.offX) / r.rendW, y: (py - r.offY) / r.rendH };
-  }
-
-  function normToCanvas(nx, ny) {
-    var r = getRect();
-    return { x: r.offX + nx * r.rendW, y: r.offY + ny * r.rendH };
-  }
-
-  function redrawCanvas() {
-    if (!drawCanvas.width || !drawCanvas.height) return;
-    ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
-    var strokes = drawStrokes[mapKey] || [];
-    var r = getRect();
-    strokes.forEach(function (stroke) {
-      if (!stroke.points || stroke.points.length < 2) return;
-      ctx.save();
-      ctx.strokeStyle = stroke.erase ? 'rgba(0,0,0,1)' : stroke.color;
-      ctx.lineWidth   = Math.max(2, stroke.width * Math.min(r.rendW, r.rendH));
-      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      ctx.globalCompositeOperation = stroke.erase ? 'destination-out' : 'source-over';
-      ctx.beginPath();
-      var p0 = normToCanvas(stroke.points[0].x, stroke.points[0].y);
-      ctx.moveTo(p0.x, p0.y);
-      for (var i = 1; i < stroke.points.length; i++) {
-        var pt = normToCanvas(stroke.points[i].x, stroke.points[i].y);
-        ctx.lineTo(pt.x, pt.y);
-      }
-      ctx.stroke();
-      ctx.restore();
-    });
-  }
-
-  function sizeCanvas() {
-    drawCanvas.width  = mapWrap.offsetWidth;
-    drawCanvas.height = mapWrap.offsetHeight;
-    redrawCanvas();
-  }
-  mapImg.onload = sizeCanvas;
-  if (mapImg.complete && mapImg.naturalWidth) setTimeout(sizeCanvas, 10);
-
-  // ── Mouse drawing ──────────────────────────────────────────
-  var drawing = false;
-  var currentStroke = null;
-
-  function getMousePos(e) {
-    var rect = drawCanvas.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  }
-
-  drawCanvas.addEventListener('mousedown', function (e) {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    drawing = true;
-    var pos = getMousePos(e);
-    currentStroke = { color: drawTool.color, width: drawTool.width, erase: drawTool.erase, points: [canvasToNorm(pos.x, pos.y)] };
-  });
-
-  drawCanvas.addEventListener('mousemove', function (e) {
-    if (!drawing || !currentStroke) return;
-    var pos = getMousePos(e);
-    currentStroke.points.push(canvasToNorm(pos.x, pos.y));
-    // Live preview: replay all saved strokes then draw in-progress stroke on top
-    redrawCanvas();
-    var r = getRect();
-    ctx.save();
-    ctx.strokeStyle = currentStroke.erase ? 'rgba(0,0,0,1)' : currentStroke.color;
-    ctx.lineWidth   = Math.max(2, currentStroke.width * Math.min(r.rendW, r.rendH));
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.globalCompositeOperation = currentStroke.erase ? 'destination-out' : 'source-over';
-    ctx.beginPath();
-    var pts = currentStroke.points;
-    var p0 = normToCanvas(pts[0].x, pts[0].y);
-    ctx.moveTo(p0.x, p0.y);
-    for (var i = 1; i < pts.length; i++) {
-      var pt = normToCanvas(pts[i].x, pts[i].y);
-      ctx.lineTo(pt.x, pt.y);
-    }
-    ctx.stroke();
-    ctx.restore();
-  });
-
-  function finishStroke() {
-    if (!drawing || !currentStroke) return;
-    drawing = false;
-    if (currentStroke.points.length > 1) {
-      if (!drawStrokes[mapKey]) drawStrokes[mapKey] = [];
-      drawStrokes[mapKey].push(currentStroke);
-      sendDrawUpdate(mapKey);
-    }
-    currentStroke = null;
-    redrawCanvas();
-  }
-  drawCanvas.addEventListener('mouseup',    finishStroke);
-  drawCanvas.addEventListener('mouseleave', finishStroke);
 }
 
 // ============================================================
@@ -1037,12 +940,6 @@ function sendFogUpdate(fogKey) {
   }
 }
 
-function sendFogUpdate(fogKey) {
-  if (ws && ws.readyState === 1 && fogMapUrl) {
-    wsSend({ action: 'update-fog', mapUrl: fogMapUrl, fogGrid: fogGrid, fogKey: fogKey });
-  }
-}
-
 // ============================================================
 // Mob Token Overlay
 // ============================================================
@@ -1144,7 +1041,8 @@ function renderTokenControls(mapUrl, mapKey) {
   // Map preview with token overlay
   var mapWrap = document.createElement('div');
   mapWrap.style.cssText = 'position:relative;display:inline-block;max-width:100%;' +
-    'margin-bottom:0.5rem;border:1px solid #444;cursor:crosshair;';
+    'margin-bottom:0.5rem;border:1px solid ' + (drawModeActive ? '#facc15' : '#444') + ';' +
+    'cursor:' + (drawModeActive ? 'none' : 'crosshair') + ';';
 
   var mapImg = document.createElement('img');
   mapImg.src = mapUrl;
@@ -1154,6 +1052,111 @@ function renderTokenControls(mapUrl, mapKey) {
   // Token dots on the DM preview — draggable
   var previewOverlay = document.createElement('div');
   previewOverlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+
+  // ── Draw canvas layer (on top of token overlay) ──────────────
+  var drawCanvas = document.createElement('canvas');
+  drawCanvas.style.cssText = 'position:absolute;inset:0;z-index:20;' +
+    (drawModeActive ? 'cursor:crosshair;pointer-events:auto;' : 'pointer-events:none;display:none;');
+
+  var drawCtx = drawCanvas.getContext('2d');
+  if (!drawStrokes[mapKey]) drawStrokes[mapKey] = [];
+
+  function getDrawRect() {
+    var cW = mapWrap.offsetWidth, cH = mapWrap.offsetHeight;
+    var iW = mapImg.naturalWidth, iH = mapImg.naturalHeight;
+    if (!iW || !iH) return { offX: 0, offY: 0, rendW: cW, rendH: cH };
+    var scale = Math.min(cW / iW, cH / iH);
+    var rendW = iW * scale, rendH = iH * scale;
+    return { offX: (cW - rendW) / 2, offY: (cH - rendH) / 2, rendW: rendW, rendH: rendH };
+  }
+  function canvasToNormDraw(px, py) {
+    var r = getDrawRect();
+    return { x: (px - r.offX) / r.rendW, y: (py - r.offY) / r.rendH };
+  }
+  function normToCanvasDraw(nx, ny) {
+    var r = getDrawRect();
+    return { x: r.offX + nx * r.rendW, y: r.offY + ny * r.rendH };
+  }
+  function redrawAnnotations() {
+    if (!drawCanvas.width || !drawCanvas.height) return;
+    drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    var strokes = drawStrokes[mapKey] || [];
+    var r = getDrawRect();
+    strokes.forEach(function (stroke) {
+      if (!stroke.points || stroke.points.length < 2) return;
+      drawCtx.save();
+      drawCtx.strokeStyle = stroke.erase ? 'rgba(0,0,0,1)' : stroke.color;
+      drawCtx.lineWidth   = Math.max(2, stroke.width * Math.min(r.rendW, r.rendH));
+      drawCtx.lineCap = 'round'; drawCtx.lineJoin = 'round';
+      drawCtx.globalCompositeOperation = stroke.erase ? 'destination-out' : 'source-over';
+      drawCtx.beginPath();
+      var p0 = normToCanvasDraw(stroke.points[0].x, stroke.points[0].y);
+      drawCtx.moveTo(p0.x, p0.y);
+      for (var i = 1; i < stroke.points.length; i++) {
+        var pt = normToCanvasDraw(stroke.points[i].x, stroke.points[i].y);
+        drawCtx.lineTo(pt.x, pt.y);
+      }
+      drawCtx.stroke();
+      drawCtx.restore();
+    });
+  }
+  function sizeDrawCanvas() {
+    drawCanvas.width  = mapWrap.offsetWidth;
+    drawCanvas.height = mapWrap.offsetHeight;
+    redrawAnnotations();
+  }
+  mapImg.addEventListener('load', sizeDrawCanvas);
+  if (mapImg.complete && mapImg.naturalWidth) setTimeout(sizeDrawCanvas, 10);
+
+  // Mouse drawing on the shared canvas
+  var drawingActive = false;
+  var currentDrawStroke = null;
+  function getDrawMousePos(e) {
+    var rect = drawCanvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+  drawCanvas.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    drawingActive = true;
+    var pos = getDrawMousePos(e);
+    currentDrawStroke = { color: drawTool.color, width: drawTool.width, erase: drawTool.erase, points: [canvasToNormDraw(pos.x, pos.y)] };
+  });
+  drawCanvas.addEventListener('mousemove', function (e) {
+    if (!drawingActive || !currentDrawStroke) return;
+    var pos = getDrawMousePos(e);
+    currentDrawStroke.points.push(canvasToNormDraw(pos.x, pos.y));
+    redrawAnnotations();
+    var r = getDrawRect();
+    drawCtx.save();
+    drawCtx.strokeStyle = currentDrawStroke.erase ? 'rgba(0,0,0,1)' : currentDrawStroke.color;
+    drawCtx.lineWidth   = Math.max(2, currentDrawStroke.width * Math.min(r.rendW, r.rendH));
+    drawCtx.lineCap = 'round'; drawCtx.lineJoin = 'round';
+    drawCtx.globalCompositeOperation = currentDrawStroke.erase ? 'destination-out' : 'source-over';
+    drawCtx.beginPath();
+    var pts = currentDrawStroke.points;
+    var p0 = normToCanvasDraw(pts[0].x, pts[0].y);
+    drawCtx.moveTo(p0.x, p0.y);
+    for (var i = 1; i < pts.length; i++) {
+      var pt = normToCanvasDraw(pts[i].x, pts[i].y);
+      drawCtx.lineTo(pt.x, pt.y);
+    }
+    drawCtx.stroke();
+    drawCtx.restore();
+  });
+  function finishDrawStroke() {
+    if (!drawingActive || !currentDrawStroke) return;
+    drawingActive = false;
+    if (currentDrawStroke.points.length > 1) {
+      if (!drawStrokes[mapKey]) drawStrokes[mapKey] = [];
+      drawStrokes[mapKey].push(currentDrawStroke);
+      sendDrawUpdate(mapKey);
+    }
+    currentDrawStroke = null;
+    redrawAnnotations();
+  }
+  drawCanvas.addEventListener('mouseup',    finishDrawStroke);
+  drawCanvas.addEventListener('mouseleave', finishDrawStroke);
 
   var wasDragging = false; // prevent map click after a drag
 
@@ -1210,9 +1213,11 @@ function renderTokenControls(mapUrl, mapKey) {
     previewOverlay.appendChild(makeDot(tok));
   });
   mapWrap.appendChild(previewOverlay);
+  mapWrap.appendChild(drawCanvas);
 
-  // Click on empty map area to place a new token
+  // Click on empty map area to place a new token (token mode only)
   mapWrap.addEventListener('click', function (e) {
+    if (drawModeActive) return; // draw mode — canvas handles input
     if (wasDragging) return;
     var rect = mapWrap.getBoundingClientRect();
     var x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -1657,12 +1662,10 @@ document.querySelectorAll('.btn-dice').forEach(function (btn) {
     var roll = Math.floor(Math.random() * die) + 1;
     diceResult.textContent = 'D' + die + ': ' + roll;
     if (document.getElementById('dice-broadcast').checked) {
-      var html = '<div style="text-align:center;font-size:3.5rem;padding:1rem;color:#d4af37;">🎲 d' +
-        die + ': <strong>' + roll + '</strong></div>';
-      fetch('/api/overlay', {
+      fetch('/api/dice-roll', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Dice Roll', data: html, duration: 8000 })
+        body: JSON.stringify({ die: die, result: roll })
       });
     }
   });

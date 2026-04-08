@@ -51,7 +51,7 @@
       {
         "id": "phandalin-orchard-1775350349884-view-3",
         "label": "Alderleaf Farm",
-        "image": "/assets/maps/Alderleaf Farm.png",
+        "image": "/assets/maps/Alderleaf.png",
         "audio": null,
         "fog": false
       },
@@ -60,8 +60,7 @@
         "label": "Halia's Home",
         "image": "/assets/maps/HaliasHome.png",
         "audio": null,
-        "fog": false,
-        "fit": "fill"
+        "fog": false
       },
       {
         "id": "phandalin-orchard-1775350349884-view-5",
@@ -137,8 +136,9 @@
         "id": "travel-in-the-woods-1775354955380-view-0",
         "label": "road",
         "image": "/assets/maps/travel.webp",
-        "audio": "/assets/audio/mixkit-little-birds-singing-in-the-trees-17.wav",
-        "fog": false
+        "audio": "/assets/audio/Atmosphere - BirdChirping.wav",
+        "fog": false,
+        "fit": "fill"
       }
     ]
   },
@@ -161,6 +161,21 @@
         "image": "/assets/maps/stonehill_upstairs.png",
         "audio": null,
         "fog": false
+      }
+    ]
+  },
+  {
+    "id": "travel-camping-1775606145338",
+    "tab": "Travel",
+    "label": "Camping",
+    "views": [
+      {
+        "id": "travel-camping-1775606145338-view-0",
+        "label": "campfire",
+        "image": "/assets/maps/campfire2.jpg",
+        "audio": "/assets/audio/Atmosphere - Campfire.mp3",
+        "fog": false,
+        "fit": "contain"
       }
     ]
   }

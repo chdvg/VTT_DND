@@ -105,7 +105,7 @@ function renderFogOverlay(fogGrid, imgEl) {
 
   overlay.style.cssText = posStyle + 'display:grid;' +
     'grid-template-columns:repeat(' + cols + ',1fr);' +
-    'grid-template-rows:repeat(' + rows + ',1fr);pointer-events:none;overflow:hidden;';
+    'grid-template-rows:repeat(' + rows + ',1fr);pointer-events:none;overflow:hidden;z-index:20;';
 
   for (var r = 0; r < rows; r++) {
     for (var c = 0; c < cols; c++) {
@@ -128,7 +128,7 @@ function renderTokenOverlay(tokens) {
 
   var overlay = document.createElement('div');
   overlay.className = 'token-overlay';
-  overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden;';
+  overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:10;';
 
   // Calc rendered image rect (same letterbox logic as fog)
   var imgEl = sceneEl.querySelector('img');
@@ -200,7 +200,7 @@ function renderDrawOverlay(strokes, imgEl) {
   drawCanvas.className = 'draw-overlay';
   drawCanvas.width  = cW;
   drawCanvas.height = cH;
-  drawCanvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:15;';
+  drawCanvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:30;';
 
   // Letterbox rect (same math as fog/token)
   var offX = 0, offY = 0, rendW = cW, rendH = cH;
@@ -237,6 +237,79 @@ function renderDrawOverlay(strokes, imgEl) {
   });
 
   sceneEl.appendChild(drawCanvas);
+}
+
+// ── Dice roll animation (3D cube) ────────────────────────────
+var _diceHideTimer   = null;
+var _diceNumInterval = null;
+
+function showDiceRoll(die, result) {
+  var overlay  = document.getElementById('dice-overlay');
+  var cube     = document.getElementById('dice-3d');
+  var wrapper  = document.getElementById('dice-wrapper');
+  var allFaces = cube.querySelectorAll('.dice-face');
+  var frontEl  = cube.querySelector('.dice-face.front');
+  var labelEl  = document.getElementById('dice-result-label');
+
+  // Cancel any in-progress roll
+  if (_diceHideTimer)   { clearTimeout(_diceHideTimer);    _diceHideTimer   = null; }
+  if (_diceNumInterval) { clearInterval(_diceNumInterval); _diceNumInterval = null; }
+  cube.classList.remove('rolling');
+  wrapper.classList.remove('settling');
+  frontEl.classList.remove('settled');
+  labelEl.className = '';
+
+  // Seed all faces with random numbers
+  allFaces.forEach(function(f) { f.textContent = Math.floor(Math.random() * die) + 1; });
+
+  // Force reflow so removed classes fully reset before re-adding
+  void cube.offsetWidth;
+  void wrapper.offsetWidth;
+
+  overlay.className = 'visible';
+  cube.classList.add('rolling');
+
+  // Keep cycling numbers on all faces while tumbling
+  _diceNumInterval = setInterval(function() {
+    allFaces.forEach(function(f) { f.textContent = Math.floor(Math.random() * die) + 1; });
+  }, 75);
+
+  // When tumble CSS animation ends: land and reveal
+  cube.addEventListener('animationend', function onTumbleEnd() {
+    clearInterval(_diceNumInterval);
+    _diceNumInterval = null;
+
+    // Set result on the front face and glow it
+    frontEl.textContent = result;
+    frontEl.classList.add('settled');
+
+    // Bounce the wrapper (separate element so it doesn't reset the rotation)
+    void wrapper.offsetWidth;
+    wrapper.classList.add('settling');
+
+    // Label below the die
+    if (die === 20 && result === 20) {
+      labelEl.textContent = '\u2694\ufe0f  NATURAL 20!';
+    } else if (die === 20 && result === 1) {
+      labelEl.textContent = '\ud83d\udc80  CRITICAL FAIL';
+    } else {
+      labelEl.textContent = 'd' + die + '  \u00b7  ' + result;
+    }
+    labelEl.className = 'visible';
+
+    // Auto-dismiss after 3.5 s
+    _diceHideTimer = setTimeout(function() {
+      overlay.className = 'hiding';
+      labelEl.className = '';
+      setTimeout(function() {
+        overlay.className = '';
+        cube.classList.remove('rolling');
+        wrapper.classList.remove('settling');
+        frontEl.classList.remove('settled');
+      }, 620);
+      _diceHideTimer = null;
+    }, 3500);
+  }, { once: true });
 }
 
 // ── Overlay popup (dice, initiative) ─────────────────────────
@@ -374,6 +447,9 @@ function handleMessage(msg) {
     case 'OVERLAY':
       showOverlay(msg.title, msg.data, msg.duration);
       break;
+    case 'DICE_ROLL':
+      showDiceRoll(msg.die, msg.result);
+      break;
     case 'update':
       if (msg.data) showText(msg.content || '', msg.data);
       break;
@@ -422,13 +498,30 @@ function handleMessage(msg) {
 }());
 
 // ── WebSocket ─────────────────────────────────────────────────
+var _retryDelay = 1000;
+
 function connect() {
   var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   var ws = new WebSocket(protocol + '//' + location.host + '/ws');
-  ws.onopen    = function () { statusEl.textContent = 'connected'; };
-  ws.onmessage = function (e) { try { handleMessage(JSON.parse(e.data)); } catch(err) { console.error(err); } };
-  ws.onclose   = function () { statusEl.textContent = 'reconnecting...'; setTimeout(connect, 2000); };
-  ws.onerror   = function () { ws.close(); };
+
+  ws.onopen = function () {
+    statusEl.textContent = 'connected';
+    _retryDelay = 1000; // reset backoff on successful connect
+    // Ask the server to replay full state (handles reconnects mid-session)
+    ws.send(JSON.stringify({ action: 'request-sync' }));
+  };
+
+  ws.onmessage = function (e) {
+    try { handleMessage(JSON.parse(e.data)); } catch(err) { console.error(err); }
+  };
+
+  ws.onclose = function () {
+    statusEl.textContent = 'reconnecting...';
+    setTimeout(connect, _retryDelay);
+    _retryDelay = Math.min(_retryDelay * 1.5, 10000); // cap at 10s
+  };
+
+  ws.onerror = function () { ws.close(); };
 }
 
 connect();
