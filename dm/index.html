@@ -106,6 +106,37 @@
       </details>
     </section>
 
+    <!-- ── Reference Panel ── -->
+    <section class="panel panel-full" id="section-reference">
+      <details>
+        <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠿</span>📋 Reference<span class="sb-chevron">▶</span></summary>
+        <div style="margin-top:0.75rem;">
+
+          <h3 class="ref-section-hdr">⚔️ Active Conditions</h3>
+          <div id="ref-active-chart"></div>
+
+          <h3 class="ref-section-hdr" style="margin-top:1rem;">📖 Condition Dictionary</h3>
+          <div id="ref-dict-list"></div>
+
+          <details style="margin-top:0.75rem;">
+            <summary style="cursor:pointer;color:#888;font-size:0.8rem;user-select:none;">+ Add Custom Reference Entry</summary>
+            <div class="ref-add-row" style="margin-top:0.5rem;">
+              <input type="text" id="ref-add-icon" placeholder="🎯" maxlength="4" title="Icon (emoji)" />
+              <input type="text" id="ref-add-name" placeholder="Condition name" />
+              <select id="ref-add-type">
+                <option value="buff">Buff</option>
+                <option value="debuff">Debuff</option>
+              </select>
+              <input type="text" id="ref-add-plus" placeholder="+ Benefit" />
+              <input type="text" id="ref-add-minus" placeholder="– Penalty" />
+              <button id="ref-add-btn" class="btn btn-small btn-secondary">+ Add</button>
+            </div>
+          </details>
+
+        </div>
+      </details>
+    </section>
+
     <!-- ── Row 2 col 4: Dice ── -->
     <section class="panel" id="section-dice">
       <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Dice Roller</h2>

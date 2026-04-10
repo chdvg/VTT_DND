@@ -18,7 +18,8 @@ var activeFogKey  = null;
 // Token overlay state
 var tokenState         = {};     // mapKey -> array of {id,x,y,color,label}
 var activeTokenMapKey  = null;
-var selectedTokenColor = 'red';
+var selectedTokenColor  = 'red';
+var autoAddToInit       = true;  // toggle: auto-add tokens to initiative
 var selectedPlayerName = null;
 var activeTokenMapUrl  = null;
 
@@ -999,6 +1000,20 @@ function renderTokenControls(mapUrl, mapKey) {
   });
   container.appendChild(colorRow);
 
+  // Auto-add to initiative toggle
+  var initToggleBtn = document.createElement('button');
+  initToggleBtn.style.cssText = 'font-size:0.75rem;padding:0.22rem 0.6rem;border-radius:4px;cursor:pointer;' +
+    'border:1px solid ' + (autoAddToInit ? '#4ade80' : '#555') + ';' +
+    'background:' + (autoAddToInit ? 'rgba(74,222,128,0.15)' : 'rgba(0,0,0,0.3)') + ';' +
+    'color:' + (autoAddToInit ? '#4ade80' : '#666') + ';margin-bottom:0.5rem;';
+  initToggleBtn.textContent = (autoAddToInit ? '⚔️ Auto-Init: ON' : '⚔️ Auto-Init: OFF');
+  initToggleBtn.title = 'Toggle whether placing a token automatically adds it to the initiative tracker';
+  initToggleBtn.onclick = function () {
+    autoAddToInit = !autoAddToInit;
+    renderTokenControls(mapUrl, mapKey);
+  };
+  container.appendChild(initToggleBtn);
+
   // Player quick-place buttons (only shown when Player color is active)
   if (selectedTokenColor === 'green' && playerRoster.length) {
     var playerPickRow = document.createElement('div');
@@ -1238,6 +1253,13 @@ function renderTokenControls(mapUrl, mapKey) {
     tokenState[mapKey].push({ id: id, x: x, y: y, color: selectedTokenColor, label: label });
     sendTokenUpdate(mapKey);
     renderTokenControls(mapUrl, mapKey);
+    // Auto-add to initiative if toggle is on and not already present
+    if (autoAddToInit && selectedTokenColor !== 'green') {
+      var alreadyInInit = initiative.some(function (e) { return e.name === label; });
+      if (!alreadyInInit) {
+        addToInitiative(label, Math.floor(Math.random() * 20) + 1, false, '');
+      }
+    }
   });
 
   container.appendChild(mapWrap);
@@ -1813,7 +1835,7 @@ function loadInitiative() {
 }
 
 function addToInitiative(name, roll, isPlayer, cls) {
-  initiative.push({ name: name, roll: roll, isPlayer: !!isPlayer, cls: cls || '' });
+  initiative.push({ name: name, roll: roll, isPlayer: !!isPlayer, cls: cls || '', conditions: [] });
   initiative.sort(function (a, b) { return b.roll - a.roll; });
   currentTurn = 0;
   saveInitiative();
@@ -1846,10 +1868,30 @@ document.getElementById('init-reset-btn').addEventListener('click', function () 
 
 function nextInitiativeTurn() {
   if (!initiative.length) return;
+  // Tick down conditions for the combatant whose turn is ending
+  var expiredForIdx = -1;
+  var entry = initiative[currentTurn];
+  if (entry && entry.conditions && entry.conditions.length) {
+    var had = entry.conditions.length;
+    entry.conditions = entry.conditions.filter(function (c) {
+      if (c.rounds === null) return true; // permanent
+      c.rounds--;
+      return c.rounds > 0;
+    });
+    if (entry.conditions.length < had) expiredForIdx = currentTurn;
+  }
   currentTurn = (currentTurn + 1) % initiative.length;
   saveInitiative();
   renderInitiative();
   sendInitiative();
+  // Flash entry whose conditions just expired (after re-render so node is fresh)
+  if (expiredForIdx >= 0) {
+    var el = document.querySelector('#init-list .init-entry:nth-child(' + (expiredForIdx + 1) + ')');
+    if (el) {
+      el.style.outline = '2px solid #f97316';
+      setTimeout(function () { el.style.outline = ''; }, 1400);
+    }
+  }
 }
 
 document.getElementById('init-next-btn').addEventListener('click', nextInitiativeTurn);
@@ -1857,28 +1899,220 @@ document.getElementById('init-send-btn').addEventListener('click', sendInitiativ
 document.getElementById('qa-init-next-btn') && document.getElementById('qa-init-next-btn').addEventListener('click', nextInitiativeTurn);
 document.getElementById('qa-init-send-btn') && document.getElementById('qa-init-send-btn').addEventListener('click', sendInitiative);
 
+// ── Conditions preset list ────────────────────────────────────
+var CONDITIONS = [
+  { name: 'Advantage',       type: 'buff',   icon: '🎯', plus: 'Roll 2d20, keep the higher',                minus: '' },
+  { name: 'Disadvantage',    type: 'debuff', icon: '🎲', plus: '',                                            minus: 'Roll 2d20, keep the lower' },
+  { name: 'Blessed',         type: 'buff',   icon: '✨', plus: '+d4 to attacks & saving throws',              minus: 'Concentration' },
+  { name: 'Haste',           type: 'buff',   icon: '💨', plus: '+2 AC, double speed, extra action',           minus: 'Lethargy 1 turn on end' },
+  { name: 'Inspired',        type: 'buff',   icon: '🎵', plus: '+Inspiration die to any roll',                minus: '' },
+  { name: 'Raging',          type: 'buff',   icon: '😡', plus: '+Rage dmg, resist physical damage',          minus: 'No spellcasting' },
+  { name: 'Invisible',       type: 'buff',   icon: '👻', plus: 'Adv attacks; enemies disadv vs you',         minus: 'Ends on attack or spell cast' },
+  { name: 'Flying',          type: 'buff',   icon: '🦅', plus: 'Gain fly speed',                             minus: 'Fall if incapacitated' },
+  { name: 'Shield of Faith', type: 'buff',   icon: '🛡️', plus: '+2 AC',                                      minus: 'Concentration' },
+  { name: 'Concentrating',   type: 'buff',   icon: '🧠', plus: 'Maintaining a concentration spell',          minus: 'Con save DC10+ on taking damage' },
+  { name: 'Poisoned',        type: 'debuff', icon: '☠️', plus: '',                                            minus: 'Disadv on attacks & ability checks' },
+  { name: 'Frightened',      type: 'debuff', icon: '😨', plus: '',                                            minus: "Disadv attacks if source visible; can't move closer" },
+  { name: 'Prone',           type: 'debuff', icon: '⬇️', plus: '',                                            minus: 'Disadv attacks; melee vs you = adv, ranged = disadv; half speed to stand' },
+  { name: 'Restrained',      type: 'debuff', icon: '🔗', plus: '',                                            minus: 'Speed 0; disadv attacks; adv attacks vs you' },
+  { name: 'Stunned',         type: 'debuff', icon: '💫', plus: '',                                            minus: 'Incapacitated; auto-fail Str/Dex saves; adv attacks vs you' },
+  { name: 'Blinded',         type: 'debuff', icon: '🙈', plus: '',                                            minus: 'Disadv attacks; adv attacks vs you' },
+  { name: 'Deafened',        type: 'debuff', icon: '🔇', plus: '',                                            minus: "Can't hear; auto-fail sound-based checks" },
+  { name: 'Paralyzed',       type: 'debuff', icon: '🧊', plus: '',                                            minus: 'Incapacitated; auto-fail Str/Dex saves; adv attacks vs you (crit if within 5ft)' },
+  { name: 'Incapacitated',   type: 'debuff', icon: '💀', plus: '',                                            minus: 'No actions or reactions' },
+  { name: 'Charmed',         type: 'debuff', icon: '💜', plus: '',                                            minus: "Can't attack charmer; charmer has adv on social checks vs you" },
+  { name: 'Grappled',        type: 'debuff', icon: '✊', plus: '',                                            minus: 'Speed 0' },
+  { name: 'Burning',         type: 'debuff', icon: '🔥', plus: '',                                            minus: '1d6 fire dmg/turn; action to douse' },
+  { name: 'Exhaustion',      type: 'debuff', icon: '😴', plus: '',                                            minus: 'Levels 1-6: disadv checks → slow → no actions → unconscious → death' }
+];
+
+// ── Custom reference entries (DM-editable, persisted) ────────
+var conditionRefs = JSON.parse(localStorage.getItem('dnd-cond-refs') || '[]');
+function saveConditionRefs() { localStorage.setItem('dnd-cond-refs', JSON.stringify(conditionRefs)); }
+
+var openCondPanel = null; // index of entry with open cond panel
+
 function renderInitiative() {
-  var html = '';
+  var list = document.getElementById('init-list');
+  list.innerHTML = '';
   for (var i = 0; i < initiative.length; i++) {
-    var active = i === currentTurn ? ' active-turn' : '';
-    var tags = '';
-    if (initiative[i].isPlayer) {
-      tags += ' <span style="font-size:0.65rem;color:#4ade80;border:1px solid #4ade80;border-radius:2px;padding:0 3px;vertical-align:middle;">PC</span>';
+    var entry  = initiative[i];
+    var active = i === currentTurn;
+
+    var div = document.createElement('div');
+    div.className = 'init-entry' + (active ? ' active-turn' : '');
+
+    // ── Top row: roll | name | tags | cond-btn | remove ──
+    var top = document.createElement('div');
+    top.className = 'init-entry-top';
+
+    var order = document.createElement('span');
+    order.className = 'init-order';
+    order.textContent = entry.roll;
+    top.appendChild(order);
+
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'init-entry-name';
+    nameSpan.innerHTML = entry.name;
+    if (entry.isPlayer) {
+      nameSpan.innerHTML += ' <span style="font-size:0.65rem;color:#4ade80;border:1px solid #4ade80;border-radius:2px;padding:0 3px;vertical-align:middle;">PC</span>';
     }
-    if (initiative[i].cls) {
-      tags += ' <span style="font-size:0.65rem;color:#d4af37;border:1px solid #555;border-radius:2px;padding:0 3px;vertical-align:middle;">' + initiative[i].cls + '</span>';
+    if (entry.cls) {
+      nameSpan.innerHTML += ' <span style="font-size:0.65rem;color:#d4af37;border:1px solid #555;border-radius:2px;padding:0 3px;vertical-align:middle;">' + entry.cls + '</span>';
     }
-    html += '<div class="init-entry' + active + '">' +
-      '<span class="init-order">' + initiative[i].roll + '</span>' +
-      '<span class="init-entry-name">' + initiative[i].name + tags + '</span>' +
-      '<button class="init-remove" onclick="removeInit(' + i + ')">&#x2715;</button></div>';
+    top.appendChild(nameSpan);
+
+    // Conditions button
+    var condBtn = document.createElement('button');
+    condBtn.className = 'init-cond-btn';
+    condBtn.title = 'Add/manage conditions';
+    condBtn.textContent = '+ cond';
+    condBtn.onclick = (function (idx) {
+      return function (e) {
+        e.stopPropagation();
+        openCondPanel = (openCondPanel === idx) ? null : idx;
+        renderInitiative();
+      };
+    })(i);
+    top.appendChild(condBtn);
+
+    // Remove button
+    var rmBtn = document.createElement('button');
+    rmBtn.className = 'init-remove';
+    rmBtn.innerHTML = '&#x2715;';
+    rmBtn.onclick = (function (idx) { return function () { removeInit(idx); }; })(i);
+    top.appendChild(rmBtn);
+
+    div.appendChild(top);
+
+    // ── Condition badges ──
+    if (entry.conditions && entry.conditions.length) {
+      var badges = document.createElement('div');
+      badges.className = 'init-conditions';
+      entry.conditions.forEach(function (c, ci) {
+        var badge = document.createElement('span');
+        badge.className = 'cond-badge ' + c.type;
+        var roundLabel = c.rounds === null ? '∞' : c.rounds + 'r';
+        badge.innerHTML = c.icon + ' ' + c.name + ' <span class="init-round-badge">' + roundLabel + '</span>';
+        var rm = document.createElement('button');
+        rm.className = 'cond-remove';
+        rm.innerHTML = '✕';
+        rm.title = 'Remove condition';
+        rm.onclick = (function (entryIdx, condIdx) {
+          return function (e) {
+            e.stopPropagation();
+            initiative[entryIdx].conditions.splice(condIdx, 1);
+            saveInitiative();
+            renderInitiative();
+          };
+        })(i, ci);
+        badge.appendChild(rm);
+        badges.appendChild(badge);
+      });
+      div.appendChild(badges);
+    }
+
+    // ── Condition panel (inline, shown when open) ──
+    if (openCondPanel === i) {
+      var panel = document.createElement('div');
+      panel.className = 'init-cond-panel';
+
+      // Preset select
+      var sel = document.createElement('select');
+      var defOpt = document.createElement('option');
+      defOpt.value = '';
+      defOpt.textContent = 'Pick condition…';
+      sel.appendChild(defOpt);
+      CONDITIONS.forEach(function (c) {
+        var opt = document.createElement('option');
+        opt.value = c.name;
+        opt.textContent = c.icon + ' ' + c.name + ' (' + c.type + ')';
+        opt.dataset.type = c.type;
+        opt.dataset.icon = c.icon;
+        sel.appendChild(opt);
+      });
+      panel.appendChild(sel);
+
+      // Custom name input
+      var customInput = document.createElement('input');
+      customInput.type = 'text';
+      customInput.placeholder = 'Custom name…';
+      customInput.style.marginLeft = '0.3rem';
+      customInput.style.width = '100px';
+      panel.appendChild(customInput);
+
+      // Rounds input
+      var roundsInput = document.createElement('input');
+      roundsInput.type = 'number';
+      roundsInput.min = 1;
+      roundsInput.max = 99;
+      roundsInput.placeholder = 'Rounds';
+      roundsInput.style.marginLeft = '0.3rem';
+      roundsInput.style.width = '60px';
+      panel.appendChild(roundsInput);
+
+      // Type toggle for custom
+      var typeToggle = document.createElement('select');
+      typeToggle.style.marginLeft = '0.3rem';
+      ['buff', 'debuff'].forEach(function (t) {
+        var o = document.createElement('option');
+        o.value = t;
+        o.textContent = t;
+        typeToggle.appendChild(o);
+      });
+      typeToggle.value = 'debuff';
+      panel.appendChild(typeToggle);
+
+      // Permanent checkbox
+      var permLabel = document.createElement('label');
+      permLabel.style.cssText = 'margin-left:0.4rem;font-size:0.72rem;color:#888;white-space:nowrap;';
+      var permCheck = document.createElement('input');
+      permCheck.type = 'checkbox';
+      permCheck.style.marginRight = '3px';
+      permLabel.appendChild(permCheck);
+      permLabel.appendChild(document.createTextNode('∞ Perm'));
+      panel.appendChild(permLabel);
+
+      // Add button
+      var addCondBtn = document.createElement('button');
+      addCondBtn.textContent = '+ Add';
+      addCondBtn.className = 'btn btn-small btn-primary';
+      addCondBtn.style.marginLeft = '0.3rem';
+      addCondBtn.onclick = (function (entryIdx, selEl, custEl, rndEl, typeEl, permEl) {
+        return function () {
+          var preset = CONDITIONS.find(function (c) { return c.name === selEl.value; });
+          var name  = custEl.value.trim() || (preset ? preset.name : '');
+          var icon  = preset ? preset.icon : '⚡';
+          var type  = preset ? preset.type : typeEl.value;
+          var rounds = permEl.checked ? null : (parseInt(rndEl.value) || 1);
+          if (!name) return;
+          if (!initiative[entryIdx].conditions) initiative[entryIdx].conditions = [];
+          initiative[entryIdx].conditions.push({ name: name, type: type, icon: icon, rounds: rounds });
+          openCondPanel = null;
+          saveInitiative();
+          renderInitiative();
+        };
+      })(i, sel, customInput, roundsInput, typeToggle, permCheck);
+      panel.appendChild(addCondBtn);
+
+      // Auto-fill type when preset selected
+      sel.onchange = function () {
+        var preset = CONDITIONS.find(function (c) { return c.name === sel.value; });
+        if (preset) typeToggle.value = preset.type;
+      };
+
+      div.appendChild(panel);
+    }
+
+    list.appendChild(div);
   }
-  initList.innerHTML = html;
+  renderReference();
 }
 
 window.removeInit = function (i) {
   initiative.splice(i, 1);
   if (currentTurn >= initiative.length) currentTurn = 0;
+  if (openCondPanel === i) openCondPanel = null;
   saveInitiative();
   renderInitiative();
 };
@@ -1888,14 +2122,31 @@ function sendInitiative() {
   var html = '';
   for (var i = 0; i < initiative.length; i++) {
     var active = i === currentTurn;
-    var nameHtml = initiative[i].name;
-    if (initiative[i].cls) nameHtml += ' <span style="font-size:0.75rem;opacity:0.75;">(' + initiative[i].cls + ')</span>';
-    html += '<div style="display:flex;align-items:center;gap:0.6rem;padding:0.45rem 0.7rem;margin-bottom:0.3rem;' +
+    var entry  = initiative[i];
+    var nameHtml = entry.name;
+    if (entry.cls) nameHtml += ' <span style="font-size:0.75rem;opacity:0.75;">(' + entry.cls + ')</span>';
+
+    // Condition badges
+    var condHtml = '';
+    if (entry.conditions && entry.conditions.length) {
+      condHtml = '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px;">';
+      entry.conditions.forEach(function (c) {
+        var rounds = c.rounds === null ? '∞' : c.rounds + 'r';
+        var color  = c.type === 'buff' ? '#4ade80' : '#ef4444';
+        var bg     = c.type === 'buff' ? 'rgba(74,222,128,0.15)' : 'rgba(239,68,68,0.15)';
+        condHtml += '<span style="display:inline-flex;align-items:center;gap:3px;font-size:0.65rem;' +
+          'padding:1px 5px;border-radius:3px;border:1px solid ' + color + ';background:' + bg + ';color:' + color + ';">' +
+          c.icon + ' ' + c.name + ' <span style="opacity:0.7;">' + rounds + '</span></span>';
+      });
+      condHtml += '</div>';
+    }
+
+    html += '<div style="display:flex;align-items:flex-start;gap:0.6rem;padding:0.45rem 0.7rem;margin-bottom:0.3rem;' +
       'background:' + (active ? 'rgba(212,175,55,0.18)' : 'rgba(0,0,0,0.18)') + ';border:1px solid ' +
       (active ? 'rgba(212,175,55,0.7)' : 'rgba(90,50,10,0.35)') + ';border-radius:3px;font-size:1rem;">' +
-      '<span style="font-weight:bold;min-width:26px;font-size:0.95rem;">' + initiative[i].roll + '</span>' +
-      '<span style="flex:1;' + (active ? 'font-weight:bold;' : '') + '">' +
-      nameHtml + (active ? '  ◀' : '') + '</span></div>';
+      '<span style="font-weight:bold;min-width:26px;font-size:0.95rem;padding-top:2px;">' + entry.roll + '</span>' +
+      '<div style="flex:1;' + (active ? 'font-weight:bold;' : '') + '">' +
+      nameHtml + (active ? '  ◀' : '') + condHtml + '</div></div>';
   }
   fetch('/api/overlay', {
     method: 'POST',
@@ -1903,6 +2154,79 @@ function sendInitiative() {
     body: JSON.stringify({ title: 'Initiative Order', data: html, duration: 12000 })
   });
 }
+
+// ── Reference Panel ──────────────────────────────────────────
+function renderReference() {
+  var chartEl = document.getElementById('ref-active-chart');
+  var dictEl  = document.getElementById('ref-dict-list');
+  if (!chartEl || !dictEl) return;
+
+  // Active Conditions Chart
+  var active = initiative.filter(function (e) { return e.conditions && e.conditions.length; });
+  if (!active.length) {
+    chartEl.innerHTML = '<p class="ref-empty">No active conditions in initiative.</p>';
+  } else {
+    var chartRows = active.map(function (e) {
+      var badges = e.conditions.map(function (c) {
+        var rounds = c.rounds === null ? '∞' : c.rounds + 'r';
+        return '<span class="cond-badge ' + c.type + '">' + c.icon + ' ' + c.name +
+          ' <span class="init-round-badge">' + rounds + '</span></span>';
+      }).join(' ');
+      return '<tr><td class="ref-chart-name">' + e.name + '</td><td>' + badges + '</td></tr>';
+    }).join('');
+    chartEl.innerHTML = '<table class="ref-chart-table"><thead><tr><th>Combatant</th>' +
+      '<th>Active Conditions</th></tr></thead><tbody>' + chartRows + '</tbody></table>';
+  }
+
+  // Condition Dictionary (built-in CONDITIONS + custom conditionRefs)
+  var allRefs = CONDITIONS.map(function (c) {
+    return { name: c.name, type: c.type, icon: c.icon, plus: c.plus || '', minus: c.minus || '', builtin: true };
+  }).concat(conditionRefs.map(function (r) {
+    return { name: r.name, type: r.type, icon: r.icon, plus: r.plus || '', minus: r.minus || '', builtin: false };
+  }));
+
+  var drows = allRefs.map(function (r, ri) {
+    var delBtn = r.builtin ? '' :
+      '<button class="ref-del-btn" data-ci="' + (ri - CONDITIONS.length) + '" title="Remove">✕</button>';
+    var plusCell  = r.plus  ? r.plus  : '<span style="color:#444">—</span>';
+    var minusCell = r.minus ? r.minus : '<span style="color:#444">—</span>';
+    return '<tr class="ref-row ' + r.type + '">' +
+      '<td class="ref-icon-cell">' + r.icon + '</td>' +
+      '<td><span class="cond-badge ' + r.type + '">' + r.name + '</span></td>' +
+      '<td class="ref-plus-cell">'  + plusCell  + '</td>' +
+      '<td class="ref-minus-cell">' + minusCell + '</td>' +
+      '<td>' + delBtn + '</td></tr>';
+  }).join('');
+
+  dictEl.innerHTML = '<table class="ref-dict-table">' +
+    '<thead><tr><th></th><th>Condition</th>' +
+    '<th class="ref-plus-hdr">+ Benefit</th>' +
+    '<th class="ref-minus-hdr">– Penalty</th><th></th></tr></thead>' +
+    '<tbody>' + drows + '</tbody></table>';
+
+  dictEl.querySelectorAll('.ref-del-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      conditionRefs.splice(parseInt(btn.dataset.ci), 1);
+      saveConditionRefs();
+      renderReference();
+    });
+  });
+}
+
+document.getElementById('ref-add-btn').addEventListener('click', function () {
+  var icon  = document.getElementById('ref-add-icon').value.trim() || '⚡';
+  var name  = document.getElementById('ref-add-name').value.trim();
+  var type  = document.getElementById('ref-add-type').value;
+  var plus  = document.getElementById('ref-add-plus').value.trim();
+  var minus = document.getElementById('ref-add-minus').value.trim();
+  if (!name) return;
+  conditionRefs.push({ name: name, type: type, icon: icon, plus: plus, minus: minus });
+  saveConditionRefs();
+  ['ref-add-name', 'ref-add-icon', 'ref-add-plus', 'ref-add-minus'].forEach(function (id) {
+    document.getElementById(id).value = '';
+  });
+  renderReference();
+});
 
 // ============================================================
 // Search — Maps & Audio
