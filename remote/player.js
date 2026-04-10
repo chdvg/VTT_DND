@@ -333,7 +333,7 @@ function showOverlay(title, html, duration) {
   if (popupTimer) { clearTimeout(popupTimer); popupTimer = null; }
   var inner = '';
   if (title) inner += '<div style="font-family:Georgia,serif;font-size:1.5rem;font-weight:bold;color:#d4af37;text-align:center;margin-bottom:1rem;">' + title + '</div>';
-  inner += '<div style="color:#f0e6c8;font-family:Georgia,serif;font-size:1.1rem;">' + html + '</div>';
+  inner += '<div style="color:#f0e6c8;font-family:Georgia,serif;font-size:1.1rem;text-align:center;max-width:100%;">' + html + '</div>';
   popupEl.innerHTML = inner;
   popupEl.classList.add('visible');
   popupTimer = setTimeout(function () {

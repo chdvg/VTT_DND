@@ -166,13 +166,8 @@ sendImageBtn.addEventListener('click', function () {
 });
 
 function sendImage(label, src) {
-  var html = '<div style="text-align:center;padding:1rem;"><img src="' + src +
-    '" style="max-width:100%;max-height:60vh;border-radius:8px;" /></div>';
-  fetch('/api/overlay', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: label || '', data: html, duration: 20000 })
-  });
+  // Show the image full-screen on the player view (same as a scene map, no fog/tokens/audio)
+  wsSend({ action: 'show-scene-view', image: src, fit: 'contain', audio: null, fogKey: null, mapKey: null, audioLoop: false });
 }
 
 // ============================================================
