@@ -3,5 +3,8 @@ dist/
 release/
 *.exe
 *.blockmap
+*.tar
+*.bak
+.vscode/
 claude.md
 public/assets/
