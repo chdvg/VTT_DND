@@ -21,6 +21,7 @@ const TILES = [
   { id: 'tree',         label: 'Tree',     color: '#14532d', pattern: 'tree' },
   { id: 'mountain',     label: 'Mountain', color: '#57534e', pattern: 'mountain' },
   { id: 'hill',         label: 'Hill',     color: '#65a30d', pattern: 'hill' },
+  { id: 'fire',         label: 'Fire',     color: '#ea580c', pattern: 'fire' },
 ];
 
 // ── Procedural tile textures ──────────────────────────────────
@@ -160,12 +161,15 @@ function buildTextureCanvas(tileId) {
       break;
     }
     case 'lava': {
-      const g=x.createRadialGradient(sz/2,sz/2,2,sz/2,sz/2,sz*.7);
-      g.addColorStop(0,'#fde047'); g.addColorStop(.4,'#f97316'); g.addColorStop(1,'#9a3412');
-      x.fillStyle=g; x.fillRect(0,0,sz,sz);
-      for(let i=0;i<7;i++){x.beginPath();x.arc(r()*sz,r()*sz,7+r()*13,0,Math.PI*2);x.fillStyle=`rgba(90,25,5,${.4+r()*.35})`;x.fill();}
-      x.strokeStyle='rgba(253,224,71,0.5)'; x.lineWidth=1;
-      for(let i=0;i<5;i++){x.beginPath();x.moveTo(r()*sz,r()*sz);x.bezierCurveTo(r()*sz,r()*sz,r()*sz,r()*sz,r()*sz,r()*sz);x.stroke();}
+      // Flowing lava — modelled after water but in fire colours
+      const lg=x.createLinearGradient(0,0,0,sz);
+      lg.addColorStop(0,'#b91c1c'); lg.addColorStop(1,'#7f1d1d');
+      x.fillStyle=lg; x.fillRect(0,0,sz,sz);
+      // Hot-spot ellipses (like water's light patches)
+      for(let i=0;i<14;i++){x.beginPath();x.ellipse(r()*sz,r()*sz,6+r()*14,2+r()*5,r()*Math.PI,0,Math.PI*2);x.fillStyle=`rgba(251,146,60,${.06+r()*.18})`;x.fill();}
+      // Flowing wave lines in bright orange/yellow
+      x.strokeStyle='rgba(253,186,116,0.45)'; x.lineWidth=1;
+      for(let wy=7;wy<sz;wy+=10){x.beginPath();x.moveTo(0,wy);x.bezierCurveTo(sz*.3,wy-4,sz*.7,wy+4,sz,wy);x.stroke();}
       break;
     }
     case 'pit': {
@@ -186,69 +190,77 @@ function buildTextureCanvas(tileId) {
       break;
     }
     case 'tree': {
-      // Forest floor base
-      x.fillStyle='#1a3d12'; x.fillRect(0,0,sz,sz);
-      // Ground texture — dark patches
-      const tc=['#14320e','#1f4a15','#0f2909','#2a5c1a'];
-      for(let i=0;i<12;i++){x.beginPath();x.ellipse(r()*sz,r()*sz,4+r()*10,3+r()*7,r()*Math.PI,0,Math.PI*2);x.fillStyle=tc[~~(r()*tc.length)];x.globalAlpha=.55;x.fill();}
-      x.globalAlpha=1;
-      // Draw 2-3 trees per tile
-      const treeCount=2+~~(r()*2);
-      for(let t=0;t<treeCount;t++){
-        const tx=10+r()*(sz-20), ty=10+r()*(sz-20);
-        // Trunk
-        const trunkW=~~(sz*.07)+2, trunkH=~~(sz*.18)+3;
-        x.fillStyle='#6b3a1f';
-        x.fillRect(~~(tx-trunkW/2),~~(ty+sz*.08),trunkW,trunkH);
-        // Canopy — layered circles for depth
-        const canopyR=~~(sz*.22)+~~(r()*sz*.06);
-        const layers=[{c:'#14532d',s:1},{c:'#166534',s:.85},{c:'#15803d',s:.65},{c:'#22c55e',s:.4}];
-        layers.forEach(({c,s})=>{
-          x.beginPath();
-          x.arc(tx,ty,~~(canopyR*s),0,Math.PI*2);
-          x.fillStyle=c; x.globalAlpha=.92; x.fill();
-        });
-        // Highlight spot
-        x.beginPath(); x.arc(tx-canopyR*.25,ty-canopyR*.25,canopyR*.22,0,Math.PI*2);
-        x.fillStyle='rgba(134,239,172,0.25)'; x.fill();
-        x.globalAlpha=1;
+      // Top-down single tree — canopy fills the tile
+      const cx=sz*.5, cy=sz*.5;
+      const cr=sz*.44; // canopy radius nearly fills tile
+      // Ground shadow cast behind the canopy (offset slightly)
+      x.beginPath(); x.ellipse(cx+sz*.06,cy+sz*.07,cr*.88,cr*.82,0,0,Math.PI*2);
+      x.fillStyle='rgba(0,0,0,0.28)'; x.fill();
+      // Outer canopy — darkest ring (shade underneath outer leaves)
+      x.beginPath(); x.arc(cx,cy,cr,0,Math.PI*2);
+      x.fillStyle='#14532d'; x.fill();
+      // Mid canopy
+      x.beginPath(); x.arc(cx,cy,cr*.78,0,Math.PI*2);
+      x.fillStyle='#166534'; x.fill();
+      // Inner canopy
+      x.beginPath(); x.arc(cx,cy,cr*.56,0,Math.PI*2);
+      x.fillStyle='#15803d'; x.fill();
+      // Bright sunlit centre
+      x.beginPath(); x.arc(cx,cy,cr*.35,0,Math.PI*2);
+      x.fillStyle='#16a34a'; x.fill();
+      // Highlight — upper-left bright spot (sun from upper-left)
+      const hg=x.createRadialGradient(cx-cr*.22,cy-cr*.22,0,cx-cr*.22,cy-cr*.22,cr*.38);
+      hg.addColorStop(0,'rgba(134,239,172,0.55)');
+      hg.addColorStop(1,'rgba(134,239,172,0)');
+      x.fillStyle=hg; x.fill(); // reuse last path shape
+      x.beginPath(); x.arc(cx-cr*.22,cy-cr*.22,cr*.38,0,Math.PI*2); x.fillStyle=hg; x.fill();
+      // Trunk dot visible at exact center
+      x.beginPath(); x.arc(cx,cy,cr*.1,0,Math.PI*2);
+      x.fillStyle='#78350f'; x.fill();
+      x.beginPath(); x.arc(cx,cy,cr*.055,0,Math.PI*2);
+      x.fillStyle='#92400e'; x.fill();
+      // Leaf texture — small dark blobs around the canopy edge
+      for(let i=0;i<16;i++){
+        const ang=r()*Math.PI*2, dist=cr*(0.55+r()*0.42);
+        x.beginPath(); x.ellipse(cx+Math.cos(ang)*dist, cy+Math.sin(ang)*dist, 2+r()*4, 2+r()*3, r()*Math.PI,0,Math.PI*2);
+        x.fillStyle=`rgba(10,60,20,${0.3+r()*0.35})`; x.fill();
       }
       break;
     }
     case 'mountain': {
-      // Rocky base
-      x.fillStyle='#2e2b28'; x.fillRect(0,0,sz,sz);
-      const cx=sz*.5, cy=sz*.52;
-      // Concentric ring layers from outside in — dark base to light peak
-      const mLayers=[
-        {rx:sz*.48,ry:sz*.44,c:'#3d3a36'},
-        {rx:sz*.40,ry:sz*.36,c:'#524e49'},
-        {rx:sz*.31,ry:sz*.27,c:'#6e6860'},
-        {rx:sz*.22,ry:sz*.19,c:'#8f8780'},
-        {rx:sz*.14,ry:sz*.12,c:'#b0a89e'},
-        {rx:sz*.07,ry:sz*.06,c:'#d6cfc6'},
-      ];
-      mLayers.forEach(({rx,ry,c})=>{
-        x.beginPath(); x.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);
-        x.fillStyle=c; x.fill();
-      });
-      // Snow cap — small white dot at peak
-      x.beginPath(); x.ellipse(cx,cy,sz*.04,sz*.035,0,0,Math.PI*2);
+      // No background fill — transparent outside the triangle
+      const mpx=sz*.5, mpy=sz*.05;   // peak
+      const mbl=sz*.04, mbr=sz*.96, mby=sz*.93; // left foot, right foot, base y
+      const mmc=sz*.5;                // base centre x (ridge foot)
+      // Left face — lit side
+      x.beginPath(); x.moveTo(mpx,mpy); x.lineTo(mbl,mby); x.lineTo(mmc,mby); x.closePath();
+      x.fillStyle='#5c5650'; x.fill();
+      // Right face — shadow side
+      x.beginPath(); x.moveTo(mpx,mpy); x.lineTo(mmc,mby); x.lineTo(mbr,mby); x.closePath();
+      x.fillStyle='#3a3733'; x.fill();
+      // Strata lines — left face
+      x.strokeStyle='rgba(0,0,0,0.22)'; x.lineWidth=0.5;
+      for(let i=1;i<5;i++){const t=i/5;
+        x.beginPath();
+        x.moveTo(mpx+(mbl-mpx)*t, mpy+(mby-mpy)*t);
+        x.lineTo(mpx+(mmc-mpx)*t, mpy+(mby-mpy)*t);
+        x.stroke();}
+      // Strata lines — right face
+      for(let i=1;i<5;i++){const t=i/5;
+        x.beginPath();
+        x.moveTo(mpx+(mmc-mpx)*t, mpy+(mby-mpy)*t);
+        x.lineTo(mpx+(mbr-mpx)*t, mpy+(mby-mpy)*t);
+        x.stroke();}
+      // Snow cap — white triangle at top ~22% of height
+      const snowy=mpy+(mby-mpy)*.22;
+      const snowl=mpx+(mbl-mpx)*.22, snowr=mpx+(mbr-mpx)*.22;
+      x.beginPath(); x.moveTo(mpx,mpy); x.lineTo(snowl,snowy); x.lineTo(mmc,snowy); x.closePath();
       x.fillStyle='#f0ede8'; x.fill();
-      // Shadow arc on lower-right of each ring
-      x.strokeStyle='rgba(0,0,0,0.35)'; x.lineWidth=1.2;
-      [sz*.47,sz*.38,sz*.29].forEach(rad=>{
-        x.beginPath(); x.ellipse(cx+sz*.04,cy+sz*.04,rad,rad*.88,0,Math.PI*.25,Math.PI*1.15);
-        x.stroke();
-      });
-      // Highlight arc upper-left
-      x.strokeStyle='rgba(255,255,255,0.12)'; x.lineWidth=1;
-      [sz*.38,sz*.28].forEach(rad=>{
-        x.beginPath(); x.ellipse(cx-sz*.03,cy-sz*.03,rad,rad*.88,0,Math.PI*1.2,Math.PI*2.1);
-        x.stroke();
-      });
-      // Jagged edge texture
-      for(let i=0;i<14;i++){x.beginPath();x.arc(cx+(r()-.5)*sz*.9,cy+(r()-.5)*sz*.85,1+r()*2.5,0,Math.PI*2);x.fillStyle='rgba(0,0,0,0.4)';x.fill();}
+      x.beginPath(); x.moveTo(mpx,mpy); x.lineTo(mmc,snowy); x.lineTo(snowr,snowy); x.closePath();
+      x.fillStyle='#d8d4cf'; x.fill(); // right snow face slightly dimmer
+      // Crisp mountain outline
+      x.strokeStyle='rgba(0,0,0,0.55)'; x.lineWidth=0.8;
+      x.beginPath(); x.moveTo(mpx,mpy); x.lineTo(mbl,mby); x.lineTo(mbr,mby); x.closePath(); x.stroke();
       break;
     }
     case 'hill': {
@@ -283,6 +295,59 @@ function buildTextureCanvas(tileId) {
         x.beginPath(); x.ellipse(hx-sz*.03,hy-sz*.04,rad,rad*.9,0,Math.PI*1.3,Math.PI*2.2);
         x.stroke();
       });
+      break;
+    }
+    case 'fire': {
+      // No background fill — transparent outside flame shapes
+      // Outer flame — red/orange silhouette, 3 tongues, full-width base
+      x.beginPath();
+      x.moveTo(0, sz);
+      x.bezierCurveTo(0,       sz*.52,  sz*.06,  sz*.10,  sz*.18,  sz*.05);
+      x.bezierCurveTo(sz*.28,  sz*.01,  sz*.30,  sz*.38,  sz*.36,  sz*.40);
+      x.bezierCurveTo(sz*.41,  sz*.42,  sz*.44,  sz*.02,  sz*.50,  sz*.01);
+      x.bezierCurveTo(sz*.56,  sz*.00,  sz*.59,  sz*.40,  sz*.64,  sz*.40);
+      x.bezierCurveTo(sz*.70,  sz*.40,  sz*.72,  sz*.01,  sz*.82,  sz*.05);
+      x.bezierCurveTo(sz*.92,  sz*.09,  sz,      sz*.52,  sz,      sz);
+      x.closePath();
+      const fo=x.createLinearGradient(0,sz,0,0);
+      fo.addColorStop(0,'rgba(255,215,45,0.98)');
+      fo.addColorStop(0.30,'rgba(235,82,0,0.96)');
+      fo.addColorStop(1,'rgba(158,14,0,0.92)');
+      x.fillStyle=fo; x.fill();
+
+      // Inner flame — orange/yellow, 3 inset tongues
+      x.beginPath();
+      x.moveTo(sz*.06, sz);
+      x.bezierCurveTo(sz*.06, sz*.60,  sz*.14,  sz*.19,  sz*.24,  sz*.17);
+      x.bezierCurveTo(sz*.33, sz*.15,  sz*.35,  sz*.48,  sz*.41,  sz*.50);
+      x.bezierCurveTo(sz*.46, sz*.52,  sz*.48,  sz*.12,  sz*.50,  sz*.10);
+      x.bezierCurveTo(sz*.52, sz*.08,  sz*.55,  sz*.50,  sz*.59,  sz*.50);
+      x.bezierCurveTo(sz*.65, sz*.50,  sz*.68,  sz*.15,  sz*.76,  sz*.17);
+      x.bezierCurveTo(sz*.86, sz*.19,  sz*.94,  sz*.60,  sz*.94,  sz);
+      x.closePath();
+      const fi=x.createLinearGradient(0,sz,0,0);
+      fi.addColorStop(0,'rgba(255,248,110,0.97)');
+      fi.addColorStop(0.26,'rgba(255,148,10,0.95)');
+      fi.addColorStop(1,'rgba(215,48,0,0.88)');
+      x.fillStyle=fi; x.fill();
+
+      // Hottest base glow — clipped to outer flame so no rectangle artifact
+      x.save();
+      x.beginPath();
+      x.moveTo(0, sz);
+      x.bezierCurveTo(0,       sz*.52,  sz*.06,  sz*.10,  sz*.18,  sz*.05);
+      x.bezierCurveTo(sz*.28,  sz*.01,  sz*.30,  sz*.38,  sz*.36,  sz*.40);
+      x.bezierCurveTo(sz*.41,  sz*.42,  sz*.44,  sz*.02,  sz*.50,  sz*.01);
+      x.bezierCurveTo(sz*.56,  sz*.00,  sz*.59,  sz*.40,  sz*.64,  sz*.40);
+      x.bezierCurveTo(sz*.70,  sz*.40,  sz*.72,  sz*.01,  sz*.82,  sz*.05);
+      x.bezierCurveTo(sz*.92,  sz*.09,  sz,      sz*.52,  sz,      sz);
+      x.closePath();
+      x.clip();
+      const hg=x.createLinearGradient(0,sz,0,sz*.74);
+      hg.addColorStop(0,'rgba(255,255,220,0.94)');
+      hg.addColorStop(1,'rgba(255,210,40,0)');
+      x.fillStyle=hg; x.fillRect(0,sz*.74,sz,sz*.26);
+      x.restore();
       break;
     }
   }

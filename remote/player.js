@@ -274,6 +274,7 @@ function showDiceRoll(die, result) {
   wrapper.classList.remove('settling');
   frontEl.classList.remove('settled');
   labelEl.className = '';
+  cube.setAttribute('data-die', die);
 
   // Seed all faces with random numbers
   allFaces.forEach(function(f) { f.textContent = Math.floor(Math.random() * die) + 1; });

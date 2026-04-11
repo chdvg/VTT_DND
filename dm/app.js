@@ -20,6 +20,8 @@ var tokenState         = {};     // mapKey -> array of {id,x,y,color,label}
 var activeTokenMapKey  = null;
 var selectedTokenColor  = 'red';
 var autoAddToInit       = true;  // toggle: auto-add tokens to initiative
+var fogDeferredInit     = {};    // mapKey -> [{label, roll}] waiting for fog reveal
+var selectedMobType     = '';    // current mob type name for token labels
 var selectedPlayerName = null;
 var activeTokenMapUrl  = null;
 
@@ -828,9 +830,51 @@ function renderFogControls(mapUrl, fogKey) {
   var container = document.getElementById('fog-controls-container');
   container.innerHTML = '';
 
+  var btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:0.5rem;';
+
+  var clearFogBtn = document.createElement('button');
+  clearFogBtn.textContent = 'Hide All';
+  clearFogBtn.className = 'btn btn-warning btn-small';
+  clearFogBtn.style.cssText = 'flex:none;min-width:0;padding:0.25rem 0.9rem;font-size:0.75rem;';
+  clearFogBtn.onclick = function () {
+    window.fogStates[fogKey] = [];
+    for (var r = 0; r < fogRows; r++) {
+      window.fogStates[fogKey].push([]);
+      for (var c = 0; c < fogCols; c++) window.fogStates[fogKey][r].push(false);
+    }
+    renderFogControls(fogMapUrl, fogKey);
+    sendFogUpdate(fogKey);
+  };
+  btnRow.appendChild(clearFogBtn);
+
+  var revealBtn = document.createElement('button');
+  revealBtn.textContent = 'Reveal All';
+  revealBtn.className = 'btn btn-secondary btn-small';
+  revealBtn.style.cssText = 'flex:none;min-width:0;padding:0.25rem 0.9rem;font-size:0.75rem;';
+  revealBtn.onclick = function () {
+    window.fogStates[fogKey] = [];
+    for (var r = 0; r < fogRows; r++) {
+      window.fogStates[fogKey].push([]);
+      for (var c = 0; c < fogCols; c++) window.fogStates[fogKey][r].push(true);
+    }
+    // Flush all deferred initiative entries for this map
+    if (fogDeferredInit[fogKey] && fogDeferredInit[fogKey].length) {
+      fogDeferredInit[fogKey].forEach(function (entry) {
+        var alreadyIn = initiative.some(function (e) { return e.name === entry.label; });
+        if (!alreadyIn) addToInitiative(entry.label, entry.roll, false, '');
+      });
+      fogDeferredInit[fogKey] = [];
+    }
+    renderFogControls(fogMapUrl, fogKey);
+    sendFogUpdate(fogKey);
+  };
+  btnRow.appendChild(revealBtn);
+  container.appendChild(btnRow);
+
   var title = document.createElement('div');
-  title.textContent = 'Fog of War — click or drag to reveal/hide cells';
-  title.style.cssText = 'margin:0.75rem 0 0.4rem;font-size:0.8rem;color:#888;';
+  title.textContent = '🌫️ Fog of War';
+  title.style.cssText = 'font-size:0.7rem;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;color:#555;margin-bottom:0.4rem;';
   container.appendChild(title);
 
   // Map preview with fog grid overlaid
@@ -866,6 +910,19 @@ function renderFogControls(mapUrl, fogKey) {
     fogGrid[r][c] = paintValue;
     cell.style.background = paintValue ? 'transparent' : 'rgba(0,0,0,0.85)';
     scheduleFogUpdate();
+    // If revealing a cell, flush any deferred initiative entries at this position
+    if (paintValue === true && fogDeferredInit[fogKey]) {
+      var remaining = [];
+      fogDeferredInit[fogKey].forEach(function (entry) {
+        if (entry.fr === r && entry.fc === c) {
+          var alreadyIn = initiative.some(function (e) { return e.name === entry.label; });
+          if (!alreadyIn) addToInitiative(entry.label, entry.roll, false, '');
+        } else {
+          remaining.push(entry);
+        }
+      });
+      fogDeferredInit[fogKey] = remaining;
+    }
   }
 
   document.addEventListener('mouseup', function () { isPainting = false; });
@@ -895,39 +952,6 @@ function renderFogControls(mapUrl, fogKey) {
   }
   mapWrap.appendChild(grid);
   container.appendChild(mapWrap);
-
-  var btnRow = document.createElement('div');
-  btnRow.style.cssText = 'display:flex;gap:0.5rem;';
-
-  var clearFogBtn = document.createElement('button');
-  clearFogBtn.textContent = 'Hide All';
-  clearFogBtn.className = 'btn btn-warning';
-  clearFogBtn.onclick = function () {
-    window.fogStates[fogKey] = [];
-    for (var r = 0; r < fogRows; r++) {
-      window.fogStates[fogKey].push([]);
-      for (var c = 0; c < fogCols; c++) window.fogStates[fogKey][r].push(false);
-    }
-    renderFogControls(fogMapUrl, fogKey);
-    sendFogUpdate(fogKey);
-  };
-  btnRow.appendChild(clearFogBtn);
-
-  var revealBtn = document.createElement('button');
-  revealBtn.textContent = 'Reveal All';
-  revealBtn.className = 'btn btn-secondary';
-  revealBtn.onclick = function () {
-    window.fogStates[fogKey] = [];
-    for (var r = 0; r < fogRows; r++) {
-      window.fogStates[fogKey].push([]);
-      for (var c = 0; c < fogCols; c++) window.fogStates[fogKey][r].push(true);
-    }
-    renderFogControls(fogMapUrl, fogKey);
-    sendFogUpdate(fogKey);
-  };
-  btnRow.appendChild(revealBtn);
-
-  container.appendChild(btnRow);
 }
 
 function sendFogUpdate(fogKey) {
@@ -957,15 +981,10 @@ function renderTokenControls(mapUrl, mapKey) {
 
   var container = document.getElementById('token-controls-container');
   container.innerHTML = '';
+  var mapContainer = document.getElementById('token-map-container');
+  if (mapContainer) mapContainer.innerHTML = '';
 
-  var title = document.createElement('div');
-  title.style.cssText = 'margin:0.75rem 0 0.4rem;font-size:0.8rem;color:#888;';
-  title.textContent = 'Mob Tokens — click map to place, click token to remove';
-  container.appendChild(title);
-
-  // Color picker buttons
-  var colorRow = document.createElement('div');
-  colorRow.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap;';
+  // Color picker buttons — appended directly into the flex header container
   [
     { color: 'red',    label: '🔴 Enemy'   },
     { color: 'blue',   label: '🔵 Friend'  },
@@ -979,8 +998,8 @@ function renderTokenControls(mapUrl, mapKey) {
     btn.style.cssText = [
       'flex:none',
       'white-space:nowrap',
-      'padding:0.35rem 0.85rem',
-      'font-size:0.8rem',
+      'padding:0.3rem 0.75rem',
+      'font-size:0.78rem',
       'font-weight:bold',
       'border-radius:4px',
       'border:2px solid ' + bg,
@@ -996,16 +1015,15 @@ function renderTokenControls(mapUrl, mapKey) {
       selectedPlayerName = null;
       renderTokenControls(mapUrl, mapKey);
     };
-    colorRow.appendChild(btn);
+    container.appendChild(btn);
   });
-  container.appendChild(colorRow);
 
   // Auto-add to initiative toggle
   var initToggleBtn = document.createElement('button');
-  initToggleBtn.style.cssText = 'font-size:0.75rem;padding:0.22rem 0.6rem;border-radius:4px;cursor:pointer;' +
+  initToggleBtn.style.cssText = 'flex:none;font-size:0.75rem;padding:0.28rem 0.6rem;border-radius:4px;cursor:pointer;white-space:nowrap;' +
     'border:1px solid ' + (autoAddToInit ? '#4ade80' : '#555') + ';' +
     'background:' + (autoAddToInit ? 'rgba(74,222,128,0.15)' : 'rgba(0,0,0,0.3)') + ';' +
-    'color:' + (autoAddToInit ? '#4ade80' : '#666') + ';margin-bottom:0.5rem;';
+    'color:' + (autoAddToInit ? '#4ade80' : '#666') + ';';
   initToggleBtn.textContent = (autoAddToInit ? '⚔️ Auto-Init: ON' : '⚔️ Auto-Init: OFF');
   initToggleBtn.title = 'Toggle whether placing a token automatically adds it to the initiative tracker';
   initToggleBtn.onclick = function () {
@@ -1013,6 +1031,53 @@ function renderTokenControls(mapUrl, mapKey) {
     renderTokenControls(mapUrl, mapKey);
   };
   container.appendChild(initToggleBtn);
+
+  // Mob type picker (non-green only)
+  if (selectedTokenColor !== 'green') {
+    var MOB_TYPES = ['Bandit','Bugbear','Cultist','Dragon','Drow','Gelatinous Cube',
+      'Ghoul','Giant','Gnoll','Goblin','Guard','Hobgoblin','Kobold','Mimic',
+      'Ogre','Orc','Owlbear','Skeleton','Spy','Thug','Troll','Vampire',
+      'Werewolf','Wolf','Zombie'];
+    var mobRow = document.createElement('div');
+    mobRow.style.cssText = 'display:flex;gap:0.4rem;align-items:center;flex-wrap:nowrap;';
+    var mobLbl = document.createElement('span');
+    mobLbl.textContent = 'Mob Type:';
+    mobLbl.style.cssText = 'font-size:0.75rem;color:#888;white-space:nowrap;';
+    mobRow.appendChild(mobLbl);
+    var mobSel = document.createElement('select');
+    mobSel.style.cssText = 'background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6e6e6;' +
+      'padding:0.22rem 0.4rem;font-size:0.77rem;flex:1;min-width:100px;';
+    var blankOpt = document.createElement('option');
+    blankOpt.value = '';
+    blankOpt.textContent = '— Generic (E1, F1…)';
+    mobSel.appendChild(blankOpt);
+    MOB_TYPES.forEach(function (t) {
+      var o = document.createElement('option');
+      o.value = t;
+      o.textContent = t;
+      if (t === selectedMobType) o.selected = true;
+      mobSel.appendChild(o);
+    });
+    if (selectedMobType && !MOB_TYPES.includes(selectedMobType)) mobSel.value = '';
+    mobSel.onchange = function () {
+      selectedMobType = mobSel.value;
+      customMobInput.value = '';
+      if (selectedMobType) fetchMonsterByName(selectedMobType);
+    };
+    mobRow.appendChild(mobSel);
+    var customMobInput = document.createElement('input');
+    customMobInput.type = 'text';
+    customMobInput.placeholder = 'Custom…';
+    customMobInput.value = (selectedMobType && !MOB_TYPES.includes(selectedMobType)) ? selectedMobType : '';
+    customMobInput.style.cssText = 'background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6e6e6;' +
+      'padding:0.22rem 0.4rem;font-size:0.77rem;width:80px;';
+    customMobInput.oninput = function () {
+      selectedMobType = customMobInput.value.trim();
+      if (selectedMobType) mobSel.value = '';
+    };
+    mobRow.appendChild(customMobInput);
+    container.appendChild(mobRow);
+  }
 
   // Player quick-place buttons (only shown when Player color is active)
   if (selectedTokenColor === 'green' && playerRoster.length) {
@@ -1048,7 +1113,12 @@ function renderTokenControls(mapUrl, mapKey) {
     container.appendChild(playerPickRow);
   }
 
-  // Map preview with token overlay
+  // Map preview with token overlay — goes into the grid map container
+  var mapTarget = (document.getElementById('token-map-container') || container);
+  var mapLabel = document.createElement('div');
+  mapLabel.textContent = '🪬 Token Placement';
+  mapLabel.style.cssText = 'font-size:0.7rem;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;color:#555;margin-bottom:0.5rem;';
+  mapTarget.appendChild(mapLabel);
   var mapWrap = document.createElement('div');
   mapWrap.style.cssText = 'position:relative;display:inline-block;max-width:100%;' +
     'margin-bottom:0.5rem;border:1px solid ' + (drawModeActive ? '#facc15' : '#444') + ';' +
@@ -1056,7 +1126,7 @@ function renderTokenControls(mapUrl, mapKey) {
 
   var mapImg = document.createElement('img');
   mapImg.src = mapUrl;
-  mapImg.style.cssText = 'display:block;max-width:100%;max-height:200px;user-select:none;pointer-events:none;';
+  mapImg.style.cssText = 'display:block;max-width:100%;max-height:340px;object-fit:contain;user-select:none;pointer-events:none;';
   mapWrap.appendChild(mapImg);
 
   // Token dots on the DM preview — draggable
@@ -1245,9 +1315,16 @@ function renderTokenControls(mapUrl, mapKey) {
       }
       label = selectedPlayerName;
     } else {
-      var prefix = { red: 'E', blue: 'F', yellow: 'U' }[selectedTokenColor] || '?';
-      var count  = tokenState[mapKey].filter(function (t) { return t.color === selectedTokenColor; }).length + 1;
-      label = prefix + count;
+      if (selectedMobType) {
+        var typeCount = tokenState[mapKey].filter(function (t) {
+          return t.label.startsWith(selectedMobType + ' ');
+        }).length + 1;
+        label = selectedMobType + ' ' + typeCount;
+      } else {
+        var prefix = { red: 'E', blue: 'F', yellow: 'U' }[selectedTokenColor] || '?';
+        var count  = tokenState[mapKey].filter(function (t) { return t.color === selectedTokenColor; }).length + 1;
+        label = prefix + count;
+      }
     }
     var id = 'tok-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
     tokenState[mapKey].push({ id: id, x: x, y: y, color: selectedTokenColor, label: label });
@@ -1257,12 +1334,26 @@ function renderTokenControls(mapUrl, mapKey) {
     if (autoAddToInit && selectedTokenColor !== 'green') {
       var alreadyInInit = initiative.some(function (e) { return e.name === label; });
       if (!alreadyInInit) {
-        addToInitiative(label, Math.floor(Math.random() * 20) + 1, false, '');
+        // Check if the token's map cell is still fogged
+        var fogKey2 = activeFogKey;
+        var isFogged = false;
+        if (fogKey2 && window.fogStates && window.fogStates[fogKey2]) {
+          var fr = Math.min(fogRows - 1, Math.floor(y * fogRows));
+          var fc = Math.min(fogCols - 1, Math.floor(x * fogCols));
+          isFogged = !window.fogStates[fogKey2][fr][fc];
+        }
+        if (isFogged) {
+          // Defer — add when that cell is revealed
+          if (!fogDeferredInit[mapKey]) fogDeferredInit[mapKey] = [];
+          fogDeferredInit[mapKey].push({ label: label, roll: Math.floor(Math.random() * 20) + 1, fr: fr, fc: fc });
+        } else {
+          addToInitiative(label, Math.floor(Math.random() * 20) + 1, false, '');
+        }
       }
     }
   });
 
-  container.appendChild(mapWrap);
+  mapTarget.appendChild(mapWrap);
 
   // Token list
   var tokens = tokenState[mapKey] || [];
@@ -1284,13 +1375,20 @@ function renderTokenControls(mapUrl, mapKey) {
       rmBtn.textContent = '✕';
       rmBtn.className = 'btn btn-danger btn-small';
       rmBtn.style.cssText = 'padding:0.1rem 0.4rem;min-width:0;flex:none;';
-      rmBtn.onclick = (function (i) {
+      rmBtn.onclick = (function (i, tok) {
         return function () {
+          // Remove from initiative tracker if present
+          initiative = initiative.filter(function (e) { return e.name !== tok.label; });
+          // Remove from fog deferred queue too
+          if (fogDeferredInit[mapKey]) {
+            fogDeferredInit[mapKey] = fogDeferredInit[mapKey].filter(function (d) { return d.label !== tok.label; });
+          }
+          renderInitiative();
           tokenState[mapKey].splice(i, 1);
           sendTokenUpdate(mapKey);
           renderTokenControls(mapUrl, mapKey);
         };
-      })(idx);
+      })(idx, tok);
       row.appendChild(rmBtn);
       listDiv.appendChild(row);
     });
@@ -1300,12 +1398,17 @@ function renderTokenControls(mapUrl, mapKey) {
     clearAllBtn.className = 'btn btn-warning btn-small';
     clearAllBtn.style.marginTop = '0.3rem';
     clearAllBtn.onclick = function () {
+      // Remove all non-player tokens from initiative
+      var removedLabels = (tokenState[mapKey] || []).filter(function (t) { return t.color !== 'green'; }).map(function (t) { return t.label; });
+      initiative = initiative.filter(function (e) { return !removedLabels.includes(e.name); });
+      fogDeferredInit[mapKey] = [];
+      renderInitiative();
       tokenState[mapKey] = [];
       sendTokenUpdate(mapKey);
       renderTokenControls(mapUrl, mapKey);
     };
     listDiv.appendChild(clearAllBtn);
-    container.appendChild(listDiv);
+    mapTarget.appendChild(listDiv);
   }
 }
 
@@ -1566,17 +1669,24 @@ function saveScene() {
     .catch(function (e) { alert('Network error: ' + e.message); });
 }
 
-// ── Section Drag & Drop ──────────────────────────────────
+// ── Section Drag & Drop — DOM reorder ──────────────────────────────────
 (function () {
-  var STORAGE_KEY = 'dm-panel-order';
+  var ORDER_KEY = 'dm-panel-order';
   var grid = document.querySelector('.panel-grid');
   var dragSrc = null;
-  var dropTarget = null;
   var dragSection = null;
+  var dropTarget = null;
+
+  // Clear any broken explicit positions from the old ghost system
+  localStorage.removeItem('dm-panel-positions');
+  grid.querySelectorAll(':scope > section.panel').forEach(function (s) {
+    s.style.gridColumn = '';
+    s.style.gridRow = '';
+  });
 
   function restoreOrder() {
     var saved;
-    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) { saved = null; }
+    try { saved = JSON.parse(localStorage.getItem(ORDER_KEY)); } catch (e) { saved = null; }
     if (!Array.isArray(saved) || !saved.length) return;
     saved.forEach(function (id) {
       var el = document.getElementById(id);
@@ -1586,10 +1696,9 @@ function saveScene() {
 
   function saveOrder() {
     var ids = Array.from(grid.querySelectorAll(':scope > section')).map(function (s) { return s.id; }).filter(Boolean);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+    localStorage.setItem(ORDER_KEY, JSON.stringify(ids));
   }
 
-  // Enable drag only while the handle is held, so child interactions (fog cells, inputs) work normally
   document.addEventListener('mousedown', function (e) {
     var handle = e.target.closest && e.target.closest('.drag-handle');
     if (handle) {
@@ -1600,7 +1709,6 @@ function saveScene() {
 
   document.addEventListener('mouseup', function () {
     if (dragSection && !dragSrc) {
-      // Released without starting a drag — remove draggable immediately
       dragSection.setAttribute('draggable', 'false');
       dragSection = null;
     }
@@ -1609,9 +1717,7 @@ function saveScene() {
   grid.addEventListener('dragstart', function (e) {
     var el = e.target;
     while (el && el.tagName !== 'SECTION') el = el.parentElement;
-    if (!el || !grid.contains(el) || el.getAttribute('draggable') !== 'true') {
-      e.preventDefault(); return;
-    }
+    if (!el || !grid.contains(el) || el.getAttribute('draggable') !== 'true') { e.preventDefault(); return; }
     dragSrc = el;
     el.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
@@ -1630,7 +1736,6 @@ function saveScene() {
     dragSection = null;
   });
 
-  // dragover: just highlight the target — do NOT reorder DOM here
   grid.addEventListener('dragover', function (e) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -1654,12 +1759,11 @@ function saveScene() {
     }
   });
 
-  // drop: insert the dragged section before or after the target
   grid.addEventListener('drop', function (e) {
     e.preventDefault();
     if (!dragSrc || !dropTarget) return;
     var rect = dropTarget.getBoundingClientRect();
-    if (e.clientY < rect.top + rect.height / 2) {
+    if (e.clientX < rect.left + rect.width / 2) {
       grid.insertBefore(dragSrc, dropTarget);
     } else {
       grid.insertBefore(dragSrc, dropTarget.nextSibling);
@@ -1668,6 +1772,75 @@ function saveScene() {
   });
 
   restoreOrder();
+}());
+
+// ── Panel Width Controls ──────────────────────────────────────
+(function () {
+  var COL_CLASSES = ['col-1','col-2','col-3','col-4','col-5','col-6'];
+  var WIDTH_KEY = 'dm-panel-widths';
+
+  function currentColNum(el) {
+    for (var i = 0; i < COL_CLASSES.length; i++) {
+      if (el.classList.contains(COL_CLASSES[i])) return i + 1;
+    }
+    return 2;
+  }
+
+  function saveWidths() {
+    var map = {};
+    document.querySelectorAll('.panel-grid section.panel[id]').forEach(function (s) {
+      map[s.id] = currentColNum(s);
+    });
+    localStorage.setItem(WIDTH_KEY, JSON.stringify(map));
+  }
+
+  function restoreWidths() {
+    var saved;
+    try { saved = JSON.parse(localStorage.getItem(WIDTH_KEY)); } catch (e) { saved = null; }
+    if (!saved) return;
+    Object.keys(saved).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      COL_CLASSES.forEach(function (c) { el.classList.remove(c); });
+      el.classList.add('col-' + saved[id]);
+    });
+  }
+
+  function adjustWidth(section, delta) {
+    var cur = currentColNum(section);
+    var next = Math.max(1, Math.min(6, cur + delta));
+    if (next === cur) return;
+    COL_CLASSES.forEach(function (c) { section.classList.remove(c); });
+    section.classList.add('col-' + next);
+    var lbl = section.querySelector('.pw-label');
+    if (lbl) lbl.textContent = next;
+    saveWidths();
+  }
+
+  function injectControls() {
+    document.querySelectorAll('.panel-grid section.panel[id]').forEach(function (section) {
+      if (section.querySelector('.panel-width-ctrl')) return;
+      var handle = section.querySelector('.drag-handle');
+      if (!handle) return;
+      var cur = currentColNum(section);
+      var ctrl = document.createElement('span');
+      ctrl.className = 'panel-width-ctrl';
+      ctrl.innerHTML =
+        '<button class="pw-btn pw-minus" title="Narrower">&#9664;</button>' +
+        '<span class="pw-label">' + cur + '</span>' +
+        '<button class="pw-btn pw-plus" title="Wider">&#9654;</button>';
+      ctrl.querySelector('.pw-minus').addEventListener('click', function (e) {
+        e.stopPropagation(); adjustWidth(section, -1);
+      });
+      ctrl.querySelector('.pw-plus').addEventListener('click', function (e) {
+        e.stopPropagation(); adjustWidth(section, +1);
+      });
+      handle.parentNode.insertBefore(ctrl, handle.nextSibling);
+    });
+  }
+
+  restoreWidths();
+  injectControls();
 }());
 
 // ============================================================
@@ -2031,6 +2204,20 @@ function renderInitiative() {
         opt.dataset.icon = c.icon;
         sel.appendChild(opt);
       });
+      if (conditionRefs.length) {
+        var sepOpt = document.createElement('option');
+        sepOpt.disabled = true;
+        sepOpt.textContent = '── Custom ──';
+        sel.appendChild(sepOpt);
+        conditionRefs.forEach(function (c) {
+          var opt = document.createElement('option');
+          opt.value = c.name;
+          opt.textContent = c.icon + ' ' + c.name + ' (' + c.type + ')';
+          opt.dataset.type = c.type;
+          opt.dataset.icon = c.icon;
+          sel.appendChild(opt);
+        });
+      }
       panel.appendChild(sel);
 
       // Custom name input
@@ -2080,7 +2267,7 @@ function renderInitiative() {
       addCondBtn.style.marginLeft = '0.3rem';
       addCondBtn.onclick = (function (entryIdx, selEl, custEl, rndEl, typeEl, permEl) {
         return function () {
-          var preset = CONDITIONS.find(function (c) { return c.name === selEl.value; });
+          var preset = CONDITIONS.concat(conditionRefs).find(function (c) { return c.name === selEl.value; });
           var name  = custEl.value.trim() || (preset ? preset.name : '');
           var icon  = preset ? preset.icon : '⚡';
           var type  = preset ? preset.type : typeEl.value;
@@ -2097,7 +2284,7 @@ function renderInitiative() {
 
       // Auto-fill type when preset selected
       sel.onchange = function () {
-        var preset = CONDITIONS.find(function (c) { return c.name === sel.value; });
+        var preset = CONDITIONS.concat(conditionRefs).find(function (c) { return c.name === sel.value; });
         if (preset) typeToggle.value = preset.type;
       };
 
@@ -2239,6 +2426,145 @@ document.getElementById('map-search').addEventListener('input', function () {
 document.getElementById('audio-search').addEventListener('input', function () {
   audioSearchTerm = this.value.trim();
   applyAudioDisplay();
+});
+
+// ============================================================
+// Monster Lookup  (Open5e API)
+// ============================================================
+var _monsterCache = {};
+
+function slugify(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+function modStr(score) {
+  var m = Math.floor((score - 10) / 2);
+  return (m >= 0 ? '+' : '') + m;
+}
+
+function fetchMonsterByName(name) {
+  var slug = slugify(name);
+  if (_monsterCache[slug]) { renderMonsterStatBlock(_monsterCache[slug]); return; }
+  var statEl = document.getElementById('monster-stat-block');
+  statEl.className = 'msb-loading';
+  statEl.textContent = 'Loading ' + name + '…';
+  document.getElementById('monster-results-list').innerHTML = '';
+  fetch('https://api.open5e.com/v1/monsters/?name=' + encodeURIComponent(name) + '&limit=10')
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.results || !data.results.length) {
+        statEl.className = 'msb-loading';
+        statEl.textContent = 'No results for "' + name + '".';
+        return;
+      }
+      if (data.results.length === 1) {
+        _monsterCache[slug] = data.results[0];
+        renderMonsterStatBlock(data.results[0]);
+      } else {
+        statEl.className = 'hidden';
+        statEl.textContent = '';
+        var listEl = document.getElementById('monster-results-list');
+        listEl.innerHTML = '';
+        data.results.forEach(function (m) {
+          var btn = document.createElement('button');
+          btn.className = 'monster-result-btn';
+          btn.textContent = m.name;
+          btn.onclick = function () {
+            _monsterCache[slugify(m.name)] = m;
+            renderMonsterStatBlock(m);
+            listEl.querySelectorAll('.monster-result-btn').forEach(function (b) {
+              b.classList.toggle('monster-result-active', b === btn);
+            });
+          };
+          listEl.appendChild(btn);
+        });
+      }
+    })
+    .catch(function () {
+      statEl.className = 'msb-loading';
+      statEl.textContent = 'Error fetching monster data. Check your network.';
+    });
+}
+
+function renderMonsterStatBlock(m) {
+  var el = document.getElementById('monster-stat-block');
+  el.className = '';
+
+  function prop(label, val) {
+    if (!val && val !== 0) return '';
+    return '<div class="msb-prop-line"><strong>' + label + '</strong> ' + val + '</div>';
+  }
+
+  var scores = [['STR',m.strength],['DEX',m.dexterity],['CON',m.constitution],
+                ['INT',m.intelligence],['WIS',m.wisdom],['CHA',m.charisma]];
+  var scoresHtml = scores.map(function (s) {
+    return '<div class="msb-score-box"><div class="msb-score-label">' + s[0] + '</div>' +
+      '<div class="msb-score-val">' + (s[1] || '—') + '</div>' +
+      '<div class="msb-score-mod">' + (s[1] ? modStr(s[1]) : '') + '</div></div>';
+  }).join('');
+
+  var actionsHtml = '';
+  function renderActionGroup(label, arr) {
+    if (!arr || !arr.length) return '';
+    var rows = arr.map(function (a) {
+      return '<div class="msb-action"><span class="msb-action-name">' + a.name + '.</span> ' +
+        (a.desc || '') + '</div>';
+    }).join('');
+    return '<div class="msb-actions-hdr">' + label + '</div>' + rows;
+  }
+  actionsHtml += renderActionGroup('Actions', m.actions);
+  actionsHtml += renderActionGroup('Bonus Actions', m.bonus_actions);
+  actionsHtml += renderActionGroup('Reactions', m.reactions);
+  actionsHtml += renderActionGroup('Legendary Actions', m.legendary_actions);
+
+  var saves = [];
+  ['strength_save','dexterity_save','constitution_save','intelligence_save','wisdom_save','charisma_save']
+    .forEach(function (k) {
+      if (m[k] !== null && m[k] !== undefined) {
+        saves.push(k.replace('_save','').slice(0,3).toUpperCase() + ' +' + m[k]);
+      }
+    });
+
+  el.innerHTML =
+    '<div class="msb-name">' + m.name + '</div>' +
+    '<div class="msb-meta">' + (m.size||'') + ' ' + (m.type||'') + (m.subtype ? ' (' + m.subtype + ')' : '') +
+      ', ' + (m.alignment||'') + '</div>' +
+    '<hr class="msb-divider">' +
+    prop('Armor Class', m.armor_class + (m.armor_desc ? ' (' + m.armor_desc + ')' : '')) +
+    prop('Hit Points', m.hit_points + ' (' + (m.hit_dice||'') + ')') +
+    prop('Speed', m.speed ? Object.entries(m.speed).filter(function(e){return e[1];}).map(function(e){return e[0]+' '+e[1];}).join(', ') : '') +
+    prop('Challenge', m.challenge_rating + (m.cr ? '' : '') + (m.xp ? ' (' + m.xp.toLocaleString() + ' XP)' : '')) +
+    '<hr class="msb-divider">' +
+    '<div class="msb-scores">' + scoresHtml + '</div>' +
+    '<hr class="msb-divider">' +
+    (saves.length ? prop('Saving Throws', saves.join(', ')) : '') +
+    prop('Skills', m.skills ? Object.entries(m.skills).map(function(e){return e[0]+' +'+e[1];}).join(', ') : '') +
+    prop('Damage Immunities', m.damage_immunities) +
+    prop('Damage Resistances', m.damage_resistances) +
+    prop('Damage Vulnerabilities', m.damage_vulnerabilities) +
+    prop('Condition Immunities', m.condition_immunities) +
+    prop('Senses', m.senses) +
+    prop('Languages', m.languages) +
+    (m.special_abilities && m.special_abilities.length ?
+      '<hr class="msb-divider"><div class="msb-actions-hdr">Special Traits</div>' +
+      m.special_abilities.map(function(a){
+        return '<div class="msb-action"><span class="msb-action-name">' + a.name + '.</span> ' + (a.desc||'') + '</div>';
+      }).join('') : '') +
+    actionsHtml;
+}
+
+document.getElementById('monster-search-btn').addEventListener('click', function () {
+  var q = document.getElementById('monster-search-input').value.trim();
+  if (q) fetchMonsterByName(q);
+});
+document.getElementById('monster-search-input').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') { var q = this.value.trim(); if (q) fetchMonsterByName(q); }
+});
+document.getElementById('monster-clear-btn').addEventListener('click', function () {
+  document.getElementById('monster-search-input').value = '';
+  document.getElementById('monster-results-list').innerHTML = '';
+  var sb = document.getElementById('monster-stat-block');
+  sb.innerHTML = ''; sb.className = 'hidden';
 });
 
 // ============================================================

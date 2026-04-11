@@ -269,6 +269,15 @@
       transition: opacity 0.5s ease 0.1s;
     }
     #dice-result-label.visible { opacity: 1; }
+
+    /* ── Die shapes via clip-path on faces (keeps 3D depth while faces are polygon-shaped) ── */
+    #dice-3d[data-die]       .dice-face { border-radius: 0; }
+    #dice-3d[data-die="4"]   .dice-face { clip-path: polygon(50% 4%, 96% 93%, 4% 93%); }
+    #dice-3d[data-die="8"]   .dice-face { clip-path: polygon(50% 4%, 96% 50%, 50% 96%, 4% 50%); }
+    #dice-3d[data-die="10"]  .dice-face { clip-path: polygon(50% 4%, 96% 42%, 78% 96%, 22% 96%, 4% 42%); }
+    #dice-3d[data-die="12"]  .dice-face { clip-path: polygon(50% 4%, 93% 28%, 81% 95%, 19% 95%, 7% 28%); }
+    #dice-3d[data-die="20"]  .dice-face { clip-path: polygon(50% 4%, 88% 21%, 97% 62%, 73% 97%, 27% 97%, 3% 62%, 12% 21%); }
+    #dice-3d[data-die="100"] .dice-face { clip-path: circle(48% at 50% 50%); }
   </style>
 </head>
 <body>

@@ -49,23 +49,27 @@
     <div class="panel-grid">
 
     <!-- ── Map Control — hidden until a map is shown ── -->
-    <section class="panel panel-full" id="section-map-control">
-      <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:0.75rem;">
-        <h2 style="margin:0;">🗺️ Map Control — <span id="map-control-title" style="font-weight:normal;font-size:0.9rem;color:#aaa;">no map active</span></h2>
-        <div class="btn-row" style="margin:0;">
+    <section class="panel col-6" id="section-map-control">
+      <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+        <h2 style="margin:0;flex:none;">🗺️ Map Control — <span id="map-control-title" style="font-weight:normal;font-size:0.9rem;color:#aaa;">no map active</span></h2>
+        <div class="btn-row" style="margin:0;flex:none;">
           <button id="blackout-btn" class="btn btn-danger">⬛ BLACKOUT</button>
           <button id="clear-btn" class="btn btn-warning">🧹 CLEAR</button>
         </div>
       </div>
-      <div id="map-control-grid" style="display:none;grid-template-columns:1fr 1fr;gap:1.5rem;">
+      <div id="map-control-grid" style="display:none;grid-template-columns:2fr 1px 3fr;gap:0 1.25rem;">
         <div id="fog-controls-container"></div>
-        <div id="token-controls-container"></div>
-        <div id="draw-controls-container" style="grid-column:1/-1;border-top:1px solid #21262d;padding-top:0;"></div>
+        <div style="background:#2a2f3a;align-self:stretch;"></div>
+        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+          <div id="token-controls-container" style="display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;"></div>
+          <div id="token-map-container"></div>
+          <div id="draw-controls-container" style="border-top:1px solid #21262d;padding-top:0.6rem;"></div>
+        </div>
       </div>
     </section>
 
     <!-- ── Row 2: Initiative (wide) | Dice ── -->
-    <section class="panel panel-wide" id="section-initiative">
+    <section class="panel col-2" id="section-initiative">
       <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Initiative Tracker</h2>
 
       <!-- Active round list -->
@@ -107,7 +111,7 @@
     </section>
 
     <!-- ── Reference Panel ── -->
-    <section class="panel panel-full" id="section-reference">
+    <section class="panel col-2" id="section-reference">
       <details>
         <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠿</span>📋 Reference<span class="sb-chevron">▶</span></summary>
         <div style="margin-top:0.75rem;">
@@ -138,7 +142,7 @@
     </section>
 
     <!-- ── Row 2 col 4: Dice ── -->
-    <section class="panel" id="section-dice">
+    <section class="panel col-1" id="section-dice">
       <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Dice Roller</h2>
       <div class="dice-buttons">
         <button class="btn-dice" data-die="4">d4</button>
@@ -154,7 +158,7 @@
     </section>
 
     <!-- ── Row 3: Send Text (wide) | Send Image (wide) ── -->
-    <section class="panel panel-wide" id="section-send-text">
+    <section class="panel col-2" id="section-send-text">
       <details>
         <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠿</span>Send Text<span class="sb-chevron">▶</span></summary>
         <div style="margin-top:1rem;">
@@ -166,7 +170,7 @@
         </div>
       </details>
     </section>
-    <section class="panel panel-wide" id="section-send-image">
+    <section class="panel col-2" id="section-send-image">
       <details>
         <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠿</span>Send Image<span class="sb-chevron">▶</span></summary>
         <div style="margin-top:1rem;">
@@ -184,8 +188,24 @@
       </details>
     </section>
 
-    <!-- ── Scene Builder — prep tool, collapsed by default ── -->
-    <section class="panel panel-full" id="section-scene-builder">
+    <!-- ── Monster Lookup ── -->
+    <section class="panel col-2" id="section-monster">
+      <details>
+        <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠇</span>🐉 Monster Lookup<span class="sb-chevron">▶</span></summary>
+        <div style="margin-top:0.75rem;">
+          <div class="monster-search-row">
+            <input type="text" id="monster-search-input" placeholder="Search monster name (e.g. Goblin)…" />
+            <button id="monster-search-btn" class="btn btn-secondary">🔍 Search</button>
+            <button id="monster-clear-btn" class="btn btn-warning btn-small" style="white-space:nowrap;">&times; Clear</button>
+          </div>
+          <div id="monster-results-list"></div>
+          <div id="monster-stat-block"></div>
+        </div>
+      </details>
+    </section>
+
+    <!-- ── Scene Builder ── prep tool, collapsed by default ── -->
+    <section class="panel col-4" id="section-scene-builder">
       <details>
         <summary class="panel-summary">
           <span class="drag-handle" title="Drag to reorder">⠿</span>Scene Builder
