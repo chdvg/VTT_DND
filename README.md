@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v2.0 — Web Edition)
+# D&D VTT Control Console (v2.1 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -86,11 +86,10 @@ Each tile renders with a unique procedural texture generated on a canvas — no 
 - Auto-dismiss timers: Dice 8 s · Initiative 12 s · Text 15 s · Image 20 s
 - **Fullscreen button** — ⛶ in the corner; useful for projector displays to hide browser chrome
 
-### Quick Actions
+### Map Control Panel
 - **⬛ BLACKOUT** — toggles a solid black overlay that covers the *entire* player screen including any popups. Click again to reveal. Audio stops on blackout.
 - **🧹 CLEAR** — dismisses any open popup (initiative, text, image overlay) without disturbing the current scene image or audio.
-- **⚔️ Send Initiative** — broadcasts the current initiative order to players without advancing the turn.
-- **⏭️ Next Initiative** — advances to the next turn and immediately broadcasts the updated order.
+- Fog of war controls and token/draw overlay tools are embedded directly in this panel when a map is active.
 
 ### Initiative Tracker
 - Add mobs/NPCs by name and roll; add players from the **Player Roster**
@@ -102,7 +101,42 @@ Each tile renders with a unique procedural texture generated on a canvas — no 
 - **🧹 Clear Mobs** — removes all mob/NPC entries but keeps PC entries in the list for the next encounter.
 - **🔄 Hard Reset** — clears the entire initiative list including players (prompts for confirmation).
 - **Persistence** — the current round, turn position, and all entries survive a page refresh (saved to `localStorage`).
-- Send Initiative and Next Initiative are also available in the **Quick Actions** panel so you never have to scroll down mid-combat.
+- **⚔️ Send** and **⏭️ Next** buttons are always visible in the Initiative Tracker panel.
+
+### Monster Lookup
+
+Real-time monster stat block lookup powered by the [Open5e API](https://open5e.com/).
+
+- **Wildcard / partial-name search** — searches by `name__icontains`, so typing `"goblin"` returns Goblin, Goblin Boss, Dust Goblin, Chaos-Spawn Goblin, etc. (up to 20 results)
+- When multiple matches are found, clickable result buttons appear — select one to load its full stat block
+- Stat block displays: size/type/alignment, AC, HP, speed, ability scores + modifiers, saving throws, skills, immunities/resistances/vulnerabilities, senses, languages, special traits, actions, bonus actions, reactions, and legendary actions
+- Results are cached per session to avoid redundant API calls
+- Press **Enter** in the search box or click **🔍 Search** to query
+
+> Monster data is provided by **[Open5e](https://open5e.com/)** — an open-source 5e SRD API maintained by the community. All monster stat blocks are drawn from officially licensed SRD content via their free public API at `https://api.open5e.com/`.
+
+### Reference Panel
+
+- **Active Conditions chart** — shows each combatant currently in initiative and any conditions assigned to them at a glance
+- **Condition Dictionary** — a built-in reference for all standard 5e conditions (Blinded, Charmed, Frightened, etc.) with quick-read bullet points for mechanical effects (advantage/disadvantage, auto-fails, speed penalties, etc.)
+- **Custom conditions** — add your own homebrew conditions with name, type (buff/debuff), and notes
+- Assign conditions to any combatant from the initiative tracker; the chart updates in real time
+
+### Token Overlay
+
+- Place colored token markers directly on any scene map in the DM panel
+- Color codes: 🔴 Enemy · 🔵 Friend · 🟡 Unknown · 🟢 Player
+- **Mob type picker** — choose a standard mob type from a dropdown or enter a custom name; looking up a mob type can auto-pull its stat block from the Monster Lookup
+- **Auto-add to initiative** — toggle to automatically add a placed token to the current initiative round
+- Tokens persist per map-key in state; drag tokens to reposition or click to remove
+- **Send Live** broadcasts the current map with all tokens overlaid to player screens
+
+### Annotations & Drawing
+
+- Freehand draw annotations directly on the active map in the DM panel
+- Choose pen color and stroke width; drawn lines appear as an overlay layer over the map and tokens
+- Annotations are cleared when loading a new map or on **🗑 Clear**
+- Useful for circling points of interest or drawing attention live during play
 
 ### DM Panel UX
 - **Draggable sections** — grab the ⠿ handle on any panel header and drag it to reorder; layout is saved per-browser in `localStorage`
@@ -294,13 +328,29 @@ localStorage.removeItem('dm-panel-order');
 ```
 
 Default order:
-1. Quick Actions *(BLACKOUT · CLEAR · Send Initiative · Next Initiative)*
-2. Maps & Audio
-3. Scene Builder
-4. Send Text
-5. Send Image
-6. Initiative Tracker
-7. Dice Roller
+1. Map Control *(active map, BLACKOUT, CLEAR, fog, tokens, drawing)*
+2. Initiative Tracker
+3. Reference *(Active Conditions · Condition Dictionary)*
+4. Dice Roller
+5. Send Text
+6. Send Image
+7. Monster Lookup
+8. Scene Builder
+
+---
+
+## Credits & Acknowledgements
+
+### Monster Data — Open5e
+
+Monster stat blocks are powered by **[Open5e](https://open5e.com/)**, a free and open-source API providing 5th Edition SRD content.
+
+- **API:** `https://api.open5e.com/`
+- **GitHub:** [open5e/open5e-api](https://github.com/open5e/open5e-api)
+- **License:** Content is drawn from the [Systems Reference Document (SRD)](https://dnd.wizards.com/resources/systems-reference-document) released under the [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/) by Wizards of the Coast.
+- Some monster entries originate from third-party 5e supplements (Tome of Beasts, Creature Codex, etc.) also published through Open5e under their respective licenses.
+
+Many thanks to the Open5e contributors for maintaining this invaluable free resource for the D&D community.
 
 ---
 

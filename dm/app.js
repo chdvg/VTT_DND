@@ -2449,7 +2449,7 @@ function fetchMonsterByName(name) {
   statEl.className = 'msb-loading';
   statEl.textContent = 'Loading ' + name + '…';
   document.getElementById('monster-results-list').innerHTML = '';
-  fetch('https://api.open5e.com/v1/monsters/?name=' + encodeURIComponent(name) + '&limit=10')
+  fetch('https://api.open5e.com/v1/monsters/?name__icontains=' + encodeURIComponent(name) + '&limit=20')
     .then(function (r) { return r.json(); })
     .then(function (data) {
       if (!data.results || !data.results.length) {
