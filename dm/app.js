@@ -2,6 +2,16 @@
 //  DM Control Panel — app.js
 // ============================================================
 
+// ── Security: HTML escape helper ─────────────────────────────
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ── State ────────────────────────────────────────────────────
 var ws            = null;
 var initiative    = [];
@@ -469,7 +479,7 @@ function renderScenesPanel() {
         });
 
         if (!hits.length) {
-          mapList.innerHTML = '<p style="color:#888;font-size:0.85rem;">No results for "' + sceneSearchTerm + '"</p>';
+          mapList.innerHTML = '<p style="color:#888;font-size:0.85rem;">No results for &ldquo;' + escHtml(sceneSearchTerm) + '&rdquo;</p>';
           return;
         }
         var totalViews = hits.reduce(function (n, h) {
@@ -769,7 +779,7 @@ function applyAudioDisplay() {
 
     var hdr = document.createElement('div');
     hdr.className = 'audio-cat-hdr';
-    hdr.innerHTML = '<span class="audio-cat-arrow">▼</span> ' + group.cat +
+    hdr.innerHTML = '<span class="audio-cat-arrow">▼</span> ' + escHtml(group.cat) +
       ' <span style="color:#555;font-size:0.72rem;">(' + matchingFiles.length + ')</span>';
     audioList.appendChild(hdr);
 
@@ -2268,12 +2278,12 @@ function renderInitiative() {
 
     var nameSpan = document.createElement('span');
     nameSpan.className = 'init-entry-name';
-    nameSpan.innerHTML = entry.name;
+    nameSpan.textContent = entry.name;
     if (entry.isPlayer) {
       nameSpan.innerHTML += ' <span style="font-size:0.65rem;color:#4ade80;border:1px solid #4ade80;border-radius:2px;padding:0 3px;vertical-align:middle;">PC</span>';
     }
     if (entry.cls) {
-      nameSpan.innerHTML += ' <span style="font-size:0.65rem;color:#d4af37;border:1px solid #555;border-radius:2px;padding:0 3px;vertical-align:middle;">' + entry.cls + '</span>';
+      nameSpan.innerHTML += ' <span style="font-size:0.65rem;color:#d4af37;border:1px solid #555;border-radius:2px;padding:0 3px;vertical-align:middle;">' + escHtml(entry.cls) + '</span>';
     }
     top.appendChild(nameSpan);
 
@@ -2308,7 +2318,7 @@ function renderInitiative() {
         var badge = document.createElement('span');
         badge.className = 'cond-badge ' + c.type;
         var roundLabel = c.rounds === null ? '∞' : c.rounds + 'r';
-        badge.innerHTML = c.icon + ' ' + c.name + ' <span class="init-round-badge">' + roundLabel + '</span>';
+        badge.innerHTML = escHtml(c.icon) + ' ' + escHtml(c.name) + ' <span class="init-round-badge">' + escHtml(roundLabel) + '</span>';
         var rm = document.createElement('button');
         rm.className = 'cond-remove';
         rm.innerHTML = '✕';

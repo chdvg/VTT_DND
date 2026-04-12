@@ -92,6 +92,19 @@ if (fs.existsSync(_mapsDir)) {
     }
   }
 }
+
+// ── Block sensitive files from static serving ─────────────────
+// Must come BEFORE the catch-all express.static below.
+const BLOCKED_PATHS = ['/server.js', '/package.json', '/package-lock.json'];
+const BLOCKED_PREFIXES = ['/seeds/', '/node_modules/', '/.git/'];
+app.use(function (req, res, next) {
+  const p = req.path.toLowerCase();
+  if (BLOCKED_PATHS.includes(p) || BLOCKED_PREFIXES.some(function (b) { return p.startsWith(b); })) {
+    return res.status(403).end();
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname)));
 
 function listFiles(dir, exts) {
@@ -168,8 +181,10 @@ function sendFullState(ws) {
   // Audio — we don't restart audio on reconnect (too disruptive if it's mid-play)
 }
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   clients.add(ws);
+  // Auto-register DM clients from their session cookie on the upgrade request
+  if (isDmAuthed(req)) dmClients.add(ws);
   console.log('Client connected. Total: ' + clients.size);
   broadcastClientCount();
   sendFullState(ws);
@@ -177,10 +192,19 @@ wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     try {
       const message = JSON.parse(raw);
+      const isDm = dmClients.has(ws);
+      // All mutating/DM-only actions require an authenticated DM connection
+      const DM_ACTIONS = ['blackout','show','show-scene-view','clear','play-audio',
+        'stop-audio','send-overlay','update-fog','set-rings','update-tokens',
+        'update-drawing','dm-connect'];
+      if (DM_ACTIONS.includes(message.action) && !isDm) {
+        return; // silently drop — unauthenticated client
+      }
       switch (message.action) {
         case 'dm-connect':
+          // Legacy: clients that send dm-connect are already auto-detected above.
+          // Keep for backwards compat but only reachable by already-authed clients.
           dmClients.add(ws);
-          // Send current state immediately so DM gets accurate count right away
           ws.send(JSON.stringify({ type: 'clients', count: clients.size - dmClients.size }));
           break;
         case 'request-sync':
