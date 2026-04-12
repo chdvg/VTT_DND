@@ -608,7 +608,6 @@ function handleMessage(msg) {
 
 // ── WebSocket ─────────────────────────────────────────────────
 var _retryDelay = 1000;
-var _firstConnect = true;
 
 function connect() {
   var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -617,13 +616,8 @@ function connect() {
   ws.onopen = function () {
     statusEl.textContent = 'connected';
     _retryDelay = 1000; // reset backoff on successful connect
-    if (_firstConnect) {
-      // Server already calls sendFullState automatically on connection — no need to request again
-      _firstConnect = false;
-    } else {
-      // Reconnect: ask the server to replay full state
-      ws.send(JSON.stringify({ action: 'request-sync' }));
-    }
+    // Server automatically pushes full state on connection.
+    // request-sync is kept as a manual fallback only (e.g. explicit user action).
   };
 
   ws.onmessage = function (e) {

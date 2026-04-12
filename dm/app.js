@@ -24,6 +24,7 @@ var fogRows       = 20;
 var fogCols       = 20;
 var fogMapUrl     = null;
 var activeFogKey  = null;
+var lastSceneViewPayload = null; // cached for re-sync when server restarts
 
 // Token overlay state
 var tokenState         = {};     // mapKey -> array of {id,x,y,color,label,mobType?}
@@ -104,9 +105,21 @@ function connectWebSocket() {
     statusDot.classList.remove('off');
     statusDot.classList.add('on');
     ws.send(JSON.stringify({ action: 'dm-connect' }));
+    // Re-push scene state so server has it for any newly connecting players.
+    // This handles server restarts where in-memory state is lost.
+    if (lastSceneViewPayload) {
+      wsSend(lastSceneViewPayload);
+      if (activeFogKey) sendFogUpdate(activeFogKey);
+      if (activeTokenMapKey) { sendTokenUpdate(activeTokenMapKey); sendDrawUpdate(activeTokenMapKey); }
+    }
   };
   ws.onmessage = function (event) {
     var msg = JSON.parse(event.data);
+    if (msg.type === 'auth-required') {
+      // Session expired (server restarted). Reload so requireDm redirects to login.
+      location.reload();
+      return;
+    }
     if (msg.type === 'clients') {
       clientCount.textContent = msg.count + ' connected';
     }
@@ -210,7 +223,8 @@ sendImageBtn.addEventListener('click', function () {
 
 function sendImage(label, src) {
   // Show the image full-screen on the player view (same as a scene map, no fog/tokens/audio)
-  wsSend({ action: 'show-scene-view', image: src, fit: 'contain', audio: null, fogKey: null, mapKey: null, audioLoop: false });
+  lastSceneViewPayload = { action: 'show-scene-view', image: src, fit: 'contain', audio: null, fogKey: null, mapKey: null, audioLoop: false };
+  wsSend(lastSceneViewPayload);
 }
 
 // ============================================================
@@ -571,7 +585,8 @@ function showSceneView(sceneIdx, viewIdx) {
   wsSend({ action: 'stop-audio' });
 
   // Pass fogKey (fog) and mapKey (tokens) so player can correlate overlays
-  wsSend({ action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fit: view.fit || 'contain', fogKey: useFog ? fogKey : null, mapKey: fogKey });
+  lastSceneViewPayload = { action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fit: view.fit || 'contain', fogKey: useFog ? fogKey : null, mapKey: fogKey };
+  wsSend(lastSceneViewPayload);
 
   // Only show fog controls if this view has fog enabled
   var fogContainer = document.getElementById('fog-controls-container');
