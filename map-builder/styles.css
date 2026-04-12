@@ -34,7 +34,7 @@ header input[type="number"] {
 
 /* ── Sidebar ────────────────────────────────────────────────── */
 .sidebar {
-  width: 200px; min-width: 200px;
+  width: 280px; min-width: 280px;
   background: #161b22;
   border-right: 1px solid #30363d;
   overflow-y: auto;
@@ -57,7 +57,13 @@ header input[type="number"] {
 .tool-btn.active { background: #d4af37; color: #0d1117; border-color: #d4af37; font-weight: bold; }
 
 /* ── Tile palette ───────────────────────────────────────────── */
-.tile-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
+.tile-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
+.tile-group-header {
+  grid-column: 1 / -1;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: #9ca3af; background: #161b22; border-top: 1px solid #30363d;
+  padding: 4px 2px 2px; margin-top: 2px;
+}
 .tile-swatch {
   width: 36px; height: 36px; border-radius: 3px; cursor: pointer;
   border: 2px solid transparent; transition: border 0.1s;
