@@ -179,5 +179,19 @@
         "fit": "contain"
       }
     ]
+  },
+  {
+    "id": "forest-1776033570794",
+    "tab": "Forest",
+    "label": "Forest",
+    "views": [
+      {
+        "id": "forest-1776033570794-view-0",
+        "label": "The Protected Keep",
+        "image": "/assets/maps/The_Keep.png",
+        "audio": null,
+        "fog": false
+      }
+    ]
   }
 ]
