@@ -14,6 +14,7 @@ var audioUnlocked  = false;
 var currentFogKey  = null;
 var fogStates      = {};
 var currentTokens  = [];
+var showCondRings  = true;
 var currentDrawing = [];
 var currentMapKey  = null;
 var currentImageUrl = null;
@@ -136,6 +137,46 @@ function renderFogOverlay(fogGrid, imgEl) {
 
 // ── Token overlay ─────────────────────────────────────────────
 var TOKEN_COLORS = { red: '#dc2626', blue: '#2563eb', yellow: '#ca8a04', green: '#16a34a' };
+var CLASS_ICONS  = {
+  Rogue: '🗡️', Priest: '✝️', Cleric: '✝️', Sorcerer: '🔮',
+  Wizard: '🪄', Fighter: '🛡️', Paladin: '⚔️', Druid: '🌿',
+  Ranger: '🏹', Bard: '🎵', Monk: '👊', Barbarian: '💢', FatChub: '🐷'
+};
+var CLASS_COLORS = {
+  Rogue: '#7c3aed', Priest: '#0ea5e9', Cleric: '#0ea5e9', Sorcerer: '#6366f1',
+  Wizard: '#4f46e5', Fighter: '#ea580c', Paladin: '#d4af37', Druid: '#16a34a',
+  Ranger: '#22c55e', Bard: '#ec4899', Monk: '#f97316', Barbarian: '#dc2626', FatChub: '#ef4444'
+};
+var MOB_ICONS = {
+  Bandit: '🗡️', Bugbear: '🐻', Cultist: '🕯️', Dragon: '🐉',
+  Drow: '🕷️', 'Gelatinous Cube': '🫧', Ghoul: '👻', Giant: '🏔️',
+  Gnoll: '🦴', Goblin: '👺', Guard: '💂', Hobgoblin: '⚔️',
+  Kobold: '🦎', Mimic: '📦', Ogre: '🪨', Orc: '🪓',
+  Owlbear: '🦉', Skeleton: '💀', Spy: '🕵️', Thug: '👊',
+  Troll: '🌲', Vampire: '🧛', Werewolf: '🐺', Wolf: '🐕', Zombie: '🧟',
+};
+var MOB_COLORS = {
+  Bandit: '#92400e', Bugbear: '#7c3aed', Cultist: '#450a0a', Dragon: '#b91c1c',
+  Drow: '#312e81', 'Gelatinous Cube': '#4d7c0f', Ghoul: '#374151', Giant: '#6b7280',
+  Gnoll: '#78350f', Goblin: '#15803d', Guard: '#1e40af', Hobgoblin: '#9b1c1c',
+  Kobold: '#b45309', Mimic: '#854d0e', Ogre: '#6b21a8', Orc: '#14532d',
+  Owlbear: '#713f12', Skeleton: '#4b5563', Spy: '#0f766e', Thug: '#b45309',
+  Troll: '#44403c', Vampire: '#7f1d1d', Werewolf: '#292524', Wolf: '#44403c', Zombie: '#3d6b47',
+};
+
+// Buff = green ring, Debuff = red ring, stacked per condition
+function makeConditionShadow(tok, ringGap) {
+  var gap   = ringGap || 5;
+  var conds = tok.conditions || [];
+  if (!conds.length || !showCondRings) return '0 2px 10px rgba(0,0,0,0.9)';
+  var shadows = [];
+  conds.forEach(function (c, i) {
+    var r = (i + 1) * gap;
+    shadows.push('0 0 0 ' + r + 'px ' + (c.type === 'buff' ? '#22c55e' : '#ef4444'));
+  });
+  shadows.push('0 3px 12px rgba(0,0,0,0.9)');
+  return shadows.join(',');
+}
 
 function renderTokenOverlay(tokens) {
   var existing = sceneEl.querySelector('.token-overlay');
@@ -167,31 +208,77 @@ function renderTokenOverlay(tokens) {
 
   var tokenSize = Math.round(Math.min(rendW, rendH) * 0.05);
   tokenSize = Math.max(20, Math.min(tokenSize, 60));
-  var fontSize = Math.max(9, Math.round(tokenSize * 0.42));
+  var fontSize  = Math.max(9,  Math.round(tokenSize * 0.42));
+  var iconSize  = Math.max(11, Math.round(tokenSize * 0.48));
 
   tokens.forEach(function (tok) {
     var left  = offX + tok.x * rendW;
     var top   = offY + tok.y * rendH;
-    var color = TOKEN_COLORS[tok.color] || '#888';
+    var isPlayer = tok.type === 'player' && tok.cls;
+    var isMob    = tok.mobType && MOB_ICONS[tok.mobType];
+    var color, border;
+    if (isPlayer) {
+      color  = CLASS_COLORS[tok.cls] || '#3b82f6';
+      border = '3px solid #d4af37';
+    } else if (isMob) {
+      color  = MOB_COLORS[tok.mobType] || TOKEN_COLORS[tok.color] || '#888';
+      border = '2px solid rgba(255,255,255,0.7)';
+    } else {
+      color  = TOKEN_COLORS[tok.color] || tok.color || '#888';
+      border = '3px solid rgba(255,255,255,0.85)';
+    }
 
     var dot = document.createElement('div');
     dot.style.cssText = [
       'position:absolute',
-      'width:'  + tokenSize + 'px',
-      'height:' + tokenSize + 'px',
+      'width:'   + tokenSize + 'px',
+      'height:'  + tokenSize + 'px',
       'border-radius:50%',
       'background:' + color,
-      'border:3px solid rgba(255,255,255,0.85)',
-      'box-shadow:0 2px 10px rgba(0,0,0,0.9)',
-      'left:'   + left + 'px',
-      'top:'    + top  + 'px',
+      'border:' + border,
+      'box-shadow:' + makeConditionShadow(tok, Math.max(4, Math.round(tokenSize * 0.1))),
+      'left:'    + left + 'px',
+      'top:'     + top  + 'px',
       'transform:translate(-50%,-50%)',
       'display:flex',
+      'flex-direction:column',
       'align-items:center',
-      'justify-content:center'
+      'justify-content:center',
+      'overflow:hidden'
     ].join(';') + ';';
 
-    if (tok.label) {
+    if (isPlayer) {
+      var icon = CLASS_ICONS[tok.cls] || '⚔️';
+      var iconEl = document.createElement('span');
+      iconEl.textContent = icon;
+      iconEl.style.cssText = 'font-size:' + iconSize + 'px;line-height:1;display:block;';
+      dot.appendChild(iconEl);
+      if (tok.label) {
+        var lbl = document.createElement('span');
+        lbl.textContent = tok.label;
+        lbl.style.cssText = 'color:#fff;font-weight:bold;font-size:' +
+          Math.max(7, Math.round(fontSize * 0.7)) + 'px;font-family:sans-serif;' +
+          'user-select:none;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,0.9);' +
+          'white-space:nowrap;overflow:hidden;max-width:' + (tokenSize - 4) + 'px;';
+        dot.appendChild(lbl);
+      }
+    } else if (isMob) {
+      var icon = MOB_ICONS[tok.mobType];
+      var iconEl = document.createElement('span');
+      iconEl.textContent = icon;
+      iconEl.style.cssText = 'font-size:' + iconSize + 'px;line-height:1;display:block;';
+      dot.appendChild(iconEl);
+      // Show number suffix
+      var num = tok.label ? tok.label.replace(tok.mobType, '').trim() : '';
+      if (num) {
+        var numEl = document.createElement('span');
+        numEl.textContent = num;
+        numEl.style.cssText = 'color:#fff;font-weight:bold;font-size:' +
+          Math.max(7, Math.round(fontSize * 0.65)) + 'px;font-family:sans-serif;' +
+          'user-select:none;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,0.9);';
+        dot.appendChild(numEl);
+      }
+    } else if (tok.label) {
       var lbl = document.createElement('span');
       lbl.textContent = tok.label;
       lbl.style.cssText = 'color:rgba(255,255,255,0.97);font-weight:bold;font-size:' +
@@ -410,9 +497,14 @@ function handleMessage(msg) {
       showImage(msg.image, msg.fogKey || null, msg.fit || 'contain');
       if (msg.audio) playAudio(msg.audio, msg.audioLoop !== false);
       break;
+    case 'SET_RINGS':
+      showCondRings = msg.showRings !== undefined ? msg.showRings : true;
+      renderTokenOverlay(currentTokens);
+      break;
     case 'UPDATE_TOKENS':
       if (msg.mapKey === currentMapKey || !currentMapKey) {
         currentTokens = msg.tokens || [];
+        if (msg.showRings !== undefined) showCondRings = msg.showRings;
         var imgEl2 = sceneEl.querySelector('img');
         if (imgEl2 && imgEl2.naturalWidth) {
           renderTokenOverlay(currentTokens);

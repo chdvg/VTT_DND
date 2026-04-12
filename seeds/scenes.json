@@ -10,7 +10,7 @@
         "image": "/assets/maps/redbrand_hideout.png",
         "audio": null,
         "fog": true,
-        "fit": "contain"
+        "fit": "cover"
       },
       {
         "id": "phandalin/redbrand-hideout-1775400000000-view-1",

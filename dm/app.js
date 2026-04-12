@@ -16,14 +16,44 @@ var fogMapUrl     = null;
 var activeFogKey  = null;
 
 // Token overlay state
-var tokenState         = {};     // mapKey -> array of {id,x,y,color,label}
+var tokenState         = {};     // mapKey -> array of {id,x,y,color,label,mobType?}
 var activeTokenMapKey  = null;
 var selectedTokenColor  = 'red';
 var autoAddToInit       = true;  // toggle: auto-add tokens to initiative
+var showPlayerRings     = true;  // toggle: show condition rings on player screen
 var fogDeferredInit     = {};    // mapKey -> [{label, roll}] waiting for fog reveal
 var selectedMobType     = '';    // current mob type name for token labels
 var selectedPlayerName = null;
 var activeTokenMapUrl  = null;
+
+// ── Mob icons & colours ───────────────────────────────────────
+var MOB_ICONS = {
+  Bandit: '🗡️', Bugbear: '🐻', Cultist: '🕯️', Dragon: '🐉',
+  Drow: '🕷️', 'Gelatinous Cube': '🫧', Ghoul: '👻', Giant: '🏔️',
+  Gnoll: '🦴', Goblin: '👺', Guard: '💂', Hobgoblin: '⚔️',
+  Kobold: '🦎', Mimic: '📦', Ogre: '🪨', Orc: '🪓',
+  Owlbear: '🦉', Skeleton: '💀', Spy: '🕵️', Thug: '👊',
+  Troll: '🌲', Vampire: '🧛', Werewolf: '🐺', Wolf: '🐕', Zombie: '🧟',
+};
+var MOB_COLORS = {
+  Bandit: '#92400e', Bugbear: '#7c3aed', Cultist: '#450a0a', Dragon: '#b91c1c',
+  Drow: '#312e81', 'Gelatinous Cube': '#4d7c0f', Ghoul: '#374151', Giant: '#6b7280',
+  Gnoll: '#78350f', Goblin: '#15803d', Guard: '#1e40af', Hobgoblin: '#9b1c1c',
+  Kobold: '#b45309', Mimic: '#854d0e', Ogre: '#6b21a8', Orc: '#14532d',
+  Owlbear: '#713f12', Skeleton: '#4b5563', Spy: '#0f766e', Thug: '#b45309',
+  Troll: '#44403c', Vampire: '#7f1d1d', Werewolf: '#292524', Wolf: '#44403c', Zombie: '#3d6b47',
+};
+// ── Player class icons & colours ──────────────────────────────
+var MOB_ICONS_CLASS = {
+  Rogue: '🗡️', Priest: '✝️', Cleric: '✝️', Sorcerer: '🔮',
+  Wizard: '🪄', Fighter: '🛡️', Paladin: '⚔️', Druid: '🌿',
+  Ranger: '🏹', Bard: '🎵', Monk: '👊', Barbarian: '💢', FatChub: '🐷',
+};
+var CLASS_COLORS_DM = {
+  Rogue: '#7c3aed', Priest: '#0ea5e9', Cleric: '#0ea5e9', Sorcerer: '#6366f1',
+  Wizard: '#4f46e5', Fighter: '#ea580c', Paladin: '#d4af37', Druid: '#16a34a',
+  Ranger: '#22c55e', Bard: '#ec4899', Monk: '#f97316', Barbarian: '#dc2626', FatChub: '#ef4444',
+};
 
 // Draw / Annotation state
 var drawStrokes          = {};    // mapKey -> [{color, width, erase, points:[{x,y}]}]
@@ -969,9 +999,36 @@ function tokenCssColor(color) {
        : color === 'green' ? '#16a34a'
        : '#ca8a04';
 }
+function tokenBgColor(tok) {
+  if (tok.type === 'player' && tok.cls && CLASS_COLORS_DM[tok.cls]) return CLASS_COLORS_DM[tok.cls];
+  if (tok.mobType && MOB_COLORS[tok.mobType]) return MOB_COLORS[tok.mobType];
+  return tokenCssColor(tok.color);
+}
 
+// ── Condition ring box-shadow ─────────────────────────────────
+// Buff = green ring, Debuff = red ring, stacked 4px per condition outward
+function makeConditionShadow(tok) {
+  var conds = tok.conditions || [];
+  if (!conds.length) return '0 1px 6px rgba(0,0,0,0.9)';
+  var shadows = [];
+  conds.forEach(function (c, i) {
+    var r = (i + 1) * 4;
+    shadows.push('0 0 0 ' + r + 'px ' + (c.type === 'buff' ? '#22c55e' : '#ef4444'));
+  });
+  shadows.push('0 2px 8px rgba(0,0,0,0.9)');
+  return shadows.join(',');
+}
+
+// ── Token condition picker popup ──────────────────────────────
 function sendTokenUpdate(mapKey) {
-  wsSend({ action: 'update-tokens', tokens: tokenState[mapKey] || [], mapKey: mapKey });
+  // Enrich tokens with conditions from initiative tracker before broadcasting
+  var enriched = (tokenState[mapKey] || []).map(function (tok) {
+    var entry = initiative.find(function (e) { return e.name === tok.label; });
+    var t = Object.assign({}, tok);
+    t.conditions = entry ? (entry.conditions || []) : [];
+    return t;
+  });
+  wsSend({ action: 'update-tokens', tokens: enriched, mapKey: mapKey, showRings: showPlayerRings });
 }
 
 function renderTokenControls(mapUrl, mapKey) {
@@ -1031,6 +1088,22 @@ function renderTokenControls(mapUrl, mapKey) {
     renderTokenControls(mapUrl, mapKey);
   };
   container.appendChild(initToggleBtn);
+
+  // Condition rings on player screen toggle
+  var ringsToggleBtn = document.createElement('button');
+  ringsToggleBtn.style.cssText = 'flex:none;font-size:0.75rem;padding:0.28rem 0.6rem;border-radius:4px;cursor:pointer;white-space:nowrap;' +
+    'border:1px solid ' + (showPlayerRings ? '#818cf8' : '#555') + ';' +
+    'background:' + (showPlayerRings ? 'rgba(129,140,248,0.15)' : 'rgba(0,0,0,0.3)') + ';' +
+    'color:' + (showPlayerRings ? '#818cf8' : '#666') + ';';
+  ringsToggleBtn.textContent = showPlayerRings ? '💫 Rings: ON' : '💫 Rings: OFF';
+  ringsToggleBtn.title = 'Toggle condition rings on the player/projector screen';
+  ringsToggleBtn.onclick = function () {
+    showPlayerRings = !showPlayerRings;
+    wsSend({ action: 'set-rings', showRings: showPlayerRings });
+    if (activeTokenMapKey) sendTokenUpdate(activeTokenMapKey);
+    renderTokenControls(mapUrl, mapKey);
+  };
+  container.appendChild(ringsToggleBtn);
 
   // Mob type picker (non-green only)
   if (selectedTokenColor !== 'green') {
@@ -1241,13 +1314,50 @@ function renderTokenControls(mapUrl, mapKey) {
   var wasDragging = false; // prevent map click after a drag
 
   function makeDot(tok) {
+    // Look up initiative entry to get current conditions for ring display
+    var initEntry = initiative.find(function (e) { return e.name === tok.label; });
+    var dispConds = initEntry ? (initEntry.conditions || []) : [];
+    var dispTok   = Object.assign({}, tok, { conditions: dispConds });
+
     var dot = document.createElement('div');
     dot.style.cssText = 'position:absolute;width:20px;height:20px;border-radius:50%;' +
-      'background:' + tokenCssColor(tok.color) + ';border:2px solid rgba(255,255,255,0.9);' +
-      'box-shadow:0 1px 6px rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;' +
+      'background:' + tokenBgColor(tok) + ';' +
+      'border:2px solid ' + (tok.mobType ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.9)') + ';' +
+      'box-shadow:' + makeConditionShadow(dispTok) + ';display:flex;align-items:center;justify-content:center;' +
+      'flex-direction:column;overflow:hidden;' +
       'left:' + (tok.x * 100) + '%;top:' + (tok.y * 100) + '%;transform:translate(-50%,-50%);' +
       'cursor:move;pointer-events:auto;z-index:10;user-select:none;';
-    if (tok.label) {
+
+    // Build tooltip with conditions
+    var titleParts = [tok.label || ''];
+    if (dispConds.length) titleParts.push(dispConds.map(function (c) { return c.icon + ' ' + c.name; }).join(', '));
+    dot.title = titleParts.join(' | ');
+
+    if (tok.type === 'player' && tok.cls && MOB_ICONS_CLASS[tok.cls]) {
+      var iconEl = document.createElement('span');
+      iconEl.textContent = MOB_ICONS_CLASS[tok.cls];
+      iconEl.style.cssText = 'font-size:11px;line-height:1;display:block;pointer-events:none;';
+      dot.appendChild(iconEl);
+      var nmEl = document.createElement('span');
+      nmEl.textContent = tok.label;
+      nmEl.style.cssText = 'color:#fff;font-weight:bold;font-size:6px;line-height:1;' +
+        'font-family:sans-serif;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.9);' +
+        'white-space:nowrap;overflow:hidden;max-width:18px;';
+      dot.appendChild(nmEl);
+    } else if (tok.mobType && MOB_ICONS[tok.mobType]) {
+      var iconEl = document.createElement('span');
+      iconEl.textContent = MOB_ICONS[tok.mobType];
+      iconEl.style.cssText = 'font-size:11px;line-height:1;display:block;pointer-events:none;';
+      dot.appendChild(iconEl);
+      var num = tok.label ? tok.label.replace(tok.mobType, '').trim() : '';
+      if (num) {
+        var numEl = document.createElement('span');
+        numEl.textContent = num;
+        numEl.style.cssText = 'color:#fff;font-weight:bold;font-size:7px;line-height:1;' +
+          'font-family:sans-serif;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.9);';
+        dot.appendChild(numEl);
+      }
+    } else if (tok.label) {
       var lbl = document.createElement('span');
       lbl.textContent = tok.label;
       lbl.style.cssText = 'color:#fff;font-weight:bold;font-size:8px;font-family:sans-serif;' +
@@ -1276,7 +1386,7 @@ function renderTokenControls(mapUrl, mapKey) {
       function onUp() {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
-        dot.style.boxShadow = '0 1px 6px rgba(0,0,0,0.9)';
+        dot.style.boxShadow = makeConditionShadow(dispTok);
         if (didMove) {
           sendTokenUpdate(mapKey);
         }
@@ -1327,7 +1437,14 @@ function renderTokenControls(mapUrl, mapKey) {
       }
     }
     var id = 'tok-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-    tokenState[mapKey].push({ id: id, x: x, y: y, color: selectedTokenColor, label: label });
+    var newTok = { id: id, x: x, y: y, color: selectedTokenColor, label: label };
+    if (selectedTokenColor === 'green') {
+      var rp = playerRoster.find(function (p) { return p.name === selectedPlayerName; });
+      if (rp) { newTok.type = 'player'; newTok.cls = rp.cls; }
+    } else if (selectedMobType) {
+      newTok.mobType = selectedMobType;
+    }
+    tokenState[mapKey].push(newTok);
     sendTokenUpdate(mapKey);
     renderTokenControls(mapUrl, mapKey);
     // Auto-add to initiative if toggle is on and not already present
@@ -1365,12 +1482,33 @@ function renderTokenControls(mapUrl, mapKey) {
       row.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-bottom:0.25rem;';
       var dot = document.createElement('span');
       dot.style.cssText = 'width:14px;height:14px;border-radius:50%;flex-shrink:0;' +
-        'background:' + tokenCssColor(tok.color) + ';border:2px solid rgba(255,255,255,0.4);';
+        'background:' + tokenBgColor(tok) + ';border:2px solid rgba(255,255,255,0.4);' +
+        'display:inline-flex;align-items:center;justify-content:center;font-size:8px;';
+      if (tok.type === 'player' && tok.cls && MOB_ICONS_CLASS[tok.cls]) dot.textContent = MOB_ICONS_CLASS[tok.cls];
+      else if (tok.mobType && MOB_ICONS[tok.mobType]) dot.textContent = MOB_ICONS[tok.mobType];
       row.appendChild(dot);
       var lbl = document.createElement('span');
       lbl.style.cssText = 'flex:1;font-size:0.75rem;color:#ccc;';
       lbl.textContent = tok.label + ' (' + tok.color + ')';
       row.appendChild(lbl);
+      // Show conditions from initiative tracker
+      var initEntry = initiative.find(function (e) { return e.name === tok.label; });
+      if (initEntry && initEntry.conditions && initEntry.conditions.length) {
+        var condWrap = document.createElement('span');
+        condWrap.style.cssText = 'display:flex;gap:3px;flex-wrap:wrap;align-items:center;max-width:160px;';
+        initEntry.conditions.forEach(function (c) {
+          var badge = document.createElement('span');
+          badge.title = c.type;
+          var roundLabel = c.rounds === null ? '∞' : c.rounds + 'r';
+          badge.textContent = (c.icon || '') + ' ' + c.name + ' ' + roundLabel;
+          badge.style.cssText = 'font-size:0.65rem;line-height:1.3;padding:1px 4px;border-radius:3px;white-space:nowrap;' +
+            'background:' + (c.type === 'buff' ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)') + ';' +
+            'border:1px solid ' + (c.type === 'buff' ? '#22c55e' : '#ef4444') + ';' +
+            'color:' + (c.type === 'buff' ? '#4ade80' : '#f87171') + ';';
+          condWrap.appendChild(badge);
+        });
+        row.appendChild(condWrap);
+      }
       var rmBtn = document.createElement('button');
       rmBtn.textContent = '✕';
       rmBtn.className = 'btn btn-danger btn-small';
@@ -2057,6 +2195,10 @@ function nextInitiativeTurn() {
   saveInitiative();
   renderInitiative();
   sendInitiative();
+  if (activeTokenMapKey) {
+    sendTokenUpdate(activeTokenMapKey);
+    renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+  }
   // Flash entry whose conditions just expired (after re-render so node is fresh)
   if (expiredForIdx >= 0) {
     var el = document.querySelector('#init-list .init-entry:nth-child(' + (expiredForIdx + 1) + ')');
@@ -2177,6 +2319,7 @@ function renderInitiative() {
             initiative[entryIdx].conditions.splice(condIdx, 1);
             saveInitiative();
             renderInitiative();
+            if (activeTokenMapKey) { sendTokenUpdate(activeTokenMapKey); renderTokenControls(activeTokenMapUrl, activeTokenMapKey); }
           };
         })(i, ci);
         badge.appendChild(rm);
@@ -2278,6 +2421,7 @@ function renderInitiative() {
           openCondPanel = null;
           saveInitiative();
           renderInitiative();
+          if (activeTokenMapKey) { sendTokenUpdate(activeTokenMapKey); renderTokenControls(activeTokenMapUrl, activeTokenMapKey); }
         };
       })(i, sel, customInput, roundsInput, typeToggle, permCheck);
       panel.appendChild(addCondBtn);

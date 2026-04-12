@@ -156,6 +156,22 @@ header input[type="number"] {
 #save-scene-opts { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.4rem; }
 #save-status { margin-top: 0.75rem; font-size: 0.82rem; min-height: 1.2rem; }
 
+/* ── Token tabs ──────────────────────────────────────────────── */
+.token-tabs { display: flex; gap: 0.3rem; margin-bottom: 0.5rem; }
+.token-tab {
+  flex: 1; padding: 0.28rem 0; font-size: 0.77rem;
+  background: #0d1117; color: #888; border: 1px solid #30363d;
+  border-radius: 4px; cursor: pointer; transition: all 0.15s; text-align: center;
+}
+.token-tab:hover  { border-color: #d4af37; color: #d4af37; }
+.token-tab.active { background: #d4af37; color: #0d1117; border-color: #d4af37; font-weight: bold; }
+.token-preview-badge {
+  display: flex; align-items: center; gap: 0.4rem;
+  min-height: 2.2rem; padding: 0.3rem 0.4rem; margin-top: 0.3rem;
+  background: #0d1117; border: 1px solid #30363d; border-radius: 4px;
+  font-size: 0.8rem; color: #e6e6e6;
+}
+
 /* ── Tokens on canvas ───────────────────────────────────────── */
 .token-el {
   position: absolute; transform: translate(-50%, -50%);
@@ -169,6 +185,11 @@ header input[type="number"] {
   transition: transform 0.1s;
 }
 .token-el:hover { transform: translate(-50%,-50%) scale(1.15); }
+.token-player { flex-direction: column; }
+.token-icon  { font-size: 1.05em; line-height: 1; display: block; }
+.token-name  { font-size: 0.55em; font-weight: bold; color: #fff;
+  text-shadow: 0 1px 2px #000; overflow: hidden; white-space: nowrap;
+  max-width: 100%; display: block; }
 
 /* ── Labels on canvas ───────────────────────────────────────── */
 .label-el {

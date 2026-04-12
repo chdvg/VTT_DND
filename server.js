@@ -119,6 +119,7 @@ let currentFogStates = {};     // fogKey -> fogGrid
 let currentAudio = null;       // { url, loop } or null
 let currentTokens = [];
 let currentTokensMapKey = null;
+let currentTokensShowRings = true;
 let currentDrawing    = [];
 let currentDrawingMapKey = null;
 const clients = new Set();
@@ -158,7 +159,7 @@ function sendFullState(ws) {
   }
   // Tokens
   if (currentTokensMapKey) {
-    ws.send(JSON.stringify({ type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey }));
+    ws.send(JSON.stringify({ type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey, showRings: currentTokensShowRings }));
   }
   // Annotations
   if (currentDrawingMapKey) {
@@ -232,10 +233,14 @@ wss.on('connection', (ws) => {
             currentFogStates[message.fogKey] = message.fogGrid;
           }
           broadcast({ type: 'UPDATE_FOG', fogGrid: message.fogGrid, fogKey: message.fogKey }); break;
+        case 'set-rings':
+          currentTokensShowRings = message.showRings !== undefined ? message.showRings : true;
+          broadcast({ type: 'SET_RINGS', showRings: currentTokensShowRings }); break;
         case 'update-tokens':
           currentTokens = Array.isArray(message.tokens) ? message.tokens : [];
           currentTokensMapKey = message.mapKey || null;
-          broadcast({ type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey }); break;
+          currentTokensShowRings = message.showRings !== undefined ? message.showRings : true;
+          broadcast({ type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey, showRings: currentTokensShowRings }); break;
         case 'update-drawing':
           currentDrawing = Array.isArray(message.strokes) ? message.strokes : [];
           currentDrawingMapKey = message.mapKey || null;

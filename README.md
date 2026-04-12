@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v2.1 — Web Edition)
+# D&D VTT Control Console (v2.2 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -102,6 +102,7 @@ Each tile renders with a unique procedural texture generated on a canvas — no 
 - **🔄 Hard Reset** — clears the entire initiative list including players (prompts for confirmation).
 - **Persistence** — the current round, turn position, and all entries survive a page refresh (saved to `localStorage`).
 - **⚔️ Send** and **⏭️ Next** buttons are always visible in the Initiative Tracker panel.
+- **Condition rings on map tokens** — conditions assigned in the tracker automatically drive colored rings on the corresponding map token; rings expire and update as turns advance.
 
 ### Monster Lookup
 
@@ -126,9 +127,15 @@ Real-time monster stat block lookup powered by the [Open5e API](https://open5e.c
 
 - Place colored token markers directly on any scene map in the DM panel
 - Color codes: 🔴 Enemy · 🔵 Friend · 🟡 Unknown · 🟢 Player
+- **Class icons** — player tokens automatically display a class emoji (🗡️ Rogue, 🛡️ Fighter, 🔮 Sorcerer, etc.) and a unique class color drawn from the player roster
+- **Mob type icons** — 25 standard monster types (Goblin 👺, Dragon 🐉, Skeleton 💀, Vampire 🧛, etc.) each with a distinct color; auto-numbering labels each placed token (Goblin 1, Goblin 2…)
+- **Condition rings** — when a combatant in the initiative tracker has active buffs or debuffs, their map token displays colored rings: 🟢 green for buffs, 🔴 red for debuffs; multiple conditions stack as concentric rings outward
+  - Rings update instantly when conditions are added, removed, or expire on turn advance
+  - Token list below the map shows condition badges with icon, name, and rounds remaining
+  - **💫 Rings: ON/OFF toggle** — show or hide condition rings on the player/projector screen without affecting the DM map view
 - **Mob type picker** — choose a standard mob type from a dropdown or enter a custom name; looking up a mob type can auto-pull its stat block from the Monster Lookup
 - **Auto-add to initiative** — toggle to automatically add a placed token to the current initiative round
-- Tokens persist per map-key in state; drag tokens to reposition or click to remove
+- Tokens persist per map-key in state; drag tokens to reposition or click ✕ to remove
 - **Send Live** broadcasts the current map with all tokens overlaid to player screens
 
 ### Annotations & Drawing

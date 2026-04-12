@@ -364,6 +364,62 @@ function getTexturePattern(ctx, tileId) {
   return map[tileId];
 }
 
+// ── Mob icons & colours ───────────────────────────────────────
+const MOB_TYPES_LIST = [
+  'Bandit','Bugbear','Cultist','Dragon','Drow','Gelatinous Cube',
+  'Ghoul','Giant','Gnoll','Goblin','Guard','Hobgoblin','Kobold','Mimic',
+  'Ogre','Orc','Owlbear','Skeleton','Spy','Thug','Troll','Vampire',
+  'Werewolf','Wolf','Zombie'
+];
+const MOB_ICONS = {
+  Bandit: '🗡️', Bugbear: '🐻', Cultist: '🕯️', Dragon: '🐉',
+  Drow: '🕷️', 'Gelatinous Cube': '🫧', Ghoul: '👻', Giant: '🏔️',
+  Gnoll: '🦴', Goblin: '👺', Guard: '💂', Hobgoblin: '⚔️',
+  Kobold: '🦎', Mimic: '📦', Ogre: '🪨', Orc: '🪓',
+  Owlbear: '🦉', Skeleton: '💀', Spy: '🕵️', Thug: '👊',
+  Troll: '🌲', Vampire: '🧛', Werewolf: '🐺', Wolf: '🐕', Zombie: '🧟',
+};
+const MOB_COLORS = {
+  Bandit: '#92400e', Bugbear: '#7c3aed', Cultist: '#450a0a', Dragon: '#b91c1c',
+  Drow: '#312e81', 'Gelatinous Cube': '#4d7c0f', Ghoul: '#374151', Giant: '#6b7280',
+  Gnoll: '#78350f', Goblin: '#15803d', Guard: '#1e40af', Hobgoblin: '#9b1c1c',
+  Kobold: '#b45309', Mimic: '#854d0e', Ogre: '#6b21a8', Orc: '#14532d',
+  Owlbear: '#713f12', Skeleton: '#4b5563', Spy: '#0f766e', Thug: '#b45309',
+  Troll: '#44403c', Vampire: '#7f1d1d', Werewolf: '#292524', Wolf: '#44403c', Zombie: '#3d6b47',
+};
+
+// ── Class icons & colours ─────────────────────────────────────
+const CLASS_ICONS = {
+  Rogue:     '🗡️',
+  Priest:    '✝️',
+  Cleric:    '✝️',
+  Sorcerer:  '🔮',
+  Wizard:    '🪄',
+  Fighter:   '🛡️',
+  Paladin:   '⚔️',
+  Druid:     '🌿',
+  Ranger:    '🏹',
+  Bard:      '🎵',
+  Monk:      '👊',
+  Barbarian: '💢',
+  FatChub:   '🐷',
+};
+const CLASS_COLORS = {
+  Rogue:     '#7c3aed',
+  Priest:    '#0ea5e9',
+  Cleric:    '#0ea5e9',
+  Sorcerer:  '#6366f1',
+  Wizard:    '#4f46e5',
+  Fighter:   '#ea580c',
+  Paladin:   '#d4af37',
+  Druid:     '#16a34a',
+  Ranger:    '#22c55e',
+  Bard:      '#ec4899',
+  Monk:      '#f97316',
+  Barbarian: '#dc2626',
+  FatChub:   '#ef4444',
+};
+
 // ── State ─────────────────────────────────────────────────────
 let cols     = 20;
 let rows     = 15;
@@ -371,8 +427,12 @@ let cellSize = 40;
 
 // tileMap[r][c] = tile id or null
 let tileMap  = [];
-// tokens: { id, col, row, name, color }
+// tokens: { id, col, row, name, color, type('player'|'npc'), cls? }
 let tokens   = [];
+// loaded player roster
+let _players = [];
+// active tab in token panel ('player' | 'npc')
+let activeTokenTab = 'player';
 // labels: { id, col, row, text, size, color }
 let labels   = [];
 // background image url
@@ -508,14 +568,35 @@ function renderTokens() {
   tokenLayer.innerHTML = '';
   tokens.forEach(tok => {
     const el = document.createElement('div');
-    el.className = 'token-el';
+    const sz = cellSize - 6;
     el.style.left   = (tok.col * cellSize + cellSize / 2) + 'px';
     el.style.top    = (tok.row * cellSize + cellSize / 2) + 'px';
-    el.style.width  = (cellSize - 6) + 'px';
-    el.style.height = (cellSize - 6) + 'px';
+    el.style.width  = sz + 'px';
+    el.style.height = sz + 'px';
     el.style.background = tok.color;
-    el.style.fontSize = Math.max(8, cellSize * 0.22) + 'px';
-    el.textContent = tok.name;
+
+    if (tok.type === 'player' && tok.cls) {
+      el.className = 'token-el token-player';
+      el.style.border = '2.5px solid #d4af37';
+      const icon = CLASS_ICONS[tok.cls] || '⚔️';
+      el.innerHTML =
+        `<span class="token-icon">${icon}</span>` +
+        `<span class="token-name">${tok.name}</span>`;
+    } else if (tok.type === 'npc' && tok.mobType) {
+      el.className = 'token-el token-npc';
+      el.style.border = '2px solid rgba(255,255,255,0.5)';
+      const icon = MOB_ICONS[tok.mobType] || '❓';
+      const num  = tok.name.replace(tok.mobType, '').trim();
+      el.innerHTML =
+        `<span class="token-icon">${icon}</span>` +
+        `<span class="token-name">${num}</span>`;
+      el.title = tok.name;
+    } else {
+      el.className = 'token-el';
+      el.style.fontSize = Math.max(8, cellSize * 0.22) + 'px';
+      el.textContent = tok.name;
+    }
+
     makeDraggableToken(el, tok);
     tokenLayer.appendChild(el);
   });
@@ -656,9 +737,28 @@ cursorCanvas.addEventListener('mousedown', e => {
 // ── Token placement + drag ────────────────────────────────────
 let _tokenSeq = 0;
 function placeToken(col, row) {
-  const name  = document.getElementById('token-name').value.trim() || '?';
-  const color = document.getElementById('token-color').value;
-  tokens.push({ id: ++_tokenSeq, col, row, name, color });
+  if (activeTokenTab === 'player') {
+    const sel    = document.getElementById('token-player-select');
+    const name   = sel.value;
+    if (!name) return;
+    const player = _players.find(p => p.name === name);
+    const cls    = player ? player.cls : '';
+    const color  = CLASS_COLORS[cls] || '#3b82f6';
+    tokens.push({ id: ++_tokenSeq, col, row, name, cls, color, type: 'player' });
+  } else {
+    const mobType = document.getElementById('token-mob-type').value;
+    if (mobType) {
+      // Auto-number: Goblin 1, Goblin 2, …
+      const sameCount = tokens.filter(t => t.mobType === mobType).length + 1;
+      const name  = mobType + ' ' + sameCount;
+      const color = MOB_COLORS[mobType] || '#ef4444';
+      tokens.push({ id: ++_tokenSeq, col, row, name, mobType, color, type: 'npc' });
+    } else {
+      const name  = document.getElementById('token-name').value.trim() || '?';
+      const color = document.getElementById('token-color').value;
+      tokens.push({ id: ++_tokenSeq, col, row, name, color, type: 'npc' });
+    }
+  }
   renderTokens();
 }
 
@@ -758,6 +858,62 @@ fetch('/api/maps').then(r => r.json()).then(data => {
     list.appendChild(el);
   });
 }).catch(() => {});
+
+// ── Player roster load (for class tokens) ─────────────────────
+function updatePlayerPreview() {
+  const sel     = document.getElementById('token-player-select');
+  const preview = document.getElementById('token-player-preview');
+  if (!sel || !preview) return;
+  const name   = sel.value;
+  const player = _players.find(p => p.name === name);
+  if (player) {
+    const icon  = CLASS_ICONS[player.cls] || '⚔️';
+    const color = CLASS_COLORS[player.cls] || '#3b82f6';
+    preview.innerHTML =
+      `<span style="display:inline-flex;align-items:center;justify-content:center;` +
+      `width:28px;height:28px;border-radius:50%;background:${color};` +
+      `border:2px solid #d4af37;font-size:1.1rem;line-height:1;">${icon}</span>` +
+      `<span style="font-size:0.8rem;color:#e6e6e6;">${player.name} <span style="color:#888;">${player.cls}</span></span>`;
+  } else {
+    preview.innerHTML = '';
+  }
+}
+
+fetch('/api/players').then(r => r.json()).then(data => {
+  _players = Array.isArray(data) ? data : (data.players || []);
+  const sel = document.getElementById('token-player-select');
+  _players.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value       = p.name;
+    opt.textContent = (CLASS_ICONS[p.cls] || '⚔️') + ' ' + p.name + ' (' + p.cls + ')';
+    sel.appendChild(opt);
+  });
+  document.getElementById('token-player-select').addEventListener('change', updatePlayerPreview);
+  updatePlayerPreview();
+}).catch(() => {});
+
+// ── Token tab switching ───────────────────────────────────────
+document.querySelectorAll('.token-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.token-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeTokenTab = btn.dataset.tab;
+    document.getElementById('token-tab-player').style.display = activeTokenTab === 'player' ? '' : 'none';
+    document.getElementById('token-tab-npc').style.display    = activeTokenTab === 'npc'    ? '' : 'none';
+  });
+});
+
+// ── Mob type auto-fill ────────────────────────────────────────
+document.getElementById('token-mob-type').addEventListener('change', function () {
+  const mobType = this.value;
+  const nameEl  = document.getElementById('token-name');
+  if (mobType) {
+    nameEl.value       = '';
+    nameEl.placeholder = mobType + ' (auto-numbered)';
+  } else {
+    nameEl.placeholder = 'Custom name (optional)';
+  }
+});
 
 document.getElementById('apply-bg-btn').addEventListener('click', () => {
   setBgImage(document.getElementById('bg-image-url').value.trim() || null);
@@ -959,14 +1115,45 @@ function buildComposite() {
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fillStyle = tok.color;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = tok.type === 'player' ? '#d4af37' : 'rgba(255,255,255,0.5)';
+    ctx.lineWidth   = tok.type === 'player' ? 2.5 : 2;
     ctx.stroke();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold ' + Math.max(8, cellSize * 0.22) + 'px Segoe UI';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(tok.name.slice(0, 4), cx, cy);
+    if (tok.type === 'player' && tok.cls) {
+      const icon     = CLASS_ICONS[tok.cls] || '⚔️';
+      const iconSize = Math.max(10, Math.round(cellSize * 0.4));
+      ctx.font          = iconSize + 'px "Segoe UI Emoji", Apple Color Emoji, sans-serif';
+      ctx.textAlign     = 'center';
+      ctx.textBaseline  = 'middle';
+      ctx.fillText(icon, cx, cy - 2);
+      ctx.font          = 'bold ' + Math.max(6, Math.round(cellSize * 0.18)) + 'px Segoe UI';
+      ctx.fillStyle     = '#fff';
+      ctx.shadowColor   = '#000';
+      ctx.shadowBlur    = 3;
+      ctx.fillText(tok.name.slice(0, 6), cx, cy + r * 0.58);
+      ctx.shadowBlur    = 0;
+    } else if (tok.type === 'npc' && tok.mobType) {
+      const icon     = MOB_ICONS[tok.mobType] || '❓';
+      const iconSize = Math.max(10, Math.round(cellSize * 0.38));
+      ctx.font          = iconSize + 'px "Segoe UI Emoji", Apple Color Emoji, sans-serif';
+      ctx.textAlign     = 'center';
+      ctx.textBaseline  = 'middle';
+      ctx.fillText(icon, cx, cy - 2);
+      const num = tok.name.replace(tok.mobType, '').trim();
+      if (num) {
+        ctx.font          = 'bold ' + Math.max(6, Math.round(cellSize * 0.18)) + 'px Segoe UI';
+        ctx.fillStyle     = '#fff';
+        ctx.shadowColor   = '#000';
+        ctx.shadowBlur    = 3;
+        ctx.fillText(num, cx, cy + r * 0.58);
+        ctx.shadowBlur    = 0;
+      }
+    } else {
+      ctx.fillStyle    = '#fff';
+      ctx.font         = 'bold ' + Math.max(8, cellSize * 0.22) + 'px Segoe UI';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(tok.name.slice(0, 4), cx, cy);
+    }
   });
   // 4. labels
   labels.forEach(lbl => {

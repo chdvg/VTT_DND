@@ -55,14 +55,56 @@
 
     <div class="sidebar-section" id="token-options" style="display:none;">
       <div class="sidebar-title">Token</div>
-      <input type="text"  id="token-name"  placeholder="Name (e.g. Goblin)" />
-      <select id="token-color">
-        <option value="#ef4444">🔴 Enemy</option>
-        <option value="#3b82f6">🔵 Player</option>
-        <option value="#22c55e">🟢 Ally</option>
-        <option value="#f59e0b">🟡 Object</option>
-        <option value="#a855f7">🟣 Other</option>
-      </select>
+      <div class="token-tabs">
+        <button class="token-tab active" data-tab="player">Player</button>
+        <button class="token-tab"        data-tab="npc">NPC</button>
+      </div>
+      <!-- Player tab -->
+      <div id="token-tab-player">
+        <select id="token-player-select">
+          <option value="">— Select Player —</option>
+        </select>
+        <div id="token-player-preview" class="token-preview-badge"></div>
+      </div>
+      <!-- NPC / enemy tab -->
+      <div id="token-tab-npc" style="display:none;">
+        <select id="token-mob-type">
+          <option value="">— Generic NPC —</option>
+          <option value="Bandit">🗡️ Bandit</option>
+          <option value="Bugbear">🐻 Bugbear</option>
+          <option value="Cultist">🕯️ Cultist</option>
+          <option value="Dragon">🐉 Dragon</option>
+          <option value="Drow">🕷️ Drow</option>
+          <option value="Gelatinous Cube">🫧 Gelatinous Cube</option>
+          <option value="Ghoul">👻 Ghoul</option>
+          <option value="Giant">🏔️ Giant</option>
+          <option value="Gnoll">🦴 Gnoll</option>
+          <option value="Goblin">👺 Goblin</option>
+          <option value="Guard">💂 Guard</option>
+          <option value="Hobgoblin">⚔️ Hobgoblin</option>
+          <option value="Kobold">🦎 Kobold</option>
+          <option value="Mimic">📦 Mimic</option>
+          <option value="Ogre">🪨 Ogre</option>
+          <option value="Orc">🪓 Orc</option>
+          <option value="Owlbear">🦉 Owlbear</option>
+          <option value="Skeleton">💀 Skeleton</option>
+          <option value="Spy">🕵️ Spy</option>
+          <option value="Thug">👊 Thug</option>
+          <option value="Troll">🌲 Troll</option>
+          <option value="Vampire">🧛 Vampire</option>
+          <option value="Werewolf">🐺 Werewolf</option>
+          <option value="Wolf">🐕 Wolf</option>
+          <option value="Zombie">🧟 Zombie</option>
+        </select>
+        <input type="text"  id="token-name"  placeholder="Custom name (optional)" />
+        <select id="token-color">
+          <option value="#ef4444">🔴 Enemy</option>
+          <option value="#3b82f6">🔵 Player</option>
+          <option value="#22c55e">🟢 Ally</option>
+          <option value="#f59e0b">🟡 Object</option>
+          <option value="#a855f7">🟣 Other</option>
+        </select>
+      </div>
     </div>
 
     <div class="sidebar-section" id="label-options" style="display:none;">
