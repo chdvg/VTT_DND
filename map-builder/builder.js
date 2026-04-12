@@ -541,9 +541,18 @@ function renderTiles() {
   }
 }
 
+// Tiles that should stamp one image per cell (not tile as a repeat pattern)
+const STAMP_TILES = new Set(['tree','mountain','hill','fire']);
+
 function drawTile(ctx, tile, x, y, size) {
-  ctx.fillStyle = getTexturePattern(ctx, tile.id);
-  ctx.fillRect(x, y, size, size);
+  if (STAMP_TILES.has(tile.id)) {
+    // Scale the texture canvas directly into this cell — one image per cell
+    if (!_texCache[tile.id]) _texCache[tile.id] = buildTextureCanvas(tile.id);
+    ctx.drawImage(_texCache[tile.id], x, y, size, size);
+  } else {
+    ctx.fillStyle = getTexturePattern(ctx, tile.id);
+    ctx.fillRect(x, y, size, size);
+  }
 }
 
 function renderGrid() {
