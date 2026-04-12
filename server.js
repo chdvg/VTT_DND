@@ -142,10 +142,14 @@ function broadcastClientCount() {
   // Count only non-DM clients (player screens)
   const playerCount = clients.size - dmClients.size;
   const payload = JSON.stringify({ type: 'clients', count: playerCount });
+  console.log(`broadcastClientCount: total=${clients.size} dms=${dmClients.size} players=${playerCount}`);
   for (const dm of dmClients) {
     if (dm.readyState === WebSocket.OPEN) dm.send(payload);
   }
 }
+
+// Heartbeat: push client count to all DMs every 5 seconds so it self-corrects
+setInterval(() => { broadcastClientCount(); }, 5000);
 
 function broadcast(data) {
   const payload = JSON.stringify(data);
@@ -181,13 +185,26 @@ function sendFullState(ws) {
   // Audio — we don't restart audio on reconnect (too disruptive if it's mid-play)
 }
 
+// Ping all open connections every 25s to keep them alive through NAT/VPN
+setInterval(() => {
+  for (const ws of clients) {
+    if (ws.readyState === WebSocket.OPEN) ws.ping();
+  }
+}, 25000);
+
 wss.on('connection', (ws, req) => {
   clients.add(ws);
-  // Auto-register DM clients from their session cookie on the upgrade request
-  if (isDmAuthed(req)) dmClients.add(ws);
-  console.log('Client connected. Total: ' + clients.size);
+  const dmAuthed = isDmAuthed(req);
+  if (dmAuthed) dmClients.add(ws);
+  console.log(`Client connected. Total: ${clients.size} | isDM: ${dmAuthed} | dmClients: ${dmClients.size}`);
   broadcastClientCount();
-  sendFullState(ws);
+  // Always push current state to newly connected clients.
+  // DM only needs blackout state (it is the source of truth for everything else).
+  if (!dmAuthed) {
+    sendFullState(ws);
+  } else if (currentState.blackout) {
+    ws.send(JSON.stringify({ type: 'BLACKOUT', active: true }));
+  }
 
   ws.on('message', (raw) => {
     try {
@@ -198,6 +215,11 @@ wss.on('connection', (ws, req) => {
         'stop-audio','send-overlay','update-fog','set-rings','update-tokens',
         'update-drawing','dm-connect'];
       if (DM_ACTIONS.includes(message.action) && !isDm) {
+        // If a DM panel is reconnecting after a server restart the session
+        // will be gone — tell it to reload so it goes through login again.
+        if (message.action === 'dm-connect') {
+          ws.send(JSON.stringify({ type: 'auth-required' }));
+        }
         return; // silently drop — unauthenticated client
       }
       switch (message.action) {
@@ -410,11 +432,32 @@ app.get('/remote/player', (req, res) => { res.sendFile(path.join(__dirname, 'rem
 app.get('/player', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'player.html')); });
 
 const PORT = 3000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
+  // Find the LAN (Wi-Fi/Ethernet) IP for display
+  let lanIp = 'localhost';
+  try {
+    const os = require('os');
+    const ifaces = os.networkInterfaces();
+    // Skip virtual/VPN/loopback interfaces — prefer physical Wi-Fi or Ethernet
+    const skipNames = ['loopback', 'vethernet', 'nordlynx', 'nordtun', 'tun', 'tap', 'vpn', 'docker', 'wsl', 'virtual', 'hyper-v'];
+    outer: for (const name of Object.keys(ifaces)) {
+      if (skipNames.some(s => name.toLowerCase().includes(s))) continue;
+      for (const iface of ifaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal && !iface.address.startsWith('169.')) {
+          lanIp = iface.address;
+          break outer;
+        }
+      }
+    }
+  } catch(_) {}
   console.log('');
   console.log('D&D Remote Server running!');
   console.log('  DM Panel:    http://localhost:' + PORT);
   console.log('  Remote:      http://localhost:' + PORT + '/remote');
   console.log('  Player View: http://localhost:' + PORT + '/remote/player.html');
+  console.log('');
+  console.log('  LAN access (other devices):');
+  console.log('  Player View: http://' + lanIp + ':' + PORT + '/remote/player.html');
+  console.log('  Remote:      http://' + lanIp + ':' + PORT + '/remote');
   console.log('');
 });
