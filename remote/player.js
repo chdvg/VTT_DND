@@ -185,7 +185,7 @@ function renderTokenOverlay(tokens) {
 
   var overlay = document.createElement('div');
   overlay.className = 'token-overlay';
-  overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:10;';
+  overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:25;';
 
   // Calc rendered image rect (same letterbox logic as fog)
   var imgEl = sceneEl.querySelector('img');

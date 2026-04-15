@@ -1862,7 +1862,7 @@ function saveScene() {
     if (!Array.isArray(saved) || !saved.length) return;
     saved.forEach(function (id) {
       var el = document.getElementById(id);
-      if (el) grid.appendChild(el);
+      if (el && el.parentElement === grid) grid.appendChild(el);
     });
   }
 

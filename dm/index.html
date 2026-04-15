@@ -69,48 +69,6 @@
       </div>
     </section>
 
-    <!-- ── Row 2: Initiative (wide) | Dice ── -->
-    <section class="panel col-2" id="section-initiative">
-      <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Initiative Tracker</h2>
-
-      <!-- Active round list -->
-      <div id="init-list"></div>
-
-      <!-- Controls row -->
-      <div class="btn-row" style="margin-top:0.4rem;">
-        <button id="init-send-btn" class="btn btn-primary">⚔️ Send</button>
-        <button id="init-next-btn" class="btn btn-secondary">⏭️ Next</button>
-      </div>
-      <div class="btn-row" style="margin-top:0.35rem;">
-        <button id="init-clear-btn" class="btn btn-warning">🧹 Clear Mobs</button>
-        <button id="init-reset-btn" class="btn btn-danger" title="Remove all entries including players">🔄 Hard Reset</button>
-      </div>
-
-      <!-- Quick-add a mob to the round -->
-      <div class="init-add" style="margin-top:0.75rem;">
-        <input type="text"   id="init-name" placeholder="Mob / NPC name" />
-        <input type="number" id="init-roll" placeholder="Roll" min="1" max="30" />
-        <button id="init-add-btn" class="btn btn-small btn-primary">+ Add Mob</button>
-      </div>
-
-      <!-- Players roster (persisted) -->
-      <details id="init-players-details" style="margin-top:0.9rem;">
-        <summary style="cursor:pointer;color:#d4af37;font-size:0.82rem;user-select:none;">👥 Player Roster</summary>
-        <div id="init-player-list" style="margin-top:0.5rem;"></div>
-        <div class="init-add" style="margin-top:0.5rem;">
-          <input type="text" id="init-player-name" placeholder="Player name" />
-          <input type="text" id="init-player-class" placeholder="Class (e.g. Fighter)" />
-          <button id="init-player-add-btn" class="btn btn-small btn-secondary">+ Add Player</button>
-        </div>
-        <button id="init-add-all-btn" class="btn btn-small btn-primary" style="margin-top:0.4rem;width:100%;">
-          ⚡ Add All Players to Round
-        </button>
-        <button id="init-roll-all-btn" class="btn btn-small btn-secondary" style="margin-top:0.3rem;width:100%;">
-          🎲 Quick Roll d20 for All
-        </button>
-      </details>
-    </section>
-
     <!-- ── Reference Panel ── -->
     <section class="panel col-2" id="section-reference">
       <details>
@@ -140,22 +98,6 @@
 
         </div>
       </details>
-    </section>
-
-    <!-- ── Row 2 col 4: Dice ── -->
-    <section class="panel col-1" id="section-dice">
-      <h2><span class="drag-handle" title="Drag to reorder">⠿</span>Dice Roller</h2>
-      <div class="dice-buttons">
-        <button class="btn-dice" data-die="4">d4</button>
-        <button class="btn-dice" data-die="6">d6</button>
-        <button class="btn-dice" data-die="8">d8</button>
-        <button class="btn-dice" data-die="10">d10</button>
-        <button class="btn-dice" data-die="12">d12</button>
-        <button class="btn-dice" data-die="20">d20</button>
-        <button class="btn-dice" data-die="100">d100</button>
-      </div>
-      <div id="dice-result"></div>
-      <label><input type="checkbox" id="dice-broadcast" /> Broadcast to players</label>
     </section>
 
     <!-- ── Row 3: Send Text (wide) | Send Image (wide) ── -->
@@ -225,6 +167,54 @@
     </section>
     </div><!-- end panel-grid -->
     </main>
+    <aside class="sidebar-right">
+      <section class="panel" id="section-dice">
+        <h2>🎲 Dice Roller</h2>
+        <div class="dice-buttons">
+          <button class="btn-dice" data-die="4">d4</button>
+          <button class="btn-dice" data-die="6">d6</button>
+          <button class="btn-dice" data-die="8">d8</button>
+          <button class="btn-dice" data-die="10">d10</button>
+          <button class="btn-dice" data-die="12">d12</button>
+          <button class="btn-dice" data-die="20">d20</button>
+          <button class="btn-dice" data-die="100">d100</button>
+        </div>
+        <div id="dice-result"></div>
+        <label><input type="checkbox" id="dice-broadcast" /> Broadcast to players</label>
+      </section>
+      <section class="panel" id="section-initiative">
+        <h2>⚔️ Initiative Tracker</h2>
+        <div id="init-list"></div>
+        <div class="btn-row" style="margin-top:0.4rem;">
+          <button id="init-send-btn" class="btn btn-primary">⚔️ Send</button>
+          <button id="init-next-btn" class="btn btn-secondary">⏭️ Next</button>
+        </div>
+        <div class="btn-row" style="margin-top:0.35rem;">
+          <button id="init-clear-btn" class="btn btn-warning">🧹 Clear Mobs</button>
+          <button id="init-reset-btn" class="btn btn-danger" title="Remove all entries including players">🔄 Hard Reset</button>
+        </div>
+        <div class="init-add" style="margin-top:0.75rem;">
+          <input type="text"   id="init-name" placeholder="Mob / NPC name" />
+          <input type="number" id="init-roll" placeholder="Roll" min="1" max="30" />
+          <button id="init-add-btn" class="btn btn-small btn-primary">+ Add Mob</button>
+        </div>
+        <details id="init-players-details" style="margin-top:0.9rem;">
+          <summary style="cursor:pointer;color:#d4af37;font-size:0.82rem;user-select:none;">👥 Player Roster</summary>
+          <div id="init-player-list" style="margin-top:0.5rem;"></div>
+          <div class="init-add" style="margin-top:0.5rem;">
+            <input type="text" id="init-player-name" placeholder="Player name" />
+            <input type="text" id="init-player-class" placeholder="Class (e.g. Fighter)" />
+            <button id="init-player-add-btn" class="btn btn-small btn-secondary">+ Add Player</button>
+          </div>
+          <button id="init-add-all-btn" class="btn btn-small btn-primary" style="margin-top:0.4rem;width:100%;">
+            ⚡ Add All Players to Round
+          </button>
+          <button id="init-roll-all-btn" class="btn btn-small btn-secondary" style="margin-top:0.3rem;width:100%;">
+            🎲 Quick Roll d20 for All
+          </button>
+        </details>
+      </section>
+    </aside>
   </div><!-- end app-layout -->
   <script src="/dm/app.js"></script>
 </body>
