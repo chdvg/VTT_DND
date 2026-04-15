@@ -25,6 +25,7 @@ var fogCols       = 20;
 var fogMapUrl     = null;
 var activeFogKey  = null;
 var lastSceneViewPayload = null; // cached for re-sync when server restarts
+var lastMapPayload       = null; // last actual map/scene (not Send Image)
 
 // Token overlay state
 var tokenState         = {};     // mapKey -> array of {id,x,y,color,label,mobType?}
@@ -88,6 +89,7 @@ var statusDot    = document.getElementById('status-dot');
 var clientCount  = document.getElementById('client-count');
 var blackoutBtn  = document.getElementById('blackout-btn');
 var clearBtn     = document.getElementById('clear-btn');
+var resendMapBtn = document.getElementById('resend-map-btn');
 var sendTextBtn  = document.getElementById('send-text-btn');
 var sendImageBtn = document.getElementById('send-image-btn');
 var imageFile    = document.getElementById('image-file');
@@ -150,6 +152,12 @@ clearBtn.addEventListener('click', function () {
   fetch('/api/clear', { method: 'POST' });
   isBlackout = false;
   blackoutBtn.classList.remove('active');
+});
+resendMapBtn.addEventListener('click', function () {
+  if (!lastMapPayload) return;
+  wsSend(lastMapPayload);
+  if (activeFogKey) sendFogUpdate(activeFogKey);
+  if (activeTokenMapKey) { sendTokenUpdate(activeTokenMapKey); sendDrawUpdate(activeTokenMapKey); }
 });
 
 // ============================================================
@@ -586,6 +594,7 @@ function showSceneView(sceneIdx, viewIdx) {
 
   // Pass fogKey (fog) and mapKey (tokens) so player can correlate overlays
   lastSceneViewPayload = { action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fit: view.fit || 'contain', fogKey: useFog ? fogKey : null, mapKey: fogKey };
+  lastMapPayload = lastSceneViewPayload;
   wsSend(lastSceneViewPayload);
 
   // Only show fog controls if this view has fog enabled

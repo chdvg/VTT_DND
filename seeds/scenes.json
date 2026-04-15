@@ -191,6 +191,12 @@
         "image": "/assets/maps/The_Keep.png",
         "audio": null,
         "fog": false
+      },
+      {
+        "id": "forest-1776088513695-view-0",
+        "label": "Mountain Valley",
+        "image": "/assets/maps/Hidden_Keep_2.png",
+        "fog": true
       }
     ]
   }
