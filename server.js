@@ -407,10 +407,10 @@ app.get('/map-builder', requireDm, (req, res) => {
   res.sendFile(path.join(__dirname, 'map-builder', 'index.html'));
 });
 
-// Save exported map PNG from canvas dataURL
+// Save exported map PNG from canvas dataURL (+ optional editable state JSON)
 app.post('/api/map-builder/save', requireDm, express.json({ limit: '50mb' }), (req, res) => {
   try {
-    const { dataUrl, filename } = req.body;
+    const { dataUrl, filename, state } = req.body;
     if (!dataUrl || !filename) return res.status(400).json({ error: 'dataUrl and filename required' });
     const safeName = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
     if (!safeName.match(/\.(png|jpg|jpeg)$/i)) return res.status(400).json({ error: 'filename must end in .png or .jpg' });
@@ -419,7 +419,36 @@ app.post('/api/map-builder/save', requireDm, express.json({ limit: '50mb' }), (r
     const destDir = path.join(__dirname, 'public', 'assets', 'maps');
     if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
     fs.writeFileSync(path.join(destDir, safeName), buf);
+    // Also persist editable tile/token/fog state alongside the PNG
+    if (state && typeof state === 'object') {
+      const stateFile = safeName.replace(/\.(png|jpg|jpeg)$/i, '.map.json');
+      fs.writeFileSync(path.join(destDir, stateFile), JSON.stringify(state));
+    }
     res.json({ ok: true, webPath: '/assets/maps/' + safeName });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// List maps that have an editable state file
+app.get('/api/map-builder/states', requireDm, (req, res) => {
+  const destDir = path.join(__dirname, 'public', 'assets', 'maps');
+  if (!fs.existsSync(destDir)) return res.json({ states: [] });
+  const states = fs.readdirSync(destDir)
+    .filter(f => f.endsWith('.map.json'))
+    .map(f => f.replace(/\.map\.json$/, ''));
+  res.json({ states });
+});
+
+// Return editable state for a named map
+app.get('/api/map-builder/state', requireDm, (req, res) => {
+  const name = (req.query.name || '').toString();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const safeName = path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_');
+  const filePath = path.join(__dirname, 'public', 'assets', 'maps', safeName + '.map.json');
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'No editable state found for this map' });
+  try {
+    res.json(JSON.parse(fs.readFileSync(filePath, 'utf8')));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

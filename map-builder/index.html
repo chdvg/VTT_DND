@@ -25,6 +25,7 @@
     <button class="btn btn-warning btn-small"   id="fog-hide-btn"   title="Hide all fog cells"   style="display:none;">🌑 Hide All</button>
     <button class="btn btn-secondary btn-small" id="undo-btn">↩ Undo</button>
     <button class="btn btn-warning btn-small"   id="clear-canvas-btn">🗑 Clear</button>
+    <button class="btn btn-secondary btn-small" id="open-btn">📂 Open Map</button>
     <button class="btn btn-secondary btn-small" id="send-live-btn">📡 Send Live</button>
     <button class="btn btn-primary btn-small"   id="save-btn">💾 Save Map</button>
   </div>
@@ -173,6 +174,20 @@
       <button class="btn btn-secondary" id="save-cancel-btn">Cancel</button>
     </div>
     <div id="save-status"></div>
+  </div>
+</div>
+
+<!-- Open Map dialog -->
+<div id="open-modal" class="modal hidden">
+  <div class="modal-box">
+    <h2>Open Saved Map</h2>
+    <p style="font-size:0.8rem;color:#9ca3af;margin:0 0 0.5rem;">Only maps saved from the builder can be reopened for editing.</p>
+    <select id="open-map-select" size="8" style="width:100%;background:#1f2937;color:#f3f4f6;border:1px solid #374151;border-radius:4px;padding:0.25rem;"></select>
+    <div class="btn-row" style="margin-top:1rem;">
+      <button class="btn btn-primary"   id="open-confirm-btn">Open</button>
+      <button class="btn btn-secondary" id="open-cancel-btn">Cancel</button>
+    </div>
+    <div id="open-status" style="margin-top:0.5rem;font-size:0.85rem;"></div>
   </div>
 </div>
 
