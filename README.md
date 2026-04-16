@@ -44,14 +44,20 @@ A full tile-based map editor accessible at `/map-builder` from the DM machine (l
 - **Player tab** — pick a player from your saved roster; their class icon and color are applied automatically
 - **NPC tab** — choose from 25 standard mob types (each with a unique icon and color) or enter a custom label; tokens auto-number (e.g. Goblin 1, Goblin 2…)
 
-**Tile palette — 16 procedural tile types:**
+**Tile palette — 49 procedural tile types across 10 groups:**
 
-| Tile | | Tile | | Tile | | Tile |
-|------|-|------|-|------|-|------|
-| Stone Floor | | Wood Floor | | Dirt | | Grass |
-| Water | | Deep Water | | Wall | | Stone Wall |
-| Lava | | Sand | | Snow | | Swamp |
-| Cave | | Road | | Door | | Pit |
+| Group | Tiles |
+|-------|-------|
+| **Ground** | Stone Floor, Wood Floor, Dirt, Cave |
+| **Terrain** | Grass, Sand, Snow, Swamp, Lava |
+| **Water** | Water, Deep Water |
+| **Walls** | Wall, Stone Wall, Ruined Wall, Door, Pit |
+| **Buildings** | Cabin, Ruined Cabin, Tent, Well |
+| **Roads** | Road ─, Road │, Road +, Road ↗ ↖ ↘ ↙ (corners), Road T-N/S/E/W (11 variants) |
+| **Nature** | Tree, Large Tree, Pine, Palm, Hill |
+| **Mountains** | Mountain, Scree, Alpine, Earthy, Tundra, Slate |
+| **Animals** | Horse, Cow |
+| **Effects** | Aura (orange/red/blue), Fire (orange/blue) |
 
 Each tile renders with a unique procedural texture generated on a canvas — no external texture files needed.
 
