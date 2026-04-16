@@ -72,7 +72,9 @@ Each tile renders with a unique procedural texture generated on a canvas — no 
 
 **Undo / Clear:** ↩ Undo steps back one paint action; 🗑 Clear resets the entire canvas.
 
-**Save Map:** Opens a dialog to enter an Area, Scene name, and Map name. The map is exported as a PNG, saved to `public/assets/maps/`, and added as a scene entry in `seeds/scenes.json` — immediately available in the DM panel without a server restart.
+**Saving a Map:** Click **💾 Save Map** to open the save dialog. Enter a filename, optionally add the map to the scene list (with an Area and Scene label), and choose whether to enable Fog of War. The map is exported as a PNG and saved to `public/assets/maps/`. A matching `.map.json` file is also saved alongside it — this preserves the full editable state (tile grid, tokens, labels, background image, fog data) so the map can be reopened later.
+
+**Opening a Saved Map for Editing:** Click **📂 Open Map** to see a list of all maps that have an editable state file. Select a map and click **Open** to restore the full builder state exactly as it was when last saved — tiles, tokens, labels, fog, and grid dimensions are all restored. The save filename is pre-filled so re-saving updates the same map file. Note: only maps saved *after* adding this feature have an editable state; older PNG-only maps will not appear in the list.
 
 ---
 
@@ -317,6 +319,9 @@ Scenes are stored in `seeds/scenes.json`. Structure:
 | POST | `/api/players` | Save player roster |
 | GET | `/api/audio` | List audio files grouped by category |
 | GET | `/api/maps` | List map files |
+| POST | `/api/map-builder/save` | Export map PNG + save editable `.map.json` state |
+| GET | `/api/map-builder/states` | List maps with an editable state file |
+| GET | `/api/map-builder/state?name=` | Load editable state for a named map |
 | POST | `/api/overlay` | Push timed overlay (title, html, duration ms) to players |
 | POST | `/api/stopaudio` | Stop audio on all players |
 | POST | `/api/blackout` | Toggle blackout overlay on players (solid black over everything) |
