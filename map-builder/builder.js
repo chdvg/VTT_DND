@@ -2196,7 +2196,11 @@ document.getElementById('save-confirm-btn').addEventListener('click', async () =
     const r = await fetch('/api/map-builder/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dataUrl, filename: safeName }),
+      body: JSON.stringify({
+        dataUrl,
+        filename: safeName,
+        state: { cols, rows, cellSize, tileMap, tokens, labels, bgImage, fogEnabled, fogGrid: fogBuilderGrid },
+      }),
     });
     const json = await r.json();
     if (!r.ok) throw new Error(json.error || 'Save failed');
@@ -2235,6 +2239,103 @@ document.getElementById('save-confirm-btn').addEventListener('click', async () =
   } catch (err) {
     statusEl.style.color = '#ef4444';
     statusEl.textContent = 'Error: ' + err.message;
+  }
+});
+
+// ── Open Map ──────────────────────────────────────────────────
+function loadMapState(state) {
+  cols     = state.cols     || 20;
+  rows     = state.rows     || 15;
+  cellSize = state.cellSize || 40;
+
+  // Restore tileMap, clamping to declared dimensions
+  tileMap = [];
+  const srcMap = state.tileMap || [];
+  for (let r = 0; r < rows; r++) {
+    const srcRow = srcMap[r] || [];
+    const newRow = [];
+    for (let c = 0; c < cols; c++) newRow.push(srcRow[c] !== undefined ? srcRow[c] : null);
+    tileMap.push(newRow);
+  }
+
+  tokens    = state.tokens || [];
+  labels    = state.labels || [];
+  undoStack = [];
+
+  // Background image
+  bgImage   = state.bgImage || null;
+  bgImageEl = null;
+  if (bgImage) {
+    bgImageEl = new Image();
+    bgImageEl.onload = () => renderBg();
+    bgImageEl.src = bgImage;
+  }
+
+  // Fog state — restore grid, clamped to declared dimensions
+  const srcFog = state.fogGrid || [];
+  fogBuilderGrid = [];
+  for (let r = 0; r < rows; r++) {
+    const srcRow = srcFog[r] || [];
+    const newRow = [];
+    for (let c = 0; c < cols; c++) newRow.push(!!srcRow[c]);
+    fogBuilderGrid.push(newRow);
+  }
+
+  // Sync grid dimension inputs
+  document.getElementById('grid-cols').value = cols;
+  document.getElementById('grid-rows').value = rows;
+  document.getElementById('cell-size').value  = cellSize;
+
+  // Apply fog mode (updates button states and renders fog layer)
+  setFogMode(!!state.fogEnabled);
+
+  // Resize canvases and redraw everything
+  applySize();
+}
+
+document.getElementById('open-btn').addEventListener('click', async () => {
+  const select   = document.getElementById('open-map-select');
+  const statusEl = document.getElementById('open-status');
+  statusEl.textContent = '';
+  select.innerHTML = '<option value="" disabled>Loading…</option>';
+  document.getElementById('open-modal').classList.remove('hidden');
+  try {
+    const r    = await fetch('/api/map-builder/states');
+    const json = await r.json();
+    const list = json.states || [];
+    if (list.length === 0) {
+      select.innerHTML = '<option value="" disabled>No saved maps found — save a map first.</option>';
+    } else {
+      select.innerHTML = list.map(n => `<option value="${n}">${n}</option>`).join('');
+      select.selectedIndex = 0;
+    }
+  } catch (_) {
+    select.innerHTML = '<option value="" disabled>Error loading map list.</option>';
+  }
+});
+
+document.getElementById('open-cancel-btn').addEventListener('click', () => {
+  document.getElementById('open-modal').classList.add('hidden');
+});
+
+document.getElementById('open-confirm-btn').addEventListener('click', async () => {
+  const select   = document.getElementById('open-map-select');
+  const name     = select.value;
+  const statusEl = document.getElementById('open-status');
+  if (!name) { statusEl.textContent = 'Select a map first.'; return; }
+  statusEl.style.color = '#d1d5db';
+  statusEl.textContent = 'Loading…';
+  try {
+    const r = await fetch('/api/map-builder/state?name=' + encodeURIComponent(name));
+    if (!r.ok) throw new Error((await r.json()).error || 'Load failed');
+    const state = await r.json();
+    loadMapState(state);
+    // Pre-fill save filename so re-saving updates the same map
+    document.getElementById('save-filename').value = name + '.png';
+    document.getElementById('open-modal').classList.add('hidden');
+  } catch (e) {
+    statusEl.style.color = '#ef4444';
+    statusEl.textContent = 'Error: ' + e.message;
   }
 });
 
