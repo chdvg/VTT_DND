@@ -211,11 +211,24 @@ function renderTokenOverlay(tokens) {
   var fontSize  = Math.max(9,  Math.round(tokenSize * 0.42));
   var iconSize  = Math.max(11, Math.round(tokenSize * 0.48));
 
+  // Fog grid for hiding enemy tokens in unrevealed cells
+  var fogGrid = (currentFogKey && fogStates[currentFogKey]) ? fogStates[currentFogKey] : null;
+  var fogRows = fogGrid ? fogGrid.length : 0;
+  var fogCols = fogGrid && fogGrid[0] ? fogGrid[0].length : 0;
+
   tokens.forEach(function (tok) {
     var left  = offX + tok.x * rendW;
     var top   = offY + tok.y * rendH;
     var isPlayer = tok.type === 'player' && tok.cls;
     var isMob    = tok.mobType && MOB_ICONS[tok.mobType];
+
+    // Hide non-player tokens that fall in a fogged (unrevealed) cell
+    if (!isPlayer && fogGrid && fogRows && fogCols) {
+      var gridC = Math.min(fogCols - 1, Math.max(0, Math.floor(tok.x * fogCols)));
+      var gridR = Math.min(fogRows - 1, Math.max(0, Math.floor(tok.y * fogRows)));
+      if (!fogGrid[gridR][gridC]) return; // cell is fogged — skip this token
+    }
+
     var color, border;
     if (isPlayer) {
       color  = CLASS_COLORS[tok.cls] || '#3b82f6';

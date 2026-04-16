@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v2.2 — Web Edition)
+# D&D VTT Control Console (v2.3 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -28,7 +28,7 @@ The DM panel and player screen stay in sync via WebSocket. Everything the DM doe
 - **Scene Builder** — Create and edit scenes; assign per-map ambience audio, fog toggle, and fit mode; file picker auto-fills image URL
 
 ### Map Builder
-A full tile-based map editor accessible at `/map-builder` from the DM machine.
+A full tile-based map editor accessible at `/map-builder` from the DM machine (link in the DM panel header).
 
 **Tools:**
 | Tool | Description |
@@ -36,9 +36,13 @@ A full tile-based map editor accessible at `/map-builder` from the DM machine.
 | 🖌 Paint | Click or drag to paint tiles |
 | ⬜ Erase | Remove tiles back to empty |
 | 🪣 Fill | Flood-fill an area with the selected tile |
-| 🪙 Token | Place labeled character/monster tokens |
+| 🪙 Token | Place player or NPC/enemy tokens |
 | 🔤 Label | Add text labels anywhere on the map |
 | 🖼 Image | Place a background image behind the tile grid |
+
+**Token tool:**
+- **Player tab** — pick a player from your saved roster; their class icon and color are applied automatically
+- **NPC tab** — choose from 25 standard mob types (each with a unique icon and color) or enter a custom label; tokens auto-number (e.g. Goblin 1, Goblin 2…)
 
 **Tile palette — 16 procedural tile types:**
 
@@ -57,12 +61,12 @@ Each tile renders with a unique procedural texture generated on a canvas — no 
 - Click **🌫 Fog** to enter fog-painting mode. The fog layer appears as a dark semi-transparent overlay.
 - Paint fog cells by clicking/dragging; reveal or hide individual cells.
 - **👁 Reveal All** / **🌑 Hide All** shortcuts appear when fog mode is active.
-- **📡 Send Live** broadcasts the built map as a PNG to all player screens, with live fog applied if enabled.
-- When saving as a scene, check *Enable Fog of War* to persist the fog state with the scene.
+- **📡 Send Live** broadcasts the built map as a PNG to all connected player screens with live fog applied.
+- Enemy/mob tokens in fogged cells are automatically hidden from the player view.
 
 **Undo / Clear:** ↩ Undo steps back one paint action; 🗑 Clear resets the entire canvas.
 
-**Save as Scene:** Opens a dialog to enter an Area, Scene name, and Map name. The map is exported as a PNG and saved as a scene entry in `scenes.json`, immediately available in the DM panel.
+**Save Map:** Opens a dialog to enter an Area, Scene name, and Map name. The map is exported as a PNG, saved to `public/assets/maps/`, and added as a scene entry in `seeds/scenes.json` — immediately available in the DM panel without a server restart.
 
 ---
 
