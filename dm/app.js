@@ -3428,7 +3428,11 @@ renderInitiative();
       if (inner) inner.style.width = lastWidth + 'px';
       btn.textContent = '‹';
     } else {
+      lastWidth = sidebar.offsetWidth || lastWidth;
       sidebar.classList.add('collapsed');
+      sidebar.style.width    = '32px';
+      sidebar.style.minWidth = '32px';
+      if (inner) inner.style.width = '32px';
       btn.textContent = '›';
     }
   });

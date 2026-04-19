@@ -251,6 +251,8 @@ details > .panel-summary + * { margin-top:1rem; }
 .sidebar-resize-handle { position: absolute; top: 0; right: 0; width: 5px; height: 100%; cursor: col-resize; z-index: 20; background: transparent; transition: background 0.15s; }
 .sidebar-resize-handle:hover, .sidebar-resize-handle.dragging { background: rgba(212,175,55,0.45); }
 .sidebar.collapsed { width: 32px; min-width: 32px; }
+.sidebar.collapsed .sidebar-inner { visibility: hidden; opacity: 0; pointer-events: none; }
+.sidebar.animating .sidebar-inner { transition: visibility 0s, opacity 0.15s; }
 .sidebar-collapse-btn { position: absolute; top: 6px; right: 4px; background: none; border: 1px solid #30363d; color: #888; cursor: pointer; font-size: 1rem; padding: 1px 6px; border-radius: 3px; line-height: 1.4; z-index: 10; transition: color 0.15s, border-color 0.15s; }
 .sidebar-collapse-btn:hover { color: #d4af37; border-color: #d4af37; }
 .sidebar.collapsed .sidebar-collapse-btn { right: auto; left: 2px; }
