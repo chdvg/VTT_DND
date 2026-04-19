@@ -1939,7 +1939,12 @@ function editScene(sceneIdx) {
     return { label: v.label, image: v.image, audio: v.audio || null, fog: v.fog === true };
   });
   renderSceneBuilderList();
-  // Scroll Scene Builder into view
+  // Expand Scene Builder section and scroll it into view
+  var sbSection = document.getElementById('section-scene-builder');
+  if (sbSection) {
+    var details = sbSection.querySelector('details');
+    if (details) details.open = true;
+  }
   var sb = document.getElementById('sb-scene-list');
   if (sb) sb.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -2992,6 +2997,44 @@ renderInitiative();
   document.addEventListener('mousemove', function (e) {
     if (!resizing) return;
     setWidth(startW + (e.clientX - startX));
+  });
+
+  document.addEventListener('mouseup', function () {
+    if (!resizing) return;
+    resizing = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor     = '';
+    document.body.style.userSelect = '';
+  });
+}());
+
+// ── Right Sidebar drag-to-resize ──────────────────────────────
+(function () {
+  var sidebar = document.getElementById('sidebar-right');
+  var handle  = document.getElementById('sidebar-right-resize');
+  if (!sidebar || !handle) return;
+
+  var MIN_WIDTH = 200;
+  var MAX_WIDTH = 700;
+  var resizing  = false;
+  var startX    = 0;
+  var startW    = 0;
+
+  handle.addEventListener('mousedown', function (e) {
+    e.preventDefault();
+    resizing = true;
+    startX   = e.clientX;
+    startW   = sidebar.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor     = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', function (e) {
+    if (!resizing) return;
+    var newW = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startW - (e.clientX - startX)));
+    sidebar.style.width    = newW + 'px';
+    sidebar.style.minWidth = newW + 'px';
   });
 
   document.addEventListener('mouseup', function () {

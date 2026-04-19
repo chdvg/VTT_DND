@@ -230,7 +230,9 @@ details > .panel-summary + * { margin-top:1rem; }
 .sidebar-inner::-webkit-scrollbar-track { background: #161b22; }
 .sidebar-inner::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
 .main-content { flex: 1; overflow-y: auto; min-width: 0; }
-.sidebar-right { width: 280px; min-width: 280px; flex-shrink: 0; background: #161b22; border-left: 2px solid #30363d; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; scrollbar-width: thin; scrollbar-color: #30363d #161b22; }
+.sidebar-right { width: 340px; min-width: 200px; flex-shrink: 0; background: #161b22; border-left: 2px solid #30363d; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; scrollbar-width: thin; scrollbar-color: #30363d #161b22; position: relative; }
+.sidebar-right-resize-handle { position: absolute; top: 0; left: 0; width: 5px; height: 100%; cursor: col-resize; z-index: 20; background: transparent; }
+.sidebar-right-resize-handle:hover, .sidebar-right-resize-handle.dragging { background: #388bfd55; }
 .sidebar-right::-webkit-scrollbar { width: 6px; }
 .sidebar-right::-webkit-scrollbar-track { background: #161b22; }
 .sidebar-right::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
