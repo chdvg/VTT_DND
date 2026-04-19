@@ -6,19 +6,17 @@
     "views": [
       {
         "id": "phandalin/redbrand-hideout-1775400000000-view-0",
-        "label": "RedBrand Hideout",
-        "image": "/assets/maps/redbrand_hideout.png",
+        "label": "RedBrand Hideout (Builder)",
+        "image": "/assets/maps/redbrand_hideout_builder.png",
         "audio": null,
-        "fog": true,
-        "fit": "cover"
+        "fog": true
       },
       {
         "id": "phandalin/redbrand-hideout-1775400000000-view-1",
         "label": "Tresandor_Manor",
         "image": "/assets/maps/tresandor_manor_exterior.webp",
         "audio": null,
-        "fog": false,
-        "fit": "contain"
+        "fog": false
       }
     ]
   },
@@ -196,6 +194,20 @@
         "id": "forest-1776088513695-view-0",
         "label": "Mountain Valley",
         "image": "/assets/maps/Hidden_Keep_2.png",
+        "fog": true
+      }
+    ]
+  },
+  {
+    "id": "custom-1776304706910",
+    "tab": "Custom",
+    "label": "Custom",
+    "views": [
+      {
+        "id": "custom-1776304706910-view-0",
+        "label": "Guantlet.png",
+        "image": "/assets/maps/Guantlet.png",
+        "audio": null,
         "fog": true
       }
     ]
