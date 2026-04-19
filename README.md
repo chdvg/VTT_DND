@@ -145,10 +145,39 @@ Real-time monster stat block lookup powered by the [Open5e API](https://open5e.c
 
 ### Reference Panel
 
+The Reference panel is a tabbed quick-reference hub for DMs, with live API lookups for game content.
+
+**⚔️ Conditions tab**
 - **Active Conditions chart** — shows each combatant currently in initiative and any conditions assigned to them at a glance
-- **Condition Dictionary** — a built-in reference for all standard 5e conditions (Blinded, Charmed, Frightened, etc.) with quick-read bullet points for mechanical effects (advantage/disadvantage, auto-fails, speed penalties, etc.)
-- **Custom conditions** — add your own homebrew conditions with name, type (buff/debuff), and notes
-- Assign conditions to any combatant from the initiative tracker; the chart updates in real time
+- **Condition Dictionary** — filterable reference for all standard 5e conditions with advantage/disadvantage, auto-fail, and speed penalty notes
+- **Custom conditions** — add homebrew conditions with name, type (buff/debuff), and notes
+- **Drag-and-drop conditions** — drag any condition row directly onto an initiative tracker entry or a token dot on the map to apply it; a popup appears to set the number of rounds (or mark as permanent ∞); condition rings update instantly on both the DM view and player screen
+
+**📊 Rules tab** — static quick-reference tables (no internet required):
+- Difficulty Class (DC) scale (5–30)
+- Attack & hit rules (crits, nat 1, advantage/disadvantage situations, flanking, two-weapon fighting)
+- Cover bonuses (half, three-quarters, full)
+- Concentration & spellcasting rules
+- Common item costs (torches, potions, spell material components, etc.)
+
+**✨ Spells tab** — live spell lookup via the [Open5e API](https://open5e.com/):
+- Search by name and/or filter by spell level (Cantrip–9th)
+- Returns level, school, casting time, range, duration, concentration/ritual flags, source document, and full description
+- All content is openly licensed OGL/CC material; each card shows its source document
+
+**💰 Items tab** — live item lookup via the [Open5e API](https://open5e.com/):
+- Switch between **Weapons & Armor** and **Magic Items**
+- Weapons show category, cost, damage dice, damage type, weight, and special properties; armor shows AC, cost, weight, and stealth disadvantage flag
+- Magic items show type, rarity, attunement requirements, and full description
+- Uses Open5e `/v1/weapons/` and `/v1/armor/` endpoints (searches both in parallel and merges results); magic items use `/v1/magicitems/`
+- All results include source document badge (e.g. 📖 5e Core Rules)
+
+**🎯 Feats tab** — live feat lookup via the [Open5e API](https://open5e.com/) (falls back to the [D&D 5e SRD API](https://www.dnd5eapi.co/)):
+- Search by feat name; returns prerequisite and full description
+
+**🔍 Global search bar** — type a term, pick a category (Spells / Items / Feats / Conditions), press Go — automatically switches to the correct tab and fires the search.
+
+> Reference lookup data (spells, items, feats) is provided by **[Open5e](https://open5e.com/)** — a community-maintained open-source API serving only OGL and Creative Commons licensed 5e content. All data is free to use. API endpoint: `https://api.open5e.com/v1/`. Feat fallback provided by the **[D&D 5e SRD API](https://www.dnd5eapi.co/)** at `https://www.dnd5eapi.co/api/`.
 
 ### Token Overlay
 

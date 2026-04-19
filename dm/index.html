@@ -53,9 +53,9 @@
       <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.75rem;">
         <h2 style="margin:0;flex:none;">🗺️ Map Control — <span id="map-control-title" style="font-weight:normal;font-size:0.9rem;color:#aaa;">no map active</span></h2>
         <div class="btn-row" style="margin:0;flex:none;">
-          <button id="blackout-btn" class="btn btn-danger">⬛ BLACKOUT</button>
-          <button id="clear-btn" class="btn btn-warning">🧹 CLEAR</button>
-          <button id="resend-map-btn" class="btn btn-secondary">🔄 Resend Map</button>
+          <button id="blackout-btn" class="btn btn-danger" style="flex:none;">⬛ BLACKOUT</button>
+          <button id="clear-btn" class="btn btn-warning" style="flex:none;">🧹 CLEAR</button>
+          <button id="resend-map-btn" class="btn btn-secondary" style="flex:none;">🔄 Resend Map</button>
         </div>
       </div>
       <div id="map-control-grid" style="display:none;grid-template-columns:2fr 1px 3fr;gap:0 1.25rem;">
@@ -76,26 +76,170 @@
         <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠿</span>📋 Reference<span class="sb-chevron">▶</span></summary>
         <div style="margin-top:0.75rem;">
 
-          <h3 class="ref-section-hdr">⚔️ Active Conditions</h3>
-          <div id="ref-active-chart"></div>
+          <!-- Global search -->
+          <div class="ref-search-wrap">
+            <input type="text" id="ref-global-search" placeholder="🔍 Search spells, items, feats, conditions…" autocomplete="off" />
+            <select id="ref-global-cat">
+              <option value="spells">Spells</option>
+              <option value="items">Items</option>
+              <option value="feats">Feats</option>
+              <option value="conditions">Conditions</option>
+            </select>
+            <button id="ref-global-search-btn" class="btn btn-small btn-primary">Go</button>
+          </div>
+          <div id="ref-global-results"></div>
 
-          <h3 class="ref-section-hdr" style="margin-top:1rem;">📖 Condition Dictionary</h3>
-          <div id="ref-dict-list"></div>
+          <!-- Tabs -->
+          <div class="ref-tabs">
+            <button class="ref-tab active" data-tab="conditions">⚔️ Conditions</button>
+            <button class="ref-tab" data-tab="rules">📊 Rules</button>
+            <button class="ref-tab" data-tab="spells">✨ Spells</button>
+            <button class="ref-tab" data-tab="items">💰 Items</button>
+            <button class="ref-tab" data-tab="feats">🎯 Feats</button>
+          </div>
 
-          <details style="margin-top:0.75rem;">
-            <summary style="cursor:pointer;color:#888;font-size:0.8rem;user-select:none;">+ Add Custom Reference Entry</summary>
-            <div class="ref-add-row" style="margin-top:0.5rem;">
-              <input type="text" id="ref-add-icon" placeholder="🎯" maxlength="4" title="Icon (emoji)" />
-              <input type="text" id="ref-add-name" placeholder="Condition name" />
-              <select id="ref-add-type">
-                <option value="buff">Buff</option>
-                <option value="debuff">Debuff</option>
+          <!-- ── Conditions tab ── -->
+          <div class="ref-pane" id="ref-pane-conditions">
+            <h3 class="ref-section-hdr" style="margin-top:0.6rem;">⚔️ Active Conditions</h3>
+            <div id="ref-active-chart"></div>
+            <h3 class="ref-section-hdr" style="margin-top:1rem;">📖 Condition Dictionary</h3>
+            <input type="text" id="ref-cond-filter" placeholder="Filter conditions…" style="margin-bottom:0.5rem;" />
+            <div id="ref-dict-list"></div>
+            <details style="margin-top:0.75rem;">
+              <summary style="cursor:pointer;color:#888;font-size:0.8rem;user-select:none;">+ Add Custom Condition</summary>
+              <div class="ref-add-row" style="margin-top:0.5rem;">
+                <input type="text" id="ref-add-icon" placeholder="🎯" maxlength="4" title="Icon (emoji)" />
+                <input type="text" id="ref-add-name" placeholder="Condition name" />
+                <select id="ref-add-type">
+                  <option value="buff">Buff</option>
+                  <option value="debuff">Debuff</option>
+                </select>
+                <input type="text" id="ref-add-plus" placeholder="+ Benefit" />
+                <input type="text" id="ref-add-minus" placeholder="– Penalty" />
+                <button id="ref-add-btn" class="btn btn-small btn-secondary">+ Add</button>
+              </div>
+            </details>
+          </div>
+
+          <!-- ── Rules tab ── -->
+          <div class="ref-pane" id="ref-pane-rules" style="display:none">
+            <h3 class="ref-section-hdr" style="margin-top:0.6rem;">🎯 Difficulty Class (DC)</h3>
+            <table class="ref-chart-table">
+              <thead><tr><th>Task Difficulty</th><th>DC</th></tr></thead>
+              <tbody>
+                <tr><td>Very Easy</td><td>5</td></tr>
+                <tr><td>Easy</td><td>10</td></tr>
+                <tr><td>Medium</td><td>15</td></tr>
+                <tr><td>Hard</td><td>20</td></tr>
+                <tr><td>Very Hard</td><td>25</td></tr>
+                <tr><td>Nearly Impossible</td><td>30</td></tr>
+              </tbody>
+            </table>
+
+            <h3 class="ref-section-hdr" style="margin-top:1rem;">⚔️ Attack &amp; Hit Rules</h3>
+            <table class="ref-chart-table">
+              <thead><tr><th>Situation</th><th>Effect</th></tr></thead>
+              <tbody>
+                <tr><td>Natural 20</td><td class="ref-plus-cell">Critical Hit — roll damage dice twice</td></tr>
+                <tr><td>Natural 1</td><td class="ref-minus-cell">Automatic Miss (always fails)</td></tr>
+                <tr><td>Invisible attacker</td><td class="ref-plus-cell">Advantage on attack rolls</td></tr>
+                <tr><td>Blind attacker</td><td class="ref-minus-cell">Disadvantage on attack rolls</td></tr>
+                <tr><td>Prone target (melee ≤5ft)</td><td class="ref-plus-cell">Advantage on attacks</td></tr>
+                <tr><td>Prone target (ranged/&gt;5ft)</td><td class="ref-minus-cell">Disadvantage on attacks</td></tr>
+                <tr><td>Restrained target</td><td class="ref-plus-cell">Attackers have Advantage</td></tr>
+                <tr><td>Flanking (optional rule)</td><td class="ref-plus-cell">Advantage on melee attacks</td></tr>
+                <tr><td>Ranged into melee</td><td class="ref-minus-cell">Disadvantage on ranged attacks</td></tr>
+                <tr><td>Two-weapon fighting</td><td>Bonus action off-hand attack (no ability mod to damage)</td></tr>
+              </tbody>
+            </table>
+
+            <h3 class="ref-section-hdr" style="margin-top:1rem;">🛡️ Cover</h3>
+            <table class="ref-chart-table">
+              <thead><tr><th>Cover Type</th><th>Bonus</th></tr></thead>
+              <tbody>
+                <tr><td>Half Cover</td><td class="ref-plus-cell">+2 AC &amp; Dex saving throws</td></tr>
+                <tr><td>Three-Quarters Cover</td><td class="ref-plus-cell">+5 AC &amp; Dex saving throws</td></tr>
+                <tr><td>Full Cover</td><td class="ref-plus-cell">Can't be directly targeted</td></tr>
+              </tbody>
+            </table>
+
+            <h3 class="ref-section-hdr" style="margin-top:1rem;">⏳ Concentration &amp; Spellcasting</h3>
+            <table class="ref-chart-table">
+              <thead><tr><th>Situation</th><th>Rule</th></tr></thead>
+              <tbody>
+                <tr><td>Concentration check DC</td><td>10 or half damage taken (whichever is higher)</td></tr>
+                <tr><td>Concentration check save</td><td>Constitution saving throw</td></tr>
+                <tr><td>Casting while Concentrating</td><td class="ref-minus-cell">Drops current concentration spell</td></tr>
+                <tr><td>Counterspell DC</td><td>10 + spell's level (if 4th level or higher)</td></tr>
+                <tr><td>Spell attack vs. AC</td><td>d20 + spellcasting ability mod + proficiency</td></tr>
+                <tr><td>Verbal component</td><td>Can't cast if Silenced</td></tr>
+                <tr><td>Somatic component</td><td>Needs free hand (or arcane focus)</td></tr>
+              </tbody>
+            </table>
+
+            <h3 class="ref-section-hdr" style="margin-top:1rem;">💰 Common Item Costs</h3>
+            <table class="ref-chart-table">
+              <thead><tr><th>Item</th><th>Cost</th><th>Weight</th></tr></thead>
+              <tbody>
+                <tr><td>Torch</td><td>1 cp</td><td>1 lb</td></tr>
+                <tr><td>Rations (1 day)</td><td>5 sp</td><td>2 lb</td></tr>
+                <tr><td>Rope, Hemp (50ft)</td><td>1 gp</td><td>10 lb</td></tr>
+                <tr><td>Healer's Kit</td><td>5 gp</td><td>3 lb</td></tr>
+                <tr><td>Potion of Healing</td><td>50 gp</td><td>0.5 lb</td></tr>
+                <tr><td>Potion of Greater Healing</td><td>100 gp</td><td>0.5 lb</td></tr>
+                <tr><td>Spell Component Pouch</td><td>25 gp</td><td>2 lb</td></tr>
+                <tr><td>Thieves' Tools</td><td>25 gp</td><td>1 lb</td></tr>
+                <tr><td>Identify (material cost)</td><td>100 gp pearl</td><td>—</td></tr>
+                <tr><td>Revivify (material cost)</td><td>300 gp diamonds</td><td>—</td></tr>
+                <tr><td>Raise Dead (material cost)</td><td>500 gp diamond</td><td>—</td></tr>
+                <tr><td>Resurrection (material cost)</td><td>1,000 gp diamond</td><td>—</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- ── Spells tab ── -->
+          <div class="ref-pane" id="ref-pane-spells" style="display:none">
+            <div class="ref-api-search-row">
+              <input type="text" id="ref-spell-q" placeholder="Spell name… (e.g. Fireball)" autocomplete="off" />
+              <select id="ref-spell-level">
+                <option value="">Any Level</option>
+                <option value="0">Cantrip</option>
+                <option value="1">1st</option>
+                <option value="2">2nd</option>
+                <option value="3">3rd</option>
+                <option value="4">4th</option>
+                <option value="5">5th</option>
+                <option value="6">6th</option>
+                <option value="7">7th</option>
+                <option value="8">8th</option>
+                <option value="9">9th</option>
               </select>
-              <input type="text" id="ref-add-plus" placeholder="+ Benefit" />
-              <input type="text" id="ref-add-minus" placeholder="– Penalty" />
-              <button id="ref-add-btn" class="btn btn-small btn-secondary">+ Add</button>
+              <button id="ref-spell-btn" class="btn btn-small btn-primary">🔍</button>
             </div>
-          </details>
+            <div id="ref-spell-results"></div>
+          </div>
+
+          <!-- ── Items tab ── -->
+          <div class="ref-pane" id="ref-pane-items" style="display:none">
+            <div class="ref-api-search-row">
+              <input type="text" id="ref-item-q" placeholder="Item name… (e.g. Longsword)" autocomplete="off" />
+              <select id="ref-item-type">
+              <option value="equipment">Weapons &amp; Armor</option>
+                <option value="magic">Magic Items</option>
+              </select>
+              <button id="ref-item-btn" class="btn btn-small btn-primary">🔍</button>
+            </div>
+            <div id="ref-item-results"></div>
+          </div>
+
+          <!-- ── Feats tab ── -->
+          <div class="ref-pane" id="ref-pane-feats" style="display:none">
+            <div class="ref-api-search-row">
+              <input type="text" id="ref-feat-q" placeholder="Feat name… (e.g. Alert)" autocomplete="off" />
+              <button id="ref-feat-btn" class="btn btn-small btn-primary">🔍</button>
+            </div>
+            <div id="ref-feat-results"></div>
+          </div>
 
         </div>
       </details>
@@ -168,7 +312,8 @@
     </section>
     </div><!-- end panel-grid -->
     </main>
-    <aside class="sidebar-right">
+    <aside class="sidebar-right" id="sidebar-right">
+      <div class="sidebar-right-resize-handle" id="sidebar-right-resize"></div>
       <section class="panel" id="section-dice">
         <h2>🎲 Dice Roller</h2>
         <div class="dice-buttons">

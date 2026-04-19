@@ -74,6 +74,8 @@ var activeDrawMapKey     = null;
 var drawTool             = { color: '#ef4444', width: 0.006, erase: false };
 var drawControlsExpanded = false;
 var drawModeActive       = false; // true = annotations canvas active on token map
+var tokenMapExpanded     = false; // true = token map shown at full height
+var fogMapExpanded       = false; // true = fog of war map shown at full height
 
 // Scene Builder working state
 var sbViews       = [];   // array of { label, image, audio }
@@ -1046,10 +1048,24 @@ function renderFogControls(mapUrl, fogKey) {
   btnRow.appendChild(revealBtn);
   container.appendChild(btnRow);
 
+  // Fog of War map header with expand button
+  var fogHeaderRow = document.createElement('div');
+  fogHeaderRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;';
   var title = document.createElement('div');
   title.textContent = '🌫️ Fog of War';
-  title.style.cssText = 'font-size:0.7rem;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;color:#555;margin-bottom:0.4rem;';
-  container.appendChild(title);
+  title.style.cssText = 'font-size:0.7rem;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;color:#555;flex:1;';
+  fogHeaderRow.appendChild(title);
+  var fogExpandBtn = document.createElement('button');
+  fogExpandBtn.style.cssText = 'font-size:0.72rem;padding:0.18rem 0.5rem;border-radius:4px;cursor:pointer;border:1px solid #30363d;background:#0d1117;color:#888;white-space:nowrap;';
+  fogExpandBtn.textContent = fogMapExpanded ? '⊟ Shrink' : '⊞ Expand';
+  fogExpandBtn.title = 'Toggle fog map zoom level';
+  fogExpandBtn.onclick = function () {
+    fogMapExpanded = !fogMapExpanded;
+    mapImg.style.maxHeight = fogMapExpanded ? 'none' : '340px';
+    fogExpandBtn.textContent = fogMapExpanded ? '⊟ Shrink' : '⊞ Expand';
+  };
+  fogHeaderRow.appendChild(fogExpandBtn);
+  container.appendChild(fogHeaderRow);
 
   // Map preview with fog grid overlaid
   var mapWrap = document.createElement('div');
@@ -1057,7 +1073,7 @@ function renderFogControls(mapUrl, fogKey) {
 
   var mapImg = document.createElement('img');
   mapImg.src = mapUrl;
-  mapImg.style.cssText = 'display:block;max-width:100%;max-height:340px;object-fit:contain;user-select:none;pointer-events:none;';
+  mapImg.style.cssText = 'display:block;max-width:100%;max-height:' + (fogMapExpanded ? 'none' : '340px') + ';object-fit:contain;user-select:none;pointer-events:none;';
   mapWrap.appendChild(mapImg);
 
   var grid = document.createElement('div');
@@ -1359,10 +1375,30 @@ function renderTokenControls(mapUrl, mapKey) {
 
   // Map preview with token overlay — goes into the grid map container
   var mapTarget = (document.getElementById('token-map-container') || container);
+
+  // Expand/collapse header row for the token map
+  var mapHeaderRow = document.createElement('div');
+  mapHeaderRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;';
   var mapLabel = document.createElement('div');
   mapLabel.textContent = '🪬 Token Placement';
-  mapLabel.style.cssText = 'font-size:0.7rem;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;color:#555;margin-bottom:0.5rem;';
-  mapTarget.appendChild(mapLabel);
+  mapLabel.style.cssText = 'font-size:0.7rem;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;color:#555;flex:1;';
+  mapHeaderRow.appendChild(mapLabel);
+
+  var expandBtn = document.createElement('button');
+  expandBtn.style.cssText = 'font-size:0.72rem;padding:0.18rem 0.5rem;border-radius:4px;cursor:pointer;border:1px solid #30363d;' +
+    'background:#0d1117;color:#888;white-space:nowrap;';
+  expandBtn.textContent = tokenMapExpanded ? '⊟ Shrink' : '⊞ Expand';
+  expandBtn.title = 'Toggle map zoom level';
+  expandBtn.onclick = function () {
+    tokenMapExpanded = !tokenMapExpanded;
+    mapImg.style.maxHeight = tokenMapExpanded ? 'none' : '340px';
+    expandBtn.textContent  = tokenMapExpanded ? '⊟ Shrink' : '⊞ Expand';
+    // Redraw canvas sizing
+    if (mapImg.complete) { drawCanvas.width = mapWrap.offsetWidth; drawCanvas.height = mapWrap.offsetHeight; redrawAnnotations(); }
+  };
+  mapHeaderRow.appendChild(expandBtn);
+  mapTarget.appendChild(mapHeaderRow);
+
   var mapWrap = document.createElement('div');
   mapWrap.style.cssText = 'position:relative;display:inline-block;max-width:100%;' +
     'margin-bottom:0.5rem;border:1px solid ' + (drawModeActive ? '#facc15' : '#444') + ';' +
@@ -1370,7 +1406,7 @@ function renderTokenControls(mapUrl, mapKey) {
 
   var mapImg = document.createElement('img');
   mapImg.src = mapUrl;
-  mapImg.style.cssText = 'display:block;max-width:100%;max-height:340px;object-fit:contain;user-select:none;pointer-events:none;';
+  mapImg.style.cssText = 'display:block;max-width:100%;max-height:' + (tokenMapExpanded ? 'none' : '340px') + ';object-fit:contain;user-select:none;pointer-events:none;';
   mapWrap.appendChild(mapImg);
 
   // Token dots on the DM preview — draggable
@@ -1537,6 +1573,36 @@ function renderTokenControls(mapUrl, mapKey) {
     }
     // Stop map click from firing when clicking a dot
     dot.addEventListener('click', function (e) { e.stopPropagation(); });
+
+    // Drop target: drag a condition row onto this token dot
+    dot.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      dot.style.outline = '3px dashed #d4af37';
+    });
+    dot.addEventListener('dragleave', function () { dot.style.outline = ''; });
+    dot.addEventListener('drop', function (e) {
+      e.preventDefault();
+      dot.style.outline = '';
+      var raw = e.dataTransfer.getData('text/plain');
+      if (!raw) return;
+      var cond; try { cond = JSON.parse(raw); } catch(ex) { return; }
+      var entry = initiative.find(function (en) { return en.name === tok.label; });
+      if (entry) {
+        showCondDropPopup(e.clientX, e.clientY, cond, function (rounds) {
+          if (!entry.conditions) entry.conditions = [];
+          entry.conditions.push({ name: cond.name, icon: cond.icon, type: cond.type, rounds: rounds });
+          saveInitiative();
+          renderInitiative();
+          sendTokenUpdate(mapKey);
+          renderTokenControls(mapUrl, mapKey);
+        });
+      } else {
+        // Token not in initiative — show brief flash on dot
+        dot.style.outline = '3px solid #ef4444';
+        setTimeout(function () { dot.style.outline = ''; }, 800);
+      }
+    });
 
     dot.addEventListener('mousedown', function (e) {
       e.preventDefault();
@@ -1939,7 +2005,12 @@ function editScene(sceneIdx) {
     return { label: v.label, image: v.image, audio: v.audio || null, fog: v.fog === true };
   });
   renderSceneBuilderList();
-  // Scroll Scene Builder into view
+  // Expand Scene Builder section and scroll it into view
+  var sbSection = document.getElementById('section-scene-builder');
+  if (sbSection) {
+    var details = sbSection.querySelector('details');
+    if (details) details.open = true;
+  }
   var sb = document.getElementById('sb-scene-list');
   if (sb) sb.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -2461,6 +2532,33 @@ function renderInitiative() {
 
     var div = document.createElement('div');
     div.className = 'init-entry' + (active ? ' active-turn' : '');
+    div.dataset.initIdx = i;
+
+    // Drop target: drag a condition row onto this entry
+    // Use e.currentTarget (not the closed-over `div`) to avoid the closure-in-loop bug
+    div.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      e.currentTarget.classList.add('cond-drop-hover');
+    });
+    div.addEventListener('dragleave', function (e) { e.currentTarget.classList.remove('cond-drop-hover'); });
+    div.addEventListener('drop', function (e) {
+      e.preventDefault();
+      var self = e.currentTarget;
+      self.classList.remove('cond-drop-hover');
+      var raw = e.dataTransfer.getData('text/plain');
+      if (!raw) return;
+      var cond; try { cond = JSON.parse(raw); } catch(ex) { return; }
+      var idx = parseInt(self.dataset.initIdx);
+      if (!initiative[idx]) return;
+      showCondDropPopup(e.clientX, e.clientY, cond, function (rounds) {
+        if (!initiative[idx].conditions) initiative[idx].conditions = [];
+        initiative[idx].conditions.push({ name: cond.name, icon: cond.icon, type: cond.type, rounds: rounds });
+        saveInitiative();
+        renderInitiative();
+        if (activeTokenMapKey) { sendTokenUpdate(activeTokenMapKey); renderTokenControls(activeTokenMapUrl, activeTokenMapKey); }
+      });
+    });
 
     // ── Top row: roll | name | tags | cond-btn | remove ──
     var top = document.createElement('div');
@@ -2692,7 +2790,112 @@ function sendInitiative() {
 }
 
 // ── Reference Panel ──────────────────────────────────────────
-function renderReference() {
+
+// ── Condition-drop rounds popup ───────────────────────────────
+// Shows a small floating dialog at (x,y) asking for rounds, calls onConfirm(rounds)
+// rounds === null means permanent (∞)
+function showCondDropPopup(x, y, cond, onConfirm) {
+  // Remove any existing popup
+  var old = document.getElementById('cond-drop-popup');
+  if (old) old.remove();
+
+  var popup = document.createElement('div');
+  popup.id = 'cond-drop-popup';
+  popup.style.cssText = 'position:fixed;z-index:9999;background:#1c2128;border:1px solid #d4af37;' +
+    'border-radius:6px;padding:0.6rem 0.75rem;box-shadow:0 4px 18px rgba(0,0,0,0.7);' +
+    'display:flex;flex-direction:column;gap:0.4rem;min-width:180px;font-size:0.82rem;' +
+    'left:' + Math.min(x, window.innerWidth - 210) + 'px;' +
+    'top:'  + Math.min(y, window.innerHeight - 160) + 'px;';
+
+  var title = document.createElement('div');
+  title.style.cssText = 'color:#d4af37;font-weight:bold;font-size:0.85rem;';
+  title.textContent   = cond.icon + ' ' + cond.name;
+  popup.appendChild(title);
+
+  var row = document.createElement('div');
+  row.style.cssText = 'display:flex;align-items:center;gap:0.5rem;';
+
+  var rndLabel = document.createElement('label');
+  rndLabel.textContent = 'Rounds:';
+  rndLabel.style.cssText = 'color:#aaa;white-space:nowrap;';
+  row.appendChild(rndLabel);
+
+  var rndInput = document.createElement('input');
+  rndInput.type  = 'number';
+  rndInput.min   = 1;
+  rndInput.max   = 99;
+  rndInput.value = 1;
+  rndInput.style.cssText = 'width:52px;';
+  row.appendChild(rndInput);
+
+  var permLabel = document.createElement('label');
+  permLabel.style.cssText = 'display:flex;align-items:center;gap:3px;color:#aaa;cursor:pointer;white-space:nowrap;';
+  var permCheck = document.createElement('input');
+  permCheck.type = 'checkbox';
+  permCheck.onchange = function () {
+    rndInput.disabled = permCheck.checked;
+    rndInput.style.opacity = permCheck.checked ? '0.35' : '1';
+  };
+  permLabel.appendChild(permCheck);
+  permLabel.appendChild(document.createTextNode('∞ Perm'));
+  row.appendChild(permLabel);
+  popup.appendChild(row);
+
+  var btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:0.4rem;justify-content:flex-end;';
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.className   = 'btn btn-small btn-secondary';
+  cancelBtn.onclick     = function () { popup.remove(); };
+  btnRow.appendChild(cancelBtn);
+
+  var applyBtn = document.createElement('button');
+  applyBtn.textContent = 'Apply';
+  applyBtn.className   = 'btn btn-small btn-primary';
+  applyBtn.onclick     = function () {
+    var rounds = permCheck.checked ? null : (parseInt(rndInput.value) || 1);
+    popup.remove();
+    onConfirm(rounds);
+  };
+  btnRow.appendChild(applyBtn);
+  popup.appendChild(btnRow);
+
+  document.body.appendChild(popup);
+  rndInput.focus();
+  rndInput.select();
+
+  // Enter key confirms, Escape cancels
+  popup.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter')  { e.preventDefault(); applyBtn.click(); }
+    if (e.key === 'Escape') { e.preventDefault(); popup.remove(); }
+  });
+
+  // Click outside cancels
+  setTimeout(function () {
+    document.addEventListener('mousedown', function outsideClick(ev) {
+      if (!popup.contains(ev.target)) { popup.remove(); document.removeEventListener('mousedown', outsideClick); }
+    });
+  }, 50);
+}
+
+
+document.querySelectorAll('.ref-tab').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('.ref-tab').forEach(function (b) { b.classList.remove('active'); });
+    document.querySelectorAll('.ref-pane').forEach(function (p) { p.style.display = 'none'; });
+    btn.classList.add('active');
+    var pane = document.getElementById('ref-pane-' + btn.dataset.tab);
+    if (pane) pane.style.display = '';
+  });
+});
+
+// ── Condition filter ─────────────────────────────────────────
+document.getElementById('ref-cond-filter').addEventListener('input', function () {
+  renderReference(this.value.trim().toLowerCase());
+});
+
+function renderReference(filterText) {
   var chartEl = document.getElementById('ref-active-chart');
   var dictEl  = document.getElementById('ref-dict-list');
   if (!chartEl || !dictEl) return;
@@ -2714,19 +2917,33 @@ function renderReference() {
       '<th>Active Conditions</th></tr></thead><tbody>' + chartRows + '</tbody></table>';
   }
 
-  // Condition Dictionary (built-in CONDITIONS + custom conditionRefs)
+  // Condition Dictionary (built-in CONDITIONS + custom conditionRefs), with optional filter
+  var filter = (filterText || '').toLowerCase();
   var allRefs = CONDITIONS.map(function (c) {
     return { name: c.name, type: c.type, icon: c.icon, plus: c.plus || '', minus: c.minus || '', builtin: true };
   }).concat(conditionRefs.map(function (r) {
     return { name: r.name, type: r.type, icon: r.icon, plus: r.plus || '', minus: r.minus || '', builtin: false };
   }));
 
+  if (filter) {
+    allRefs = allRefs.filter(function (r) {
+      return r.name.toLowerCase().indexOf(filter) !== -1 ||
+             r.plus.toLowerCase().indexOf(filter) !== -1 ||
+             r.minus.toLowerCase().indexOf(filter) !== -1;
+    });
+  }
+
   var drows = allRefs.map(function (r, ri) {
+    var realIdx = r.builtin ? -1 : conditionRefs.indexOf(conditionRefs.filter(function(x){return !r.builtin;})[ri - CONDITIONS.length]);
     var delBtn = r.builtin ? '' :
-      '<button class="ref-del-btn" data-ci="' + (ri - CONDITIONS.length) + '" title="Remove">✕</button>';
+      '<button class="ref-del-btn" data-name="' + r.name.replace(/"/g, '&quot;') + '" title="Remove">✕</button>';
     var plusCell  = r.plus  ? r.plus  : '<span style="color:#444">—</span>';
     var minusCell = r.minus ? r.minus : '<span style="color:#444">—</span>';
-    return '<tr class="ref-row ' + r.type + '">' +
+    return '<tr class="ref-row ' + r.type + ' ref-row-draggable" draggable="true" ' +
+      'data-cond-name="' + r.name.replace(/"/g, '&quot;') + '" ' +
+      'data-cond-icon="' + r.icon.replace(/"/g, '&quot;') + '" ' +
+      'data-cond-type="' + r.type + '" ' +
+      'title="Drag onto a token or initiative entry to apply">' +
       '<td class="ref-icon-cell">' + r.icon + '</td>' +
       '<td><span class="cond-badge ' + r.type + '">' + r.name + '</span></td>' +
       '<td class="ref-plus-cell">'  + plusCell  + '</td>' +
@@ -2734,17 +2951,39 @@ function renderReference() {
       '<td>' + delBtn + '</td></tr>';
   }).join('');
 
-  dictEl.innerHTML = '<table class="ref-dict-table">' +
-    '<thead><tr><th></th><th>Condition</th>' +
-    '<th class="ref-plus-hdr">+ Benefit</th>' +
-    '<th class="ref-minus-hdr">– Penalty</th><th></th></tr></thead>' +
-    '<tbody>' + drows + '</tbody></table>';
+  dictEl.innerHTML = allRefs.length
+    ? '<table class="ref-dict-table"><thead><tr><th></th><th>Condition</th>' +
+      '<th class="ref-plus-hdr">+ Benefit</th>' +
+      '<th class="ref-minus-hdr">– Penalty</th><th></th></tr></thead>' +
+      '<tbody>' + drows + '</tbody></table>'
+    : '<p class="ref-empty">No matching conditions.</p>';
 
   dictEl.querySelectorAll('.ref-del-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      conditionRefs.splice(parseInt(btn.dataset.ci), 1);
-      saveConditionRefs();
-      renderReference();
+      var name = btn.dataset.name;
+      var idx  = conditionRefs.findIndex(function (r) { return r.name === name; });
+      if (idx !== -1) { conditionRefs.splice(idx, 1); saveConditionRefs(); renderReference(); }
+    });
+  });
+
+  // Drag start: encode condition into dataTransfer
+  dictEl.querySelectorAll('.ref-row-draggable').forEach(function (row) {
+    row.addEventListener('dragstart', function (e) {
+      e.stopPropagation(); // prevent grid section-reorder handler from cancelling this drag
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', JSON.stringify({
+        name: row.dataset.condName,
+        icon: row.dataset.condIcon,
+        type: row.dataset.condType
+      }));
+      // Create a visible ghost image so the user sees what they're dragging
+      var ghost = document.createElement('div');
+      ghost.textContent = row.dataset.condIcon + ' ' + row.dataset.condName;
+      ghost.style.cssText = 'position:fixed;top:-999px;left:-999px;background:#1c2128;color:#d4af37;' +
+        'border:1px solid #d4af37;border-radius:4px;padding:4px 10px;font-size:0.82rem;pointer-events:none;white-space:nowrap;';
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 0, 0);
+      setTimeout(function () { ghost.remove(); }, 0);
     });
   });
 }
@@ -2762,6 +3001,236 @@ document.getElementById('ref-add-btn').addEventListener('click', function () {
     document.getElementById(id).value = '';
   });
   renderReference();
+});
+
+// ── Reference API helpers ─────────────────────────────────────
+var _refCache = {};
+var _open5eBase = 'https://api.open5e.com/v1/';
+var _dnd5eBase  = 'https://www.dnd5eapi.co/api/';
+
+function refFetch(url, cb) {
+  if (_refCache[url]) { cb(null, _refCache[url]); return; }
+  fetch(url)
+    .then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function (data) { _refCache[url] = data; cb(null, data); })  // only cache successes
+    .catch(function (e) { cb(e, null); });  // do NOT cache failures
+}
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function makeCard(title, metaItems, desc) {
+  var metaHtml = metaItems.filter(Boolean).map(function (m) {
+    return '<span>' + escHtml(m) + '</span>';
+  }).join('');
+  var id = 'rc-' + Math.random().toString(36).slice(2);
+  var shortDesc = escHtml(desc || '').slice(0, 400);
+  var full      = escHtml(desc || '');
+  var needsMore = full.length > shortDesc.length;
+  return '<div class="ref-card">' +
+    '<div class="ref-card-title">' + escHtml(title) + '</div>' +
+    (metaHtml ? '<div class="ref-card-meta">' + metaHtml + '</div>' : '') +
+    '<div class="ref-card-desc" id="' + id + '">' + shortDesc + (needsMore ? '…' : '') + '</div>' +
+    (needsMore ? '<button class="ref-card-toggle" data-id="' + id + '" data-full="' + full.replace(/"/g,'&quot;') + '">▼ Show more</button>' : '') +
+    '</div>';
+}
+
+function bindCardToggles(el) {
+  el.querySelectorAll('.ref-card-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var d = document.getElementById(btn.dataset.id);
+      if (d.classList.contains('expanded')) {
+        d.classList.remove('expanded');
+        d.textContent = btn.dataset.full.slice(0, 400) + '…';
+        btn.textContent = '▼ Show more';
+      } else {
+        d.classList.add('expanded');
+        d.textContent = btn.dataset.full;
+        btn.textContent = '▲ Show less';
+      }
+    });
+  });
+}
+
+// ── Spells ────────────────────────────────────────────────────
+function searchSpells() {
+  var q     = document.getElementById('ref-spell-q').value.trim();
+  var level = document.getElementById('ref-spell-level').value;
+  var el    = document.getElementById('ref-spell-results');
+  if (!q && level === '') { el.innerHTML = '<p class="ref-empty">Enter a spell name or pick a level.</p>'; return; }
+  el.innerHTML = '<p class="ref-loading">Searching Open5e…</p>';
+  var url = _open5eBase + 'spells/?limit=50';
+  if (q) url += '&name__icontains=' + encodeURIComponent(q);
+  if (level !== '') url += '&spell_level=' + level;
+  refFetch(url, function (err, data) {
+    if (err || !data || !data.results) { el.innerHTML = '<p class="ref-error">Failed to load spells. Check internet connection.</p>'; return; }
+    if (!data.results.length) { el.innerHTML = '<p class="ref-empty">No spells found.</p>'; return; }
+    var html = data.results.map(function (s) {
+      var levelStr = s.spell_level === 0 ? 'Cantrip' : s.spell_level + (s.spell_level===1?'st':s.spell_level===2?'nd':s.spell_level===3?'rd':'th') + ' level';
+      var source = s.document__title ? '📖 ' + s.document__title : '';
+      return makeCard(s.name,
+        [levelStr, s.school, s.casting_time, 'Range: ' + s.range, 'Duration: ' + s.duration, s.concentration ? 'Concentration' : '', s.ritual ? 'Ritual' : '', source],
+        s.desc);
+    }).join('');
+    el.innerHTML = html;
+    bindCardToggles(el);
+  });
+}
+document.getElementById('ref-spell-btn').addEventListener('click', searchSpells);
+document.getElementById('ref-spell-q').addEventListener('keydown', function (e) { if (e.key === 'Enter') searchSpells(); });
+
+// ── Items ─────────────────────────────────────────────────────
+function searchItems() {
+  var q    = document.getElementById('ref-item-q').value.trim();
+  var type = document.getElementById('ref-item-type').value;
+  var el   = document.getElementById('ref-item-results');
+  if (!q) { el.innerHTML = '<p class="ref-empty">Enter an item name.</p>'; return; }
+  el.innerHTML = '<p class="ref-loading">Searching Open5e…</p>';
+
+  if (type === 'magic') {
+    var url = _open5eBase + 'magicitems/?limit=30&name__icontains=' + encodeURIComponent(q);
+    refFetch(url, function (err, data) {
+      if (err || !data || !data.results) { el.innerHTML = '<p class="ref-error">Failed: ' + (err ? err.message : 'unexpected response') + '</p>'; return; }
+      if (!data.results.length) { el.innerHTML = '<p class="ref-empty">No magic items found.</p>'; return; }
+      var html = data.results.map(function (it) {
+        var src = it.document__title ? '📖 ' + it.document__title : '';
+        return makeCard(it.name, [it.type, it.rarity, it.requires_attunement ? 'Requires attunement' : '', src], it.desc);
+      }).join('');
+      el.innerHTML = html;
+      bindCardToggles(el);
+    });
+    return;
+  }
+
+  // Equipment: search weapons + armor in parallel, merge results
+  var enc = encodeURIComponent(q);
+  var weaponUrl = _open5eBase + 'weapons/?limit=20&name__icontains=' + enc;
+  var armorUrl  = _open5eBase + 'armor/?limit=10&name__icontains=' + enc;
+  var results = {};
+  var done = 0;
+
+  function onBoth() {
+    done++;
+    if (done < 2) return;
+    var weapons = (results.weapons && results.weapons.results) ? results.weapons.results : [];
+    var armor   = (results.armor   && results.armor.results)   ? results.armor.results   : [];
+    var all = weapons.concat(armor);
+    if (!all.length) { el.innerHTML = '<p class="ref-empty">No equipment found for "' + escHtml(q) + '".</p>'; return; }
+    var html = all.map(function (it) {
+      if (it.damage_dice) {
+        // Weapon
+        var props = (it.properties || []).join(', ');
+        var src   = it.document__title ? '📖 ' + it.document__title : '';
+        return makeCard(it.name,
+          [it.category, 'Cost: ' + (it.cost || '—'), 'Dmg: ' + it.damage_dice + ' ' + (it.damage_type || ''), 'Wt: ' + (it.weight || '—'), src],
+          props ? 'Properties: ' + props : '');
+      } else {
+        // Armor
+        var src2 = it.document__title ? '📖 ' + it.document__title : '';
+        return makeCard(it.name,
+          [it.category, 'Cost: ' + (it.cost || '—'), it.ac_string || '', 'Wt: ' + (it.weight || '—'),
+           it.stealth_disadvantage ? '⚠️ Stealth disadv.' : '', src2],
+          it.strength_requirement ? 'Requires STR ' + it.strength_requirement : '');
+      }
+    }).join('');
+    el.innerHTML = html;
+    bindCardToggles(el);
+  }
+
+  refFetch(weaponUrl, function (err, data) {
+    results.weapons = (err || !data) ? { results: [] } : data;
+    if (err) console.warn('Weapons fetch error:', err.message);
+    onBoth();
+  });
+  refFetch(armorUrl, function (err, data) {
+    results.armor = (err || !data) ? { results: [] } : data;
+    if (err) console.warn('Armor fetch error:', err.message);
+    onBoth();
+  });
+}
+document.getElementById('ref-item-btn').addEventListener('click', searchItems);
+document.getElementById('ref-item-q').addEventListener('keydown', function (e) { if (e.key === 'Enter') searchItems(); });
+
+// ── Feats ─────────────────────────────────────────────────────
+function searchFeats() {
+  var q  = document.getElementById('ref-feat-q').value.trim();
+  var el = document.getElementById('ref-feat-results');
+  if (!q) { el.innerHTML = '<p class="ref-empty">Enter a feat name.</p>'; return; }
+  el.innerHTML = '<p class="ref-loading">Searching Open5e…</p>';
+  var url = _open5eBase + 'feats/?limit=30&name__icontains=' + encodeURIComponent(q);
+  refFetch(url, function (err, data) {
+    if (err || !data || !data.results) {
+      // Fallback: D&D 5e SRD API
+      refFetch(_dnd5eBase + 'feats?name=' + encodeURIComponent(q), function (err2, data2) {
+        if (err2 || !data2 || !data2.results) { el.innerHTML = '<p class="ref-error">Failed to load feats. Check internet connection.</p>'; return; }
+        if (!data2.results.length) { el.innerHTML = '<p class="ref-empty">No feats found.</p>'; return; }
+        // Fetch full detail for each
+        var cards = []; var done = 0;
+        data2.results.slice(0, 15).forEach(function (r, i) {
+          refFetch(_dnd5eBase + r.url.replace('/api/', ''), function (err3, feat) {
+            cards[i] = feat ? makeCard(feat.name, [feat.prerequisite ? 'Prerequisite: ' + feat.prerequisite : ''],
+              (feat.desc || []).join('\n')) : '';
+            if (++done === Math.min(data2.results.length, 15)) {
+              el.innerHTML = cards.filter(Boolean).join('') || '<p class="ref-empty">No feats found.</p>';
+              bindCardToggles(el);
+            }
+          });
+        });
+      });
+      return;
+    }
+    if (!data.results.length) { el.innerHTML = '<p class="ref-empty">No feats found.</p>'; return; }
+    var html = data.results.map(function (f) {
+      return makeCard(f.name,
+        [f.prerequisite ? 'Prerequisite: ' + f.prerequisite : ''],
+        f.desc);
+    }).join('');
+    el.innerHTML = html;
+    bindCardToggles(el);
+  });
+}
+document.getElementById('ref-feat-btn').addEventListener('click', searchFeats);
+document.getElementById('ref-feat-q').addEventListener('keydown', function (e) { if (e.key === 'Enter') searchFeats(); });
+
+// ── Global search bar ─────────────────────────────────────────
+document.getElementById('ref-global-search-btn').addEventListener('click', function () {
+  var q   = document.getElementById('ref-global-search').value.trim();
+  var cat = document.getElementById('ref-global-cat').value;
+  if (!q) return;
+  var el = document.getElementById('ref-global-results');
+  el.style.marginBottom = '0.5rem';
+
+  // Switch to the matching tab and pre-fill its search, then trigger it
+  var tabBtn = document.querySelector('.ref-tab[data-tab="' + cat + '"]');
+  if (tabBtn) {
+    document.querySelectorAll('.ref-tab').forEach(function(b){b.classList.remove('active');});
+    document.querySelectorAll('.ref-pane').forEach(function(p){p.style.display='none';});
+    tabBtn.classList.add('active');
+    var pane = document.getElementById('ref-pane-' + cat);
+    if (pane) pane.style.display = '';
+  }
+  el.innerHTML = '';
+
+  if (cat === 'spells') {
+    document.getElementById('ref-spell-q').value = q;
+    searchSpells();
+  } else if (cat === 'items') {
+    document.getElementById('ref-item-q').value = q;
+    searchItems();
+  } else if (cat === 'feats') {
+    document.getElementById('ref-feat-q').value = q;
+    searchFeats();
+  } else if (cat === 'conditions') {
+    document.getElementById('ref-cond-filter').value = q;
+    renderReference(q.toLowerCase());
+  }
+});
+document.getElementById('ref-global-search').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') document.getElementById('ref-global-search-btn').click();
 });
 
 // ============================================================
@@ -2959,7 +3428,11 @@ renderInitiative();
       if (inner) inner.style.width = lastWidth + 'px';
       btn.textContent = '‹';
     } else {
+      lastWidth = sidebar.offsetWidth || lastWidth;
       sidebar.classList.add('collapsed');
+      sidebar.style.width    = '32px';
+      sidebar.style.minWidth = '32px';
+      if (inner) inner.style.width = '32px';
       btn.textContent = '›';
     }
   });
@@ -2992,6 +3465,44 @@ renderInitiative();
   document.addEventListener('mousemove', function (e) {
     if (!resizing) return;
     setWidth(startW + (e.clientX - startX));
+  });
+
+  document.addEventListener('mouseup', function () {
+    if (!resizing) return;
+    resizing = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor     = '';
+    document.body.style.userSelect = '';
+  });
+}());
+
+// ── Right Sidebar drag-to-resize ──────────────────────────────
+(function () {
+  var sidebar = document.getElementById('sidebar-right');
+  var handle  = document.getElementById('sidebar-right-resize');
+  if (!sidebar || !handle) return;
+
+  var MIN_WIDTH = 200;
+  var MAX_WIDTH = 700;
+  var resizing  = false;
+  var startX    = 0;
+  var startW    = 0;
+
+  handle.addEventListener('mousedown', function (e) {
+    e.preventDefault();
+    resizing = true;
+    startX   = e.clientX;
+    startW   = sidebar.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor     = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', function (e) {
+    if (!resizing) return;
+    var newW = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startW - (e.clientX - startX)));
+    sidebar.style.width    = newW + 'px';
+    sidebar.style.minWidth = newW + 'px';
   });
 
   document.addEventListener('mouseup', function () {
