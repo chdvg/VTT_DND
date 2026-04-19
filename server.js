@@ -135,6 +135,8 @@ let currentTokensMapKey = null;
 let currentTokensShowRings = true;
 let currentDrawing    = [];
 let currentDrawingMapKey = null;
+let currentFeatures      = [];  // feature defs for the active map
+let currentFeatureStates = {};  // { featureId: 'triggered' }
 const clients = new Set();
 const dmClients = new Set();
 
@@ -182,6 +184,17 @@ function sendFullState(ws) {
   if (currentDrawingMapKey) {
     ws.send(JSON.stringify({ type: 'UPDATE_DRAWING', strokes: currentDrawing, mapKey: currentDrawingMapKey }));
   }
+  // Features — send definitions first so the overlay can be built
+  if (currentFeatures.length) {
+    ws.send(JSON.stringify({ type: 'UPDATE_FEATURES', features: currentFeatures, mapKey: currentTokensMapKey, mapMeta: (currentSceneView && currentSceneView.mapMeta) || null }));
+  }
+  // Feature states — replay any triggered features to reconnecting players
+  for (const [fid, fstate] of Object.entries(currentFeatureStates)) {
+    if (fstate === 'triggered') {
+      const feat = currentFeatures.find(f => f.id === fid);
+      if (feat) ws.send(JSON.stringify({ type: 'TRIGGER_FEATURE', feature: feat, allFeatures: currentFeatures, mapKey: currentTokensMapKey, mapMeta: (currentSceneView && currentSceneView.mapMeta) || null }));
+    }
+  }
   // Audio — we don't restart audio on reconnect (too disruptive if it's mid-play)
 }
 
@@ -213,7 +226,7 @@ wss.on('connection', (ws, req) => {
       // All mutating/DM-only actions require an authenticated DM connection
       const DM_ACTIONS = ['blackout','show','show-scene-view','clear','play-audio',
         'stop-audio','send-overlay','update-fog','set-rings','update-tokens',
-        'update-drawing','dm-connect'];
+        'update-drawing','dm-connect','trigger-feature','reset-feature','update-features'];
       if (DM_ACTIONS.includes(message.action) && !isDm) {
         // If a DM panel is reconnecting after a server restart the session
         // will be gone — tell it to reload so it goes through login again.
@@ -246,7 +259,9 @@ wss.on('connection', (ws, req) => {
           currentDrawing = [];
           currentDrawingMapKey = message.mapKey || null;
           currentFogStates = {}; // new scene clears old fog keys
-          const sceneViewMsg = { type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain', mapKey: message.mapKey || null };
+          currentFeatures = Array.isArray(message.features) ? message.features : [];
+          currentFeatureStates = {};
+          const sceneViewMsg = { type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain', mapKey: message.mapKey || null, features: currentFeatures, mapMeta: message.mapMeta || null };
           currentSceneView = sceneViewMsg;
           currentAudio = message.audio ? { url: message.audio, loop: message.audioLoop !== false } : null;
           broadcast(sceneViewMsg);
@@ -263,6 +278,8 @@ wss.on('connection', (ws, req) => {
           currentDrawingMapKey = null;
           currentFogStates = {};
           currentAudio = null;
+          currentFeatures = [];
+          currentFeatureStates = {};
           broadcast({ type: 'CLEAR' }); break;
         case 'play-audio':
           if (message.url) {
@@ -291,6 +308,42 @@ wss.on('connection', (ws, req) => {
           currentDrawing = Array.isArray(message.strokes) ? message.strokes : [];
           currentDrawingMapKey = message.mapKey || null;
           broadcast({ type: 'UPDATE_DRAWING', strokes: currentDrawing, mapKey: currentDrawingMapKey }); break;
+        case 'trigger-feature':
+          if (message.featureId) {
+            currentFeatureStates[message.featureId] = 'triggered';
+            // Use feature from currentFeatures, or fall back to the one the DM sent
+            const feat = currentFeatures.find(f => f.id === message.featureId)
+              || (message.feature || null);
+            if (feat) {
+              broadcast({
+                type: 'TRIGGER_FEATURE',
+                feature: feat,
+                allFeatures: currentFeatures,
+                mapKey: message.mapKey || currentTokensMapKey,
+                mapMeta: (currentSceneView && currentSceneView.mapMeta) || null,
+              });
+            }
+          } break;
+        case 'reset-feature':
+          if (message.featureId) {
+            delete currentFeatureStates[message.featureId];
+            broadcast({ type: 'RESET_FEATURE', featureId: message.featureId, mapKey: message.mapKey || currentTokensMapKey });
+          } break;
+        case 'update-features':
+          // DM has fetched map state and is supplying feature definitions
+          currentFeatures = Array.isArray(message.features) ? message.features : [];
+          // Update the cached scene view so reconnects get features too
+          if (currentSceneView) {
+            currentSceneView.features = currentFeatures;
+            if (message.mapMeta) currentSceneView.mapMeta = message.mapMeta;
+          }
+          // Push to all player clients so they can render the overlay
+          for (const client of clients) {
+            if (!dmClients.has(client) && client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({ type: 'UPDATE_FEATURES', features: currentFeatures, mapKey: currentTokensMapKey, mapMeta: message.mapMeta || null }));
+            }
+          }
+          break;
       }
     } catch (err) { console.error('Bad message:', err); }
   });

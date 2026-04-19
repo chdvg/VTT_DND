@@ -1429,6 +1429,13 @@ let fogPaintValue  = false;
 const FOG_KEY      = 'builder-live';
 let fogBuilderGrid = [];   // [row][col] = true (revealed) / false (hidden)
 
+// ── Map Features ─────────────────────────────────────────────
+// features: [{ id, name, type, cells:[[r,c],...], animation, color, description }]
+let features = [];
+// Cells the user has clicked to select for the next feature
+let pendingFeatureCells = []; // [[r,c], ...]
+let editingFeatureId = null;  // id of feature being edited, or null for new
+
 // WebSocket
 let ws = null;
 function connectWS() {
@@ -1447,12 +1454,14 @@ const tokenLayer   = document.getElementById('token-layer');
 const labelLayer   = document.getElementById('label-layer');
 const container    = document.getElementById('canvas-container');
 const coordsEl     = document.getElementById('coords');
-const fogLayer     = document.getElementById('fog-layer');
+const fogLayer       = document.getElementById('fog-layer');
+const featureCanvas  = document.getElementById('feature-canvas');
 
 const bgCtx     = bgCanvas.getContext('2d');
 const tileCtx   = tileCanvas.getContext('2d');
-const gridCtx   = gridCanvas.getContext('2d');
-const cursorCtx = cursorCanvas.getContext('2d');
+const gridCtx      = gridCanvas.getContext('2d');
+const cursorCtx    = cursorCanvas.getContext('2d');
+const featureCtx   = featureCanvas.getContext('2d');
 
 // ── Init ──────────────────────────────────────────────────────
 function initGrid() {
@@ -1470,7 +1479,7 @@ function initGrid() {
 function applySize() {
   const w = cols * cellSize;
   const h = rows * cellSize;
-  [bgCanvas, tileCanvas, gridCanvas, cursorCanvas].forEach(c => {
+  [bgCanvas, tileCanvas, featureCanvas, gridCanvas, cursorCanvas].forEach(c => {
     c.width  = w;
     c.height = h;
     c.style.width  = w + 'px';
@@ -1489,6 +1498,174 @@ function renderAll() {
   renderGrid();
   renderTokens();
   renderLabels();
+  renderFeatures();
+}
+
+// ── Feature rendering (editor overlay) ───────────────────────
+function renderFeatures() {
+  featureCtx.clearRect(0, 0, featureCanvas.width, featureCanvas.height);
+
+  const FEAT_ICONS = { pit: '⬛', trap: '💥', puzzle: '🧩', reveal: '👁', effect: '✨' };
+
+  // Draw saved features
+  features.forEach(feat => {
+    const hex = feat.color || '#c0392b';
+    featureCtx.fillStyle = hex + '99'; // ~60% opacity
+    featureCtx.strokeStyle = hex;
+    featureCtx.lineWidth = 2;
+    (feat.cells || []).forEach(([r, c]) => {
+      featureCtx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+      featureCtx.strokeRect(c * cellSize + 1, r * cellSize + 1, cellSize - 2, cellSize - 2);
+    });
+    // Label first cell
+    if (feat.cells && feat.cells.length > 0) {
+      const [fr, fc] = feat.cells[0];
+      featureCtx.fillStyle = '#fff';
+      featureCtx.font = 'bold ' + Math.max(9, Math.round(cellSize * 0.3)) + 'px sans-serif';
+      featureCtx.textAlign = 'center';
+      featureCtx.textBaseline = 'middle';
+      featureCtx.fillText(
+        (FEAT_ICONS[feat.type] || '?') + ' ' + (feat.name || feat.type).slice(0, 10),
+        fc * cellSize + cellSize / 2,
+        fr * cellSize + cellSize / 2
+      );
+    }
+  });
+
+  // Draw pending (unconfirmed) feature selection
+  if (activeTool === 'feature' && pendingFeatureCells.length > 0) {
+    featureCtx.fillStyle = 'rgba(212,175,55,0.45)';
+    featureCtx.strokeStyle = '#d4af37';
+    featureCtx.lineWidth = 2;
+    pendingFeatureCells.forEach(([r, c]) => {
+      featureCtx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+      featureCtx.strokeRect(c * cellSize + 1, r * cellSize + 1, cellSize - 2, cellSize - 2);
+    });
+  }
+}
+
+// ── Feature sidebar list ──────────────────────────────────────
+function renderFeatureList() {
+  const listEl  = document.getElementById('feature-list');
+  const emptyEl = document.getElementById('feature-list-empty');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  const FEAT_ICONS = { pit: '⬛', trap: '💥', puzzle: '🧩', reveal: '👁', effect: '✨' };
+  if (features.length === 0) {
+    if (emptyEl) emptyEl.style.display = '';
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = 'none';
+  features.forEach(feat => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-bottom:0.35rem;padding:0.3rem 0.4rem;background:#1f2937;border-radius:4px;border-left:3px solid ' + (feat.color || '#c0392b') + ';';
+    const icon = FEAT_ICONS[feat.type] || '?';
+    const info = document.createElement('span');
+    info.style.cssText = 'flex:1;font-size:0.78rem;color:#e6e6e6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    info.textContent = icon + ' ' + feat.name + ' (' + (feat.cells || []).length + ' cells)';
+    info.title = feat.description || feat.name;
+    const editBtn = document.createElement('button');
+    editBtn.textContent = '✏️';
+    editBtn.title = 'Edit';
+    editBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0 0.2rem;';
+    editBtn.onclick = () => openFeatureModal(feat.id);
+    const delBtn = document.createElement('button');
+    delBtn.textContent = '🗑';
+    delBtn.title = 'Delete';
+    delBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0 0.2rem;';
+    delBtn.onclick = () => {
+      features = features.filter(f => f.id !== feat.id);
+      renderFeatureList();
+      renderFeatures();
+    };
+    row.appendChild(info);
+    row.appendChild(editBtn);
+    row.appendChild(delBtn);
+    listEl.appendChild(row);
+  });
+}
+
+// ── Feature modal ─────────────────────────────────────────────
+function openFeatureModal(editId) {
+  editingFeatureId = editId || null;
+  const modal   = document.getElementById('feature-modal');
+  const titleEl = document.getElementById('feature-modal-title');
+  const cellsEl = document.getElementById('feat-cells-info');
+  const statusEl = document.getElementById('feat-status');
+  statusEl.textContent = '';
+  if (editId) {
+    const feat = features.find(f => f.id === editId);
+    if (!feat) return;
+    titleEl.textContent = 'Edit Feature';
+    document.getElementById('feat-name').value        = feat.name || '';
+    document.getElementById('feat-type').value        = feat.type || 'pit';
+    document.getElementById('feat-animation').value   = feat.animation || 'shake-reveal';
+    document.getElementById('feat-color').value       = feat.color || '#1a0a00';
+    document.getElementById('feat-description').value = feat.description || '';
+    cellsEl.textContent = (feat.cells || []).length + ' cell(s) selected.';
+    // Load cells into pending for re-selection
+    pendingFeatureCells = (feat.cells || []).map(c => [...c]);
+  } else {
+    titleEl.textContent = 'Add Feature';
+    document.getElementById('feat-name').value        = '';
+    document.getElementById('feat-type').value        = 'pit';
+    document.getElementById('feat-animation').value   = 'shake-reveal';
+    document.getElementById('feat-color').value       = '#1a0a00';
+    document.getElementById('feat-description').value = '';
+    cellsEl.textContent = pendingFeatureCells.length + ' cell(s) selected.';
+  }
+  modal.classList.remove('hidden');
+}
+
+document.getElementById('add-feature-btn').addEventListener('click', () => {
+  if (pendingFeatureCells.length === 0) {
+    alert('Select at least one cell on the map first.');
+    return;
+  }
+  openFeatureModal(null);
+});
+
+document.getElementById('feat-cancel-btn').addEventListener('click', () => {
+  document.getElementById('feature-modal').classList.add('hidden');
+  editingFeatureId = null;
+});
+
+document.getElementById('feat-save-btn').addEventListener('click', () => {
+  const name = document.getElementById('feat-name').value.trim();
+  const statusEl = document.getElementById('feat-status');
+  if (!name) { statusEl.textContent = 'Enter a name.'; statusEl.style.color = '#ef4444'; return; }
+  if (pendingFeatureCells.length === 0 && !editingFeatureId) {
+    statusEl.textContent = 'No cells selected.'; statusEl.style.color = '#ef4444'; return;
+  }
+  const feat = {
+    id:          editingFeatureId || ('f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
+    name,
+    type:        document.getElementById('feat-type').value,
+    animation:   document.getElementById('feat-animation').value,
+    color:       document.getElementById('feat-color').value,
+    description: document.getElementById('feat-description').value.trim(),
+    cells:       pendingFeatureCells.map(c => [...c]),
+  };
+  if (editingFeatureId) {
+    const idx = features.findIndex(f => f.id === editingFeatureId);
+    if (idx !== -1) features[idx] = feat;
+  } else {
+    features.push(feat);
+  }
+  pendingFeatureCells = [];
+  updatePendingCellsDisplay();
+  editingFeatureId = null;
+  document.getElementById('feature-modal').classList.add('hidden');
+  renderFeatureList();
+  renderFeatures();
+});
+
+function updatePendingCellsDisplay() {
+  const el = document.getElementById('pending-cells-display');
+  if (!el) return;
+  el.textContent = pendingFeatureCells.length === 0
+    ? 'No cells selected'
+    : pendingFeatureCells.length + ' cell(s) selected — click again to deselect';
 }
 
 function renderBg() {
@@ -1681,6 +1858,16 @@ cursorCanvas.addEventListener('mousedown', e => {
     placeLabel(col, row);
   } else if (activeTool === 'image') {
     // handled by sidebar
+  } else if (activeTool === 'feature') {
+    // Toggle cell in pending selection
+    const exists = pendingFeatureCells.findIndex(([r, c]) => r === row && c === col);
+    if (exists !== -1) {
+      pendingFeatureCells.splice(exists, 1);
+    } else {
+      pendingFeatureCells.push([row, col]);
+    }
+    updatePendingCellsDisplay();
+    renderFeatures();
   }
 });
 
@@ -2000,9 +2187,10 @@ document.querySelectorAll('.tool-btn').forEach(btn => {
 
     document.getElementById('tile-palette-section').style.display =
       ['paint','erase','fill'].includes(activeTool) ? '' : 'none';
-    document.getElementById('token-options').style.display  = activeTool === 'token'  ? '' : 'none';
-    document.getElementById('label-options').style.display  = activeTool === 'label'  ? '' : 'none';
-    document.getElementById('image-options').style.display  = activeTool === 'image'  ? '' : 'none';
+    document.getElementById('token-options').style.display    = activeTool === 'token'   ? '' : 'none';
+    document.getElementById('label-options').style.display    = activeTool === 'label'   ? '' : 'none';
+    document.getElementById('image-options').style.display    = activeTool === 'image'   ? '' : 'none';
+    document.getElementById('feature-options').style.display  = activeTool === 'feature' ? '' : 'none';
     // Erase doesn't need palette
     document.getElementById('tile-palette-section').style.display =
       ['paint','fill'].includes(activeTool) ? '' : (activeTool === 'erase' ? 'none' : 'none');
@@ -2179,8 +2367,74 @@ document.getElementById('save-btn').addEventListener('click', () => {
 document.getElementById('save-cancel-btn').addEventListener('click', () => {
   document.getElementById('save-modal').classList.add('hidden');
 });
-document.getElementById('save-add-scene').addEventListener('change', function() {
+let _saveSceneData = [];
+
+document.getElementById('save-add-scene').addEventListener('change', async function() {
   document.getElementById('save-scene-opts').style.display = this.checked ? '' : 'none';
+  if (!this.checked) return;
+  try {
+    const r = await fetch('/api/scenes');
+    const d = await r.json();
+    _saveSceneData = d.scenes || [];
+  } catch(e) { _saveSceneData = []; }
+  _populateSaveAreaDropdown();
+});
+
+function _populateSaveAreaDropdown() {
+  const areaSel = document.getElementById('save-scene-area-sel');
+  const areas = [];
+  _saveSceneData.forEach(function(s) {
+    const t = s.tab || s.label;
+    if (areas.indexOf(t) === -1) areas.push(t);
+  });
+  areaSel.innerHTML = '';
+  areas.forEach(function(a) {
+    const opt = document.createElement('option');
+    opt.value = a; opt.textContent = a;
+    areaSel.appendChild(opt);
+  });
+  const newOpt = document.createElement('option');
+  newOpt.value = '__new__'; newOpt.textContent = '＋ New area…';
+  areaSel.appendChild(newOpt);
+  if (!areas.length) areaSel.value = '__new__';
+  _updateSaveLabelDropdown();
+}
+
+function _updateSaveLabelDropdown() {
+  const areaSel  = document.getElementById('save-scene-area-sel');
+  const areaNew  = document.getElementById('save-scene-area-new');
+  const labelSel = document.getElementById('save-scene-label-sel');
+  const labelNew = document.getElementById('save-scene-label-new');
+  const isNewArea = areaSel.value === '__new__';
+  areaNew.style.display = isNewArea ? '' : 'none';
+  labelSel.innerHTML = '';
+  if (!isNewArea) {
+    const group = _saveSceneData.find(function(s) { return (s.tab || s.label) === areaSel.value; });
+    (group ? group.views || [] : []).forEach(function(v) {
+      const opt = document.createElement('option');
+      opt.value = v.label; opt.textContent = v.label;
+      labelSel.appendChild(opt);
+    });
+  }
+  const newOpt = document.createElement('option');
+  newOpt.value = '__new__'; newOpt.textContent = '＋ New label…';
+  labelSel.appendChild(newOpt);
+  if (labelSel.options.length === 1) labelSel.value = '__new__';
+  const isNewLabel = labelSel.value === '__new__';
+  labelNew.style.display = isNewLabel ? '' : 'none';
+  if (isNewLabel && !labelNew.value) {
+    labelNew.value = document.getElementById('save-filename').value.trim().replace(/\.png$/i, '');
+  }
+}
+
+document.getElementById('save-scene-area-sel').addEventListener('change', _updateSaveLabelDropdown);
+document.getElementById('save-scene-label-sel').addEventListener('change', function() {
+  const labelNew = document.getElementById('save-scene-label-new');
+  const isNew = this.value === '__new__';
+  labelNew.style.display = isNew ? '' : 'none';
+  if (isNew && !labelNew.value) {
+    labelNew.value = document.getElementById('save-filename').value.trim().replace(/\.png$/i, '');
+  }
 });
 
 document.getElementById('save-confirm-btn').addEventListener('click', async () => {
@@ -2199,7 +2453,7 @@ document.getElementById('save-confirm-btn').addEventListener('click', async () =
       body: JSON.stringify({
         dataUrl,
         filename: safeName,
-        state: { cols, rows, cellSize, tileMap, tokens, labels, bgImage, fogEnabled, fogGrid: fogBuilderGrid },
+        state: { cols, rows, cellSize, tileMap, tokens, labels, bgImage, fogEnabled, fogGrid: fogBuilderGrid, features },
       }),
     });
     const json = await r.json();
@@ -2208,8 +2462,12 @@ document.getElementById('save-confirm-btn').addEventListener('click', async () =
     // Optionally add to scene list
     const addScene = document.getElementById('save-add-scene').checked;
     if (addScene) {
-      const area  = document.getElementById('save-scene-area').value.trim()  || 'Custom';
-      const label = document.getElementById('save-scene-label').value.trim() || safeName;
+      const areaSel  = document.getElementById('save-scene-area-sel');
+      const areaNew  = document.getElementById('save-scene-area-new');
+      const labelSel = document.getElementById('save-scene-label-sel');
+      const labelNew = document.getElementById('save-scene-label-new');
+      const area  = (areaSel.value === '__new__' ? areaNew.value.trim() : areaSel.value) || 'Custom';
+      const label = (labelSel.value === '__new__' ? labelNew.value.trim() : labelSel.value) || safeName;
       const scenesR = await fetch('/api/scenes');
       const scenesJ = await scenesR.json();
       const scenes  = scenesJ.scenes || [];
@@ -2220,12 +2478,16 @@ document.getElementById('save-confirm-btn').addEventListener('click', async () =
         group = { id: newId, label: area, tab: area, views: [] };
         scenes.push(group);
       }
-      group.views.push({
-        id: newId + '-view-0',
-        label,
-        image: json.webPath,
-        fog: !!document.getElementById('save-fog').checked,
-      });
+      // Only add if this image path isn't already in the group
+      const alreadyExists = group.views.some(v => v.image === json.webPath);
+      if (!alreadyExists) {
+        group.views.push({
+          id: newId + '-view-0',
+          label,
+          image: json.webPath,
+          fog: !!document.getElementById('save-fog').checked,
+        });
+      }
       await fetch('/api/scenes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2260,6 +2522,7 @@ function loadMapState(state) {
 
   tokens    = state.tokens || [];
   labels    = state.labels || [];
+  features  = state.features || [];
   undoStack = [];
 
   // Background image
@@ -2291,27 +2554,62 @@ function loadMapState(state) {
 
   // Resize canvases and redraw everything
   applySize();
+  renderFeatureList();
 }
 
+// ── Open Modal tab switching ──────────────────────────────────
+let _openActiveTab = 'builder'; // 'builder' | 'image'
+
+function _setOpenTab(tab) {
+  _openActiveTab = tab;
+  document.getElementById('open-pane-builder').style.display = tab === 'builder' ? '' : 'none';
+  document.getElementById('open-pane-image').style.display   = tab === 'image'   ? '' : 'none';
+  document.getElementById('open-tab-builder').className = 'btn btn-small ' + (tab === 'builder' ? 'btn-primary' : 'btn-secondary');
+  document.getElementById('open-tab-image').className   = 'btn btn-small ' + (tab === 'image'   ? 'btn-primary' : 'btn-secondary');
+}
+document.getElementById('open-tab-builder').addEventListener('click', () => _setOpenTab('builder'));
+document.getElementById('open-tab-image').addEventListener('click',   () => _setOpenTab('image'));
+
 document.getElementById('open-btn').addEventListener('click', async () => {
-  const select   = document.getElementById('open-map-select');
-  const statusEl = document.getElementById('open-status');
+  const builderSel = document.getElementById('open-map-select');
+  const imageSel   = document.getElementById('open-image-select');
+  const statusEl   = document.getElementById('open-status');
   statusEl.textContent = '';
-  select.innerHTML = '<option value="" disabled>Loading…</option>';
+  builderSel.innerHTML = '<option value="" disabled>Loading…</option>';
+  imageSel.innerHTML   = '<option value="" disabled>Loading…</option>';
   document.getElementById('open-modal').classList.remove('hidden');
-  try {
-    const r    = await fetch('/api/map-builder/states');
-    const json = await r.json();
-    const list = json.states || [];
-    if (list.length === 0) {
-      select.innerHTML = '<option value="" disabled>No saved maps found — save a map first.</option>';
-    } else {
-      select.innerHTML = list.map(n => `<option value="${n}">${n}</option>`).join('');
-      select.selectedIndex = 0;
-    }
-  } catch (_) {
-    select.innerHTML = '<option value="" disabled>Error loading map list.</option>';
-  }
+  _setOpenTab('builder');
+
+  // Load builder maps
+  fetch('/api/map-builder/states')
+    .then(r => r.json())
+    .then(json => {
+      const list = json.states || [];
+      if (!list.length) {
+        builderSel.innerHTML = '<option value="" disabled>No builder maps found — save a map first.</option>';
+      } else {
+        builderSel.innerHTML = list.map(n => `<option value="${n}">${n}</option>`).join('');
+        builderSel.selectedIndex = 0;
+      }
+    })
+    .catch(() => { builderSel.innerHTML = '<option value="" disabled>Error loading map list.</option>'; });
+
+  // Load all images
+  fetch('/api/maps')
+    .then(r => r.json())
+    .then(json => {
+      const list = (json.maps || []);
+      if (!list.length) {
+        imageSel.innerHTML = '<option value="" disabled>No images found in assets/maps/.</option>';
+      } else {
+        imageSel.innerHTML = list.map(url => {
+          const name = url.split('/').pop();
+          return `<option value="${url}">${name}</option>`;
+        }).join('');
+        imageSel.selectedIndex = 0;
+      }
+    })
+    .catch(() => { imageSel.innerHTML = '<option value="" disabled>Error loading images.</option>'; });
 });
 
 document.getElementById('open-cancel-btn').addEventListener('click', () => {
@@ -2319,23 +2617,38 @@ document.getElementById('open-cancel-btn').addEventListener('click', () => {
 });
 
 document.getElementById('open-confirm-btn').addEventListener('click', async () => {
-  const select   = document.getElementById('open-map-select');
-  const name     = select.value;
   const statusEl = document.getElementById('open-status');
-  if (!name) { statusEl.textContent = 'Select a map first.'; return; }
   statusEl.style.color = '#d1d5db';
-  statusEl.textContent = 'Loading…';
-  try {
-    const r = await fetch('/api/map-builder/state?name=' + encodeURIComponent(name));
-    if (!r.ok) throw new Error((await r.json()).error || 'Load failed');
-    const state = await r.json();
-    loadMapState(state);
-    // Pre-fill save filename so re-saving updates the same map
-    document.getElementById('save-filename').value = name + '.png';
+
+  if (_openActiveTab === 'builder') {
+    const select = document.getElementById('open-map-select');
+    const name   = select.value;
+    if (!name) { statusEl.textContent = 'Select a map first.'; return; }
+    statusEl.textContent = 'Loading…';
+    try {
+      const r = await fetch('/api/map-builder/state?name=' + encodeURIComponent(name));
+      if (!r.ok) throw new Error((await r.json()).error || 'Load failed');
+      const state = await r.json();
+      loadMapState(state);
+      document.getElementById('save-filename').value = name + '.png';
+      document.getElementById('open-modal').classList.add('hidden');
+    } catch (e) {
+      statusEl.style.color = '#ef4444';
+      statusEl.textContent = 'Error: ' + e.message;
+    }
+
+  } else {
+    // Any-image tab — load image as background of a fresh blank grid
+    const imageSel = document.getElementById('open-image-select');
+    const url      = imageSel.value;
+    if (!url) { statusEl.textContent = 'Select an image first.'; return; }
+    statusEl.textContent = 'Loading…';
+    // Reset to a fresh blank state then set background image
+    loadMapState({ cols, rows, cellSize, tileMap: null, tokens: [], labels: [], features: [], bgImage: url, fogEnabled: false, fogGrid: null });
+    const filename = url.split('/').pop();
+    document.getElementById('save-filename').value = filename.replace(/\.[^.]+$/, '') + '_builder.png';
     document.getElementById('open-modal').classList.add('hidden');
-  } catch (e) {
-    statusEl.style.color = '#ef4444';
-    statusEl.textContent = 'Error: ' + e.message;
+    statusEl.textContent = '';
   }
 });
 

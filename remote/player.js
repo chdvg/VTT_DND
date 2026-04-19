@@ -18,6 +18,9 @@ var showCondRings  = true;
 var currentDrawing = [];
 var currentMapKey  = null;
 var currentImageUrl = null;
+var currentFeatures    = [];   // feature defs for the current map
+var currentMapMeta     = null; // { cols, rows } from builder state
+var triggeredFeatures  = {};   // { featureId: true }
 
 // Dismiss the tap-overlay on first click/touch, then play any queued audio
 document.addEventListener('click', function () {
@@ -66,6 +69,14 @@ function showImage(imageUrl, fogKey, fit) {
       }
       if (currentDrawing.length) {
         renderDrawOverlay(currentDrawing, img);
+      }
+      if (currentFeatures.length) {
+        renderFeatureOverlay(currentFeatures, img);
+        // Re-apply any already-triggered features (e.g. on reconnect)
+        Object.keys(triggeredFeatures).forEach(function (fid) {
+          var feat = currentFeatures.find(function (f) { return f.id === fid; });
+          if (feat) showTriggeredFeature(feat, false); // false = no animation on reconnect
+        });
       }
     }
 
@@ -355,7 +366,134 @@ function renderDrawOverlay(strokes, imgEl) {
   sceneEl.appendChild(drawCanvas);
 }
 
-// ── Dice roll animation (3D cube) ────────────────────────────
+// ── Feature overlay ───────────────────────────────────────────
+function getLetterboxRect(imgEl) {
+  var cW = sceneEl.offsetWidth;
+  var cH = sceneEl.offsetHeight;
+  var offX = 0, offY = 0, rendW = cW, rendH = cH;
+  if (imgEl && imgEl.naturalWidth && imgEl.naturalHeight) {
+    var fitMode = imgEl.style.objectFit || 'contain';
+    var scale = fitMode === 'cover'
+      ? Math.max(cW / imgEl.naturalWidth, cH / imgEl.naturalHeight)
+      : Math.min(cW / imgEl.naturalWidth, cH / imgEl.naturalHeight);
+    rendW = imgEl.naturalWidth  * scale;
+    rendH = imgEl.naturalHeight * scale;
+    offX  = (cW - rendW) / 2;
+    offY  = (cH - rendH) / 2;
+  }
+  return { offX: offX, offY: offY, rendW: rendW, rendH: rendH };
+}
+
+function renderFeatureOverlay(feats, imgEl) {
+  var existing = sceneEl.querySelector('.feature-overlay');
+  if (existing) existing.remove();
+  if (!feats || !feats.length || !currentMapMeta) return;
+
+  var cols = currentMapMeta.cols;
+  var rows = currentMapMeta.rows;
+  if (!cols || !rows) return;
+
+  var el = imgEl || sceneEl.querySelector('img');
+  var rect = getLetterboxRect(el);
+  var cellW = rect.rendW / cols;
+  var cellH = rect.rendH / rows;
+
+  var div = document.createElement('div');
+  div.className = 'feature-overlay';
+  div.style.cssText = 'position:absolute;' +
+    'left:' + rect.offX + 'px;top:' + rect.offY + 'px;' +
+    'width:' + rect.rendW + 'px;height:' + rect.rendH + 'px;' +
+    'pointer-events:none;overflow:hidden;z-index:35;';
+
+  feats.forEach(function (feat) {
+    (feat.cells || []).forEach(function (cell) {
+      var r = cell[0], c = cell[1];
+      var cd = document.createElement('div');
+      cd.className = 'feature-cell';
+      cd.dataset.featId = feat.id;
+      cd.style.cssText = 'position:absolute;' +
+        'left:' + (c * cellW) + 'px;top:' + (r * cellH) + 'px;' +
+        'width:' + Math.ceil(cellW) + 'px;height:' + Math.ceil(cellH) + 'px;' +
+        'background:' + (feat.color || '#1a0a00') + ';' +
+        'opacity:0;transition:opacity 0.4s ease;';
+      div.appendChild(cd);
+    });
+  });
+  sceneEl.appendChild(div);
+}
+
+function showTriggeredFeature(feat, animate) {
+  var cells = sceneEl.querySelectorAll('.feature-cell[data-feat-id="' + feat.id + '"]');
+  if (!cells.length) return;
+
+  if (animate === false) {
+    cells.forEach(function (c) { c.style.opacity = '1'; });
+    return;
+  }
+
+  var anim = feat.animation || 'fade-in';
+
+  if (anim === 'shake-reveal') {
+    sceneEl.classList.add('feat-shake');
+    sceneEl.addEventListener('animationend', function handler() {
+      sceneEl.classList.remove('feat-shake');
+      sceneEl.removeEventListener('animationend', handler);
+    });
+    setTimeout(function () {
+      cells.forEach(function (c) {
+        c.style.transition = 'opacity 0.5s ease';
+        c.style.opacity = '1';
+      });
+    }, 300);
+
+  } else if (anim === 'flash-red') {
+    cells.forEach(function (c) {
+      c.style.background = '#ef4444';
+      c.style.opacity = '1';
+      c.classList.add('feat-flash-anim');
+      c.addEventListener('animationend', function () {
+        c.classList.remove('feat-flash-anim');
+        c.style.background = feat.color || '#7f1d1d';
+      }, { once: true });
+    });
+
+  } else if (anim === 'pulse-gold') {
+    cells.forEach(function (c) {
+      c.style.background = feat.color || '#d4af37';
+      c.style.opacity = '0.85';
+      c.classList.add('feat-pulse-anim');
+    });
+
+  } else if (anim === 'flash-white') {
+    cells.forEach(function (c) {
+      c.style.background = '#ffffff';
+      c.style.opacity = '1';
+      c.classList.add('feat-flash-anim');
+      c.addEventListener('animationend', function () {
+        c.classList.remove('feat-flash-anim');
+        c.style.background = feat.color || '#cccccc';
+      }, { once: true });
+    });
+
+  } else {
+    // fade-in (default)
+    cells.forEach(function (c) {
+      c.style.transition = 'opacity 0.6s ease';
+      c.style.opacity = '1';
+    });
+  }
+}
+
+function hideFeatureCells(featureId) {
+  var cells = sceneEl.querySelectorAll('.feature-cell[data-feat-id="' + featureId + '"]');
+  cells.forEach(function (c) {
+    c.classList.remove('feat-flash-anim', 'feat-pulse-anim');
+    c.style.transition = 'opacity 0.4s ease';
+    c.style.opacity = '0';
+  });
+}
+
+// ── Dice roll animation (3D cube) ─────────────────────────────
 var _diceHideTimer   = null;
 var _diceNumInterval = null;
 
@@ -503,6 +641,12 @@ function handleMessage(msg) {
       currentMapKey  = msg.mapKey || null;
       currentTokens  = [];
       currentDrawing = [];
+      // Clear and reset feature state for the new map
+      currentFeatures   = Array.isArray(msg.features) ? msg.features : [];
+      currentMapMeta    = msg.mapMeta || null;
+      triggeredFeatures = {};
+      var oldFeatOv = sceneEl.querySelector('.feature-overlay');
+      if (oldFeatOv) oldFeatOv.remove();
       var oldTok = sceneEl.querySelector('.token-overlay');
       if (oldTok) oldTok.remove();
       var oldDraw = sceneEl.querySelector('.draw-overlay');
@@ -571,6 +715,41 @@ function handleMessage(msg) {
       break;
     case 'DICE_ROLL':
       showDiceRoll(msg.die, msg.result);
+      break;
+    case 'UPDATE_FEATURES':
+      if (msg.mapKey === currentMapKey || !currentMapKey) {
+        currentFeatures = Array.isArray(msg.features) ? msg.features : [];
+        if (msg.mapMeta) currentMapMeta = msg.mapMeta;
+        var imgElF = sceneEl.querySelector('img');
+        if (imgElF && imgElF.naturalWidth) {
+          renderFeatureOverlay(currentFeatures, imgElF);
+        }
+      }
+      break;
+    case 'TRIGGER_FEATURE':
+      if (msg.mapKey === currentMapKey || !currentMapKey) {
+        var feat = msg.feature;
+        if (feat) {
+          triggeredFeatures[feat.id] = true;
+          // Use message data as fallback if local state was never set
+          if (msg.mapMeta && !currentMapMeta) currentMapMeta = msg.mapMeta;
+          if (msg.allFeatures && msg.allFeatures.length && !currentFeatures.length) {
+            currentFeatures = msg.allFeatures;
+          }
+          // Build overlay if not present, or if cells for this feature are missing
+          var hasCells = !!sceneEl.querySelector('.feature-cell[data-feat-id="' + feat.id + '"]');
+          if (!hasCells && currentMapMeta) {
+            renderFeatureOverlay(currentFeatures, sceneEl.querySelector('img'));
+          }
+          showTriggeredFeature(feat, true);
+        }
+      }
+      break;
+    case 'RESET_FEATURE':
+      if (msg.mapKey === currentMapKey || !currentMapKey) {
+        delete triggeredFeatures[msg.featureId];
+        hideFeatureCells(msg.featureId);
+      }
       break;
     case 'update':
       if (msg.data) showText(msg.content || '', msg.data);

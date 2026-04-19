@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v2.3 — Web Edition)
+# D&D VTT Control Console (v2.4 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -72,9 +72,24 @@ Each tile renders with a unique procedural texture generated on a canvas — no 
 
 **Undo / Clear:** ↩ Undo steps back one paint action; 🗑 Clear resets the entire canvas.
 
-**Saving a Map:** Click **💾 Save Map** to open the save dialog. Enter a filename, optionally add the map to the scene list (with an Area and Scene label), and choose whether to enable Fog of War. The map is exported as a PNG and saved to `public/assets/maps/`. A matching `.map.json` file is also saved alongside it — this preserves the full editable state (tile grid, tokens, labels, background image, fog data) so the map can be reopened later.
+**Saving a Map:** Click **💾 Save Map** to open the save dialog.
+- Enter a filename.
+- By default, saving does **not** add the map to a scene — check **Add to scene list** only when you want it to appear in the DM panel.
+- When adding to a scene, the **Area** and **Scene label** fields are smart dropdowns that show your existing areas/scenes; choose **＋ New…** to create a new one.
+- Saving the same image path to an area it already belongs to is silently de-duplicated.
+- The map is exported as a PNG and saved to `public/assets/maps/`. A `.map.json` file is saved alongside it preserving the full editable state.
 
-**Opening a Saved Map for Editing:** Click **📂 Open Map** to see a list of all maps that have an editable state file. Select a map and click **Open** to restore the full builder state exactly as it was when last saved — tiles, tokens, labels, fog, and grid dimensions are all restored. The save filename is pre-filled so re-saving updates the same map file. Note: only maps saved *after* adding this feature have an editable state; older PNG-only maps will not appear in the list.
+**Opening a Map for Editing:** Click **📂 Open Map** — two tabs:
+- **🗂 Builder Maps** — maps saved from the builder (have an editable `.map.json`); restores tiles, tokens, labels, fog, and features exactly.
+- **🖼 Any Image** — every image in `public/assets/maps/`; opens it as a background on a blank grid so you can add tiles, features, fog, and overlays on top, then save as a new builder map.
+
+**Map Features (traps, puzzles, reveals):**
+- Switch to the **🎯 Feature** tool to define named overlay regions on the map.
+- Paint cells onto the map, then click **+ Add Feature from Selection** to open the feature editor.
+- Each feature has a **name**, **type** (Pit, Trap, Puzzle, Reveal, Effect), **animation** (Shake & Reveal, Red Flash, Gold Pulse, Fade In, White Flash), **color**, and optional description.
+- Features are saved inside the `.map.json` and are invisible on the player screen until triggered.
+- In the DM Map Control panel, a **🎯 Map Features** section appears with **⚡ Trigger** and **↩ Reset** buttons per feature.
+- Triggering a feature plays its animation and reveals the colored overlay on the player screen; resetting hides it again.
 
 ---
 
@@ -147,6 +162,7 @@ Real-time monster stat block lookup powered by the [Open5e API](https://open5e.c
   - **💫 Rings: ON/OFF toggle** — show or hide condition rings on the player/projector screen without affecting the DM map view
 - **Mob type picker** — choose a standard mob type from a dropdown or enter a custom name; looking up a mob type can auto-pull its stat block from the Monster Lookup
 - **Auto-add to initiative** — toggle to automatically add a placed token to the current initiative round
+- **Add Party (one-click placement)** — when 🟢 Player color is active, click **🧑‍🤝‍🧑 Add Party** then click anywhere on the map to place all party members in a compact grid centered on that point with no overlapping; existing tokens are moved rather than duplicated
 - Tokens persist per map-key in state; drag tokens to reposition or click ✕ to remove
 - **Send Live** broadcasts the current map with all tokens overlaid to player screens
 

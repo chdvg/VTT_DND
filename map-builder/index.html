@@ -45,7 +45,8 @@
         <button class="tool-btn"        data-tool="fill"   title="Flood Fill">🪣 Fill</button>
         <button class="tool-btn"        data-tool="token"  title="Place Token">🪙 Token</button>
         <button class="tool-btn"        data-tool="label"  title="Add Label">🔤 Label</button>
-        <button class="tool-btn"        data-tool="image"  title="Place BG Image">🖼 Image</button>
+        <button class="tool-btn"        data-tool="image"   title="Place BG Image">🖼 Image</button>
+        <button class="tool-btn"        data-tool="feature" title="Add Map Feature">🎯 Feature</button>
       </div>
     </div>
 
@@ -124,6 +125,18 @@
       </select>
     </div>
 
+    <div class="sidebar-section" id="feature-options" style="display:none;">
+      <div class="sidebar-title">Map Features</div>
+      <p class="hint">Click cells on the map to select them for a feature. Multi-cell selection allowed.</p>
+      <div id="pending-cells-display" style="font-size:0.75rem;color:#9ca3af;margin-bottom:0.4rem;">No cells selected</div>
+      <button class="btn btn-primary btn-small" id="add-feature-btn" style="width:100%;margin-bottom:0.5rem;">+ Add Feature from Selection</button>
+      <div style="border-top:1px solid #21262d;padding-top:0.5rem;margin-top:0.25rem;">
+        <div style="font-size:0.75rem;color:#9ca3af;margin-bottom:0.4rem;">Saved Features:</div>
+        <div id="feature-list"></div>
+        <div id="feature-list-empty" style="font-size:0.75rem;color:#555;font-style:italic;">No features yet.</div>
+      </div>
+    </div>
+
     <div class="sidebar-section" id="image-options" style="display:none;">
       <div class="sidebar-title">Background Image</div>
       <p class="hint">Pick from your maps folder:</p>
@@ -144,6 +157,7 @@
         <canvas id="tile-canvas"></canvas>
         <div id="token-layer"></div>
         <div id="label-layer"></div>
+        <canvas id="feature-canvas" style="pointer-events:none;"></canvas>
         <canvas id="grid-canvas"></canvas>
         <canvas id="cursor-canvas"></canvas>
         <div id="fog-layer"></div>
@@ -160,11 +174,17 @@
     <h2>Save Map</h2>
     <label>Filename <input type="text" id="save-filename" placeholder="my_map.png" /></label>
     <label style="margin-top:0.5rem;">Add to scene list
-      <input type="checkbox" id="save-add-scene" checked />
+      <input type="checkbox" id="save-add-scene" />
     </label>
-    <div id="save-scene-opts">
-      <input type="text" id="save-scene-area"  placeholder="Area (e.g. Phandalin)" />
-      <input type="text" id="save-scene-label" placeholder="Scene label" />
+    <div id="save-scene-opts" style="display:none;">
+      <label style="margin-top:0.4rem;display:block;">Area
+        <select id="save-scene-area-sel" style="width:100%;margin-top:0.2rem;"></select>
+        <input type="text" id="save-scene-area-new" placeholder="New area name" style="display:none;width:100%;margin-top:0.25rem;" />
+      </label>
+      <label style="margin-top:0.4rem;display:block;">Scene label
+        <select id="save-scene-label-sel" style="width:100%;margin-top:0.2rem;"></select>
+        <input type="text" id="save-scene-label-new" placeholder="Scene label" style="width:100%;margin-top:0.25rem;" />
+      </label>
       <label style="margin-top:0.4rem;font-size:0.875rem;display:flex;align-items:center;gap:0.4rem;">
         <input type="checkbox" id="save-fog" checked /> Enable Fog of War
       </label>
@@ -177,12 +197,63 @@
   </div>
 </div>
 
+<!-- Feature Editor dialog -->
+<div id="feature-modal" class="modal hidden">
+  <div class="modal-box">
+    <h2 id="feature-modal-title">Add Feature</h2>
+    <label>Name <input type="text" id="feat-name" placeholder="e.g. Pit Trap" /></label>
+    <label style="margin-top:0.5rem;">Type
+      <select id="feat-type">
+        <option value="pit">⬛ Pit — hidden pit opens</option>
+        <option value="trap">💥 Trap — trap springs</option>
+        <option value="puzzle">🧩 Puzzle — puzzle location</option>
+        <option value="reveal">👁 Reveal — area revealed</option>
+        <option value="effect">✨ Effect — visual effect</option>
+      </select>
+    </label>
+    <label style="margin-top:0.5rem;">Animation
+      <select id="feat-animation">
+        <option value="shake-reveal">Shake &amp; Reveal</option>
+        <option value="flash-red">Red Flash</option>
+        <option value="pulse-gold">Gold Pulse</option>
+        <option value="fade-in">Fade In</option>
+        <option value="flash-white">White Flash</option>
+      </select>
+    </label>
+    <label style="margin-top:0.5rem;">Overlay Color <input type="color" id="feat-color" value="#7c2d12" /></label>
+    <label style="margin-top:0.5rem;">Description (shown to DM)
+      <textarea id="feat-description" rows="2" placeholder="Optional flavour text…" style="width:100%;background:#0d1117;color:#e6e6e6;border:1px solid #374151;border-radius:4px;padding:0.4rem;font-size:0.85rem;resize:vertical;"></textarea>
+    </label>
+    <div id="feat-cells-info" style="font-size:0.78rem;color:#9ca3af;margin-top:0.4rem;"></div>
+    <div class="btn-row" style="margin-top:1rem;">
+      <button class="btn btn-primary"   id="feat-save-btn">Save Feature</button>
+      <button class="btn btn-secondary" id="feat-cancel-btn">Cancel</button>
+    </div>
+    <div id="feat-status" style="margin-top:0.4rem;font-size:0.83rem;"></div>
+  </div>
+</div>
+
 <!-- Open Map dialog -->
 <div id="open-modal" class="modal hidden">
   <div class="modal-box">
-    <h2>Open Saved Map</h2>
-    <p style="font-size:0.8rem;color:#9ca3af;margin:0 0 0.5rem;">Only maps saved from the builder can be reopened for editing.</p>
-    <select id="open-map-select" size="8" style="width:100%;background:#1f2937;color:#f3f4f6;border:1px solid #374151;border-radius:4px;padding:0.25rem;"></select>
+    <h2>Open Map</h2>
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem;">
+      <button id="open-tab-builder" class="btn btn-primary btn-small" style="flex:1;">🗂 Builder Maps</button>
+      <button id="open-tab-image"   class="btn btn-secondary btn-small" style="flex:1;">🖼 Any Image</button>
+    </div>
+
+    <!-- Builder Maps tab -->
+    <div id="open-pane-builder">
+      <p style="font-size:0.8rem;color:#9ca3af;margin:0 0 0.4rem;">Maps with editable tile/feature state.</p>
+      <select id="open-map-select" size="8" style="width:100%;background:#1f2937;color:#f3f4f6;border:1px solid #374151;border-radius:4px;padding:0.25rem;"></select>
+    </div>
+
+    <!-- Any Image tab -->
+    <div id="open-pane-image" style="display:none;">
+      <p style="font-size:0.8rem;color:#9ca3af;margin:0 0 0.4rem;">Opens the image as a background. Add tiles, features &amp; overlays on top, then save.</p>
+      <select id="open-image-select" size="8" style="width:100%;background:#1f2937;color:#f3f4f6;border:1px solid #374151;border-radius:4px;padding:0.25rem;"></select>
+    </div>
+
     <div class="btn-row" style="margin-top:1rem;">
       <button class="btn btn-primary"   id="open-confirm-btn">Open</button>
       <button class="btn btn-secondary" id="open-cancel-btn">Cancel</button>
