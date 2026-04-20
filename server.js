@@ -224,7 +224,7 @@ wss.on('connection', (ws, req) => {
       const message = JSON.parse(raw);
       const isDm = dmClients.has(ws);
       // All mutating/DM-only actions require an authenticated DM connection
-      const DM_ACTIONS = ['blackout','show','show-scene-view','clear','play-audio',
+      const DM_ACTIONS = ['blackout','show','show-scene-view','clear','clear-scene','play-audio',
         'stop-audio','send-overlay','update-fog','set-rings','update-tokens',
         'update-drawing','dm-connect','trigger-feature','reset-feature','update-features'];
       if (DM_ACTIONS.includes(message.action) && !isDm) {
@@ -281,6 +281,16 @@ wss.on('connection', (ws, req) => {
           currentFeatures = [];
           currentFeatureStates = {};
           broadcast({ type: 'CLEAR' }); break;
+        case 'clear-scene':
+          currentSceneView = null;
+          currentTokens = [];
+          currentTokensMapKey = null;
+          currentDrawing = [];
+          currentDrawingMapKey = null;
+          currentFogStates = {};
+          currentFeatures = [];
+          currentFeatureStates = {};
+          broadcast({ type: 'CLEAR_SCENE' }); break;
         case 'play-audio':
           if (message.url) {
             currentAudio = { url: message.url, loop: message.loop !== false };
@@ -389,6 +399,19 @@ app.post('/api/blackout', requireDm, (req, res) => {
 app.post('/api/clear', requireDm, (req, res) => {
   currentState.nowShowing = '—'; currentState.content = ''; currentState.blackout = false;
   broadcast({ type: 'CLEAR' });
+  res.json({ ok: true });
+});
+
+app.post('/api/clear-scene', requireDm, (req, res) => {
+  currentSceneView = null;
+  currentTokens = [];
+  currentTokensMapKey = null;
+  currentDrawing = [];
+  currentDrawingMapKey = null;
+  currentFogStates = {};
+  currentFeatures = [];
+  currentFeatureStates = {};
+  broadcast({ type: 'CLEAR_SCENE' });
   res.json({ ok: true });
 });
 

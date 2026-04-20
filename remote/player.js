@@ -710,6 +710,14 @@ function handleMessage(msg) {
       if (popupTimer) { clearTimeout(popupTimer); popupTimer = null; }
       popupEl.classList.remove('visible');
       break;
+    case 'CLEAR_SCENE':
+      sceneEl.innerHTML = '';
+      currentImageUrl = null;
+      currentFogKey = null;
+      currentTokens = [];
+      currentDrawing = [];
+      currentFeatures = [];
+      break;
     case 'OVERLAY':
       showOverlay(msg.title, msg.data, msg.duration);
       break;
