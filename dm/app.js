@@ -843,30 +843,55 @@ function applyAudioDisplay() {
       var row = document.createElement('div');
       row.className = 'audio-row';
 
+      // Hidden audio element for DM local preview
+      var audio = document.createElement('audio');
+      audio.src = url;
+      audio.style.display = 'none';
+      row.appendChild(audio);
+
+      // ▶/⏸ preview toggle
+      var playBtn = document.createElement('button');
+      playBtn.className = 'audio-preview-btn';
+      playBtn.title = 'Preview locally';
+      playBtn.innerHTML = '▶';
+      playBtn.onclick = function () {
+        // Pause all other previews in the panel
+        document.querySelectorAll('#audio-list audio').forEach(function (a) {
+          if (a !== audio) { a.pause(); a.currentTime = 0; }
+        });
+        document.querySelectorAll('.audio-preview-btn').forEach(function (b) {
+          if (b !== playBtn) b.innerHTML = '▶';
+        });
+        if (audio.paused) {
+          audio.play();
+          playBtn.innerHTML = '⏸';
+        } else {
+          audio.pause();
+          audio.currentTime = 0;
+          playBtn.innerHTML = '▶';
+        }
+      };
+      audio.addEventListener('ended', function () { playBtn.innerHTML = '▶'; });
+      row.appendChild(playBtn);
+
       var lbl = document.createElement('span');
       lbl.textContent = displayName;
       lbl.className = 'audio-label';
       row.appendChild(lbl);
 
-      var preview = document.createElement('audio');
-      preview.src = url;
-      preview.controls = true;
-      preview.className = 'audio-preview';
-      row.appendChild(preview);
-
       var btn = document.createElement('button');
-      btn.textContent = '→ Loop';
+      btn.innerHTML = '⟳ LOOP';
       btn.title = 'Send to player screen (loops)';
-      btn.className = 'btn btn-secondary btn-small audio-play-btn';
+      btn.className = 'audio-send-btn audio-send-loop';
       btn.onclick = (function (u) {
         return function () { broadcastAudio(u, true); };
       })(url);
       row.appendChild(btn);
 
       var btnOnce = document.createElement('button');
-      btnOnce.textContent = '→ Once';
+      btnOnce.innerHTML = '▶ ONCE';
       btnOnce.title = 'Send to player screen (plays once)';
-      btnOnce.className = 'btn btn-secondary btn-small audio-play-btn';
+      btnOnce.className = 'audio-send-btn audio-send-once';
       btnOnce.onclick = (function (u) {
         return function () { broadcastAudio(u, false); };
       })(url);

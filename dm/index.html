@@ -325,21 +325,21 @@
           <button class="btn-dice" data-die="20">d20</button>
           <button class="btn-dice" data-die="100">d100</button>
         </div>
-        <div id="dice-result"></div>
-        <label><input type="checkbox" id="dice-broadcast" /> Broadcast to players</label>
+        <div class="dice-result-row">
+          <div id="dice-result"></div>
+          <label class="dice-broadcast-label"><input type="checkbox" id="dice-broadcast" /> Broadcast</label>
+        </div>
       </section>
       <section class="panel" id="section-initiative">
         <h2>⚔️ Initiative Tracker</h2>
         <div id="init-list"></div>
-        <div class="btn-row" style="margin-top:0.4rem;">
-          <button id="init-send-btn" class="btn btn-primary">⚔️ Send</button>
-          <button id="init-next-btn" class="btn btn-secondary">⏭️ Next</button>
+        <div class="init-action-row">
+          <button id="init-send-btn" class="btn btn-primary init-action-btn">⚔️ Send</button>
+          <button id="init-next-btn" class="btn btn-secondary init-action-btn">⏭️ Next</button>
+          <button id="init-clear-btn" class="btn btn-warning init-action-btn">🧹 Mobs</button>
+          <button id="init-reset-btn" class="btn btn-danger init-action-btn" title="Remove all entries including players">🔄 Reset</button>
         </div>
-        <div class="btn-row" style="margin-top:0.35rem;">
-          <button id="init-clear-btn" class="btn btn-warning">🧹 Clear Mobs</button>
-          <button id="init-reset-btn" class="btn btn-danger" title="Remove all entries including players">🔄 Hard Reset</button>
-        </div>
-        <div class="init-add" style="margin-top:0.75rem;">
+        <div class="init-add">
           <input type="text"   id="init-name" placeholder="Mob / NPC name" />
           <input type="number" id="init-roll" placeholder="Roll" min="1" max="30" />
           <button id="init-add-btn" class="btn btn-small btn-primary">+ Add Mob</button>
