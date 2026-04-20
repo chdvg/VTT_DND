@@ -104,6 +104,103 @@ var initList     = document.getElementById('init-list');
 // ============================================================
 // WebSocket
 // ============================================================
+// ============================================================
+// DM State Restore (on reconnect / refresh / map-builder return)
+// ============================================================
+function restoreDmState(msg) {
+  // Update player count immediately — most reliable source on reconnect
+  if (typeof msg.playerCount === 'number') {
+    clientCount.textContent = msg.playerCount + ' connected';
+  }
+
+  // Blackout
+  if (msg.blackout) {
+    isBlackout = true;
+    blackoutBtn.classList.add('active');
+  } else {
+    isBlackout = false;
+    blackoutBtn.classList.remove('active');
+  }
+
+  if (!msg.sceneView) return; // no active map — nothing to render
+
+  var sv = msg.sceneView;
+  var mapKey = sv.mapKey;
+  var fogKey = sv.fogKey;
+
+  // Restore playback variables
+  lastSceneViewPayload = { action: 'show-scene-view', image: sv.image, audio: sv.audio, audioLoop: sv.audioLoop !== false, fit: sv.fit || 'contain', fogKey: fogKey, mapKey: mapKey, label: sv.label || '' };
+  lastMapPayload = lastSceneViewPayload;
+  lastSceneWasSentImage = false;
+  activeFogKey = fogKey || null;
+  activeTokenMapKey = mapKey || null;
+
+  // Restore fog grid into window.fogStates so renderFogControls picks it up
+  if (fogKey && msg.fogStates && msg.fogStates[fogKey]) {
+    if (!window.fogStates) window.fogStates = {};
+    window.fogStates[fogKey] = msg.fogStates[fogKey];
+    fogGrid = window.fogStates[fogKey];
+    fogMapUrl = sv.image;
+    if (fogGrid && fogGrid.length) {
+      fogRows = fogGrid.length;
+      fogCols = (fogGrid[0] && fogGrid[0].length) ? fogGrid[0].length : fogCols;
+    }
+  }
+
+  // Restore token state
+  if (mapKey && msg.tokens && msg.tokens.length) {
+    tokenState[mapKey] = msg.tokens;
+  }
+
+  // Restore draw strokes
+  var drawKey = msg.drawingMapKey || mapKey;
+  if (drawKey && msg.drawing && msg.drawing.length) {
+    if (!drawStrokes[drawKey]) drawStrokes[drawKey] = [];
+    drawStrokes[drawKey] = msg.drawing;
+    activeDrawMapKey = drawKey;
+  }
+
+  // Show map control panel and set title
+  var mapControlGrid  = document.getElementById('map-control-grid');
+  var mapControlTitle = document.getElementById('map-control-title');
+  if (mapControlGrid)  mapControlGrid.style.display = 'grid';
+  if (mapControlTitle) mapControlTitle.textContent = sv.label || (sv.image || '').split('/').pop().replace(/\.[^.]+$/, '') || 'Active Map';
+
+  // Fog controls
+  var fogContainer = document.getElementById('fog-controls-container');
+  if (fogKey) {
+    renderFogControls(sv.image, fogKey);
+  } else if (fogContainer) {
+    fogContainer.innerHTML = '';
+  }
+
+  // Token controls
+  renderTokenControls(sv.image, mapKey);
+
+  // Draw controls
+  if (!drawStrokes[mapKey]) drawStrokes[mapKey] = [];
+  renderDrawControls(sv.image, mapKey);
+
+  // Feature controls — use saved features if available, else re-fetch from map builder
+  var featureContainer = document.getElementById('feature-controls-container');
+  if (featureContainer) featureContainer.innerHTML = '';
+  if (msg.features && msg.features.length) {
+    renderFeatureControls(mapKey, msg.features, sv.mapMeta || null);
+  } else {
+    var mapBaseName = (sv.image || '').replace(/.*\//, '').replace(/\.[^.]+$/, '');
+    if (mapBaseName) {
+      fetch('/api/map-builder/state?name=' + encodeURIComponent(mapBaseName))
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (state) {
+          var mapFeatures = (state && Array.isArray(state.features)) ? state.features : [];
+          var mapMeta = state ? { cols: state.cols, rows: state.rows } : null;
+          renderFeatureControls(mapKey, mapFeatures, mapMeta);
+        })
+        .catch(function () {});
+    }
+  }
+}
+
 function connectWebSocket() {
   var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
@@ -124,6 +221,10 @@ function connectWebSocket() {
     if (msg.type === 'auth-required') {
       // Session expired (server restarted). Reload so requireDm redirects to login.
       location.reload();
+      return;
+    }
+    if (msg.type === 'DM_STATE_RESTORE') {
+      restoreDmState(msg);
       return;
     }
     if (msg.type === 'clients') {
@@ -160,6 +261,7 @@ clearBtn.addEventListener('click', function () {
     fetch('/api/clear-scene', { method: 'POST' });
     fetch('/api/clear', { method: 'POST' });
     lastSceneViewPayload = null;
+    lastMapPayload = null;
     lastSceneWasSentImage = false;
   } else {
     fetch('/api/clear', { method: 'POST' });
@@ -170,6 +272,31 @@ resendMapBtn.addEventListener('click', function () {
   wsSend(lastMapPayload);
   if (activeFogKey) sendFogUpdate(activeFogKey);
   if (activeTokenMapKey) { sendTokenUpdate(activeTokenMapKey); sendDrawUpdate(activeTokenMapKey); }
+});
+
+document.getElementById('reset-map-btn').addEventListener('click', function () {
+  // Wipe server scene state
+  fetch('/api/clear-scene', { method: 'POST' });
+  // Reset DM in-memory state — including fog/token/draw overlays so they don't bleed into the next map load
+  lastSceneViewPayload = null;
+  lastMapPayload = null;
+  lastSceneWasSentImage = false;
+  activeFogKey = null;
+  activeTokenMapKey = null;
+  activeDrawMapKey = null;
+  window.fogStates = {};   // clear all cached fog grids
+  fogGrid = null;
+  fogMapUrl = null;
+  drawStrokes = {};        // clear all annotation strokes
+  tokenState = {};         // clear all token positions
+  // Collapse the map control panel
+  var mapControlGrid  = document.getElementById('map-control-grid');
+  var mapControlTitle = document.getElementById('map-control-title');
+  if (mapControlGrid)  mapControlGrid.style.display = 'none';
+  if (mapControlTitle) mapControlTitle.textContent = 'no map active';
+  // Clear all rendered sub-panels
+  var els = ['fog-controls-container','token-controls-container','token-map-container','draw-controls-container','feature-controls-container'];
+  els.forEach(function (id) { var el = document.getElementById(id); if (el) el.innerHTML = ''; });
 });
 
 document.getElementById('send-text-popup-btn').addEventListener('click', function () {
@@ -615,7 +742,7 @@ function showSceneView(sceneIdx, viewIdx) {
   wsSend({ action: 'stop-audio' });
 
   // Pass fogKey (fog) and mapKey (tokens) so player can correlate overlays
-  lastSceneViewPayload = { action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fit: view.fit || 'contain', fogKey: useFog ? fogKey : null, mapKey: fogKey };
+  lastSceneViewPayload = { action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fit: view.fit || 'contain', fogKey: useFog ? fogKey : null, mapKey: fogKey, label: view.label || '' };
   lastSceneWasSentImage = false;
   lastMapPayload = lastSceneViewPayload;
   wsSend(lastSceneViewPayload);
