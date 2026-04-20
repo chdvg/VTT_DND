@@ -56,6 +56,8 @@
           <button id="blackout-btn" class="btn btn-danger" style="flex:none;">⬛ BLACKOUT</button>
           <button id="clear-btn" class="btn btn-warning" style="flex:none;">🧹 CLEAR</button>
           <button id="resend-map-btn" class="btn btn-secondary" style="flex:none;">🔄 Resend Map</button>
+          <button id="send-text-popup-btn" class="btn btn-secondary" style="flex:none;">📜 Text</button>
+          <button id="send-image-popup-btn" class="btn btn-secondary" style="flex:none;">🖼 Image</button>
         </div>
       </div>
       <div id="map-control-grid" style="display:none;grid-template-columns:2fr 1px 3fr;gap:0 1.25rem;">
@@ -245,8 +247,8 @@
       </details>
     </section>
 
-    <!-- ── Row 3: Send Text (wide) | Send Image (wide) ── -->
-    <section class="panel col-2" id="section-send-text">
+    <!-- ── Row 3: Send Text (wide) | Send Image (wide) — moved to Map Control popup buttons ── -->
+    <section class="panel col-2" id="section-send-text" style="display:none;">
       <details>
         <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠿</span>Send Text<span class="sb-chevron">▶</span></summary>
         <div style="margin-top:1rem;">
@@ -258,7 +260,7 @@
         </div>
       </details>
     </section>
-    <section class="panel col-2" id="section-send-image">
+    <section class="panel col-2" id="section-send-image" style="display:none;">
       <details>
         <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠿</span>Send Image<span class="sb-chevron">▶</span></summary>
         <div style="margin-top:1rem;">

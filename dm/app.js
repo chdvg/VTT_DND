@@ -26,6 +26,7 @@ var fogMapUrl     = null;
 var activeFogKey  = null;
 var lastSceneViewPayload = null; // cached for re-sync when server restarts
 var lastMapPayload       = null; // last actual map/scene (not Send Image)
+var lastSceneWasSentImage = false; // true when Send Image (not a real map) was last sent
 
 // Token overlay state
 var tokenState         = {};     // mapKey -> array of {id,x,y,color,label,mobType?}
@@ -152,9 +153,17 @@ blackoutBtn.addEventListener('click', function () {
   fetch('/api/blackout', { method: 'POST' });
 });
 clearBtn.addEventListener('click', function () {
-  fetch('/api/clear', { method: 'POST' });
   isBlackout = false;
   blackoutBtn.classList.remove('active');
+  if (lastSceneWasSentImage) {
+    // Clear the scene image from players, then also clear overlays
+    fetch('/api/clear-scene', { method: 'POST' });
+    fetch('/api/clear', { method: 'POST' });
+    lastSceneViewPayload = null;
+    lastSceneWasSentImage = false;
+  } else {
+    fetch('/api/clear', { method: 'POST' });
+  }
 });
 resendMapBtn.addEventListener('click', function () {
   if (!lastMapPayload) return;
@@ -163,8 +172,15 @@ resendMapBtn.addEventListener('click', function () {
   if (activeTokenMapKey) { sendTokenUpdate(activeTokenMapKey); sendDrawUpdate(activeTokenMapKey); }
 });
 
+document.getElementById('send-text-popup-btn').addEventListener('click', function () {
+  showSendTextPopup(this);
+});
+document.getElementById('send-image-popup-btn').addEventListener('click', function () {
+  showSendImagePopup(this);
+});
+
 // ============================================================
-// Send Text
+// Send Text (hidden panel — kept for element ID compatibility)
 // ============================================================
 sendTextBtn.addEventListener('click', function () {
   var label = document.getElementById('text-label').value.trim();
@@ -235,6 +251,7 @@ sendImageBtn.addEventListener('click', function () {
 function sendImage(label, src) {
   // Show the image full-screen on the player view (same as a scene map, no fog/tokens/audio)
   lastSceneViewPayload = { action: 'show-scene-view', image: src, fit: 'contain', audio: null, fogKey: null, mapKey: null, audioLoop: false };
+  lastSceneWasSentImage = true;
   wsSend(lastSceneViewPayload);
 }
 
@@ -599,6 +616,7 @@ function showSceneView(sceneIdx, viewIdx) {
 
   // Pass fogKey (fog) and mapKey (tokens) so player can correlate overlays
   lastSceneViewPayload = { action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fit: view.fit || 'contain', fogKey: useFog ? fogKey : null, mapKey: fogKey };
+  lastSceneWasSentImage = false;
   lastMapPayload = lastSceneViewPayload;
   wsSend(lastSceneViewPayload);
 
@@ -2904,6 +2922,183 @@ function showCondDropPopup(x, y, cond, onConfirm) {
   }, 50);
 }
 
+// ============================================================
+// Send Text — floating popup
+// ============================================================
+function showSendTextPopup(anchorBtn) {
+  var old = document.getElementById('send-text-popup');
+  if (old) { old.remove(); return; } // toggle off on second click
+
+  var rect  = anchorBtn.getBoundingClientRect();
+  var popup = document.createElement('div');
+  popup.id  = 'send-text-popup';
+  popup.style.cssText =
+    'position:fixed;z-index:9999;background:#1c2128;border:1px solid #d4af37;' +
+    'border-radius:6px;padding:0.75rem;box-shadow:0 4px 18px rgba(0,0,0,0.7);' +
+    'display:flex;flex-direction:column;gap:0.5rem;width:300px;font-size:0.82rem;' +
+    'left:' + Math.min(rect.left, window.innerWidth - 320) + 'px;' +
+    'top:'  + Math.min(rect.bottom + 4, window.innerHeight - 240) + 'px;';
+
+  var hdr = document.createElement('div');
+  hdr.textContent = '📜 Send Text Overlay';
+  hdr.style.cssText = 'color:#d4af37;font-weight:bold;';
+  popup.appendChild(hdr);
+
+  var labelIn = document.createElement('input');
+  labelIn.type = 'text';
+  labelIn.placeholder = 'Label (e.g. Room Description)';
+  popup.appendChild(labelIn);
+
+  var textArea = document.createElement('textarea');
+  textArea.rows = 5;
+  textArea.placeholder = 'Type content here…';
+  textArea.style.resize = 'vertical';
+  popup.appendChild(textArea);
+
+  var sendBtn = document.createElement('button');
+  sendBtn.textContent = '📜 Send';
+  sendBtn.className = 'btn btn-primary';
+  sendBtn.onclick = function () {
+    var raw = textArea.value.trim();
+    if (!raw) return;
+    fetch('/api/overlay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: labelIn.value.trim(), data: raw.replace(/\n/g, '<br>'), duration: 15000 })
+    });
+    popup.remove();
+  };
+  popup.appendChild(sendBtn);
+  document.body.appendChild(popup);
+  labelIn.focus();
+
+  popup.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { e.preventDefault(); popup.remove(); }
+  });
+  setTimeout(function () {
+    document.addEventListener('mousedown', function outsideClick(ev) {
+      if (!popup.contains(ev.target) && ev.target !== anchorBtn) {
+        popup.remove();
+        document.removeEventListener('mousedown', outsideClick);
+      }
+    });
+  }, 50);
+}
+
+// ============================================================
+// Send Image — floating popup
+// ============================================================
+function showSendImagePopup(anchorBtn) {
+  var old = document.getElementById('send-image-popup');
+  if (old) { old.remove(); return; } // toggle off on second click
+
+  var rect  = anchorBtn.getBoundingClientRect();
+  var popup = document.createElement('div');
+  popup.id  = 'send-image-popup';
+  popup.style.cssText =
+    'position:fixed;z-index:9999;background:#1c2128;border:1px solid #d4af37;' +
+    'border-radius:6px;padding:0.75rem;box-shadow:0 4px 18px rgba(0,0,0,0.7);' +
+    'display:flex;flex-direction:column;gap:0.45rem;width:300px;font-size:0.82rem;' +
+    'left:' + Math.min(rect.left, window.innerWidth - 320) + 'px;' +
+    'top:'  + Math.min(rect.bottom + 4, window.innerHeight - 360) + 'px;';
+
+  var hdr = document.createElement('div');
+  hdr.textContent = '🖼 Send Image';
+  hdr.style.cssText = 'color:#d4af37;font-weight:bold;';
+  popup.appendChild(hdr);
+
+  var labelIn = document.createElement('input');
+  labelIn.type = 'text';
+  labelIn.placeholder = 'Label (e.g. Battle Map)';
+  popup.appendChild(labelIn);
+
+  var urlIn = document.createElement('input');
+  urlIn.type = 'text';
+  urlIn.placeholder = 'Image URL';
+  popup.appendChild(urlIn);
+
+  var div1 = document.createElement('div');
+  div1.textContent = '— or choose from library —';
+  div1.style.cssText = 'color:#888;text-align:center;font-size:0.75rem;';
+  popup.appendChild(div1);
+
+  var mapSel = document.createElement('select');
+  var defOpt = document.createElement('option');
+  defOpt.value = '';
+  defOpt.textContent = '— loading… —';
+  mapSel.appendChild(defOpt);
+  fetch('/api/maps')
+    .then(function (r) { return r.json(); })
+    .catch(function () { return { maps: [] }; })
+    .then(function (data) {
+      defOpt.textContent = '— Select a map —';
+      (data.maps || []).forEach(function (url) {
+        var lbl = url.split('/').pop().replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ');
+        var opt = document.createElement('option');
+        opt.value = url; opt.textContent = lbl;
+        mapSel.appendChild(opt);
+      });
+    });
+  mapSel.onchange = function () {
+    if (!this.value) return;
+    urlIn.value = this.value;
+    fileIn.value = '';
+    preview.innerHTML = '<img src="' + this.value + '" style="max-width:100%;max-height:110px;border-radius:4px;margin-top:2px;" />';
+  };
+  popup.appendChild(mapSel);
+
+  var div2 = document.createElement('div');
+  div2.textContent = '— or pick a file —';
+  div2.style.cssText = 'color:#888;text-align:center;font-size:0.75rem;';
+  popup.appendChild(div2);
+
+  var fileIn = document.createElement('input');
+  fileIn.type = 'file';
+  fileIn.accept = 'image/*';
+  fileIn.onchange = function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    mapSel.value = '';
+    urlIn.value = '/assets/maps/' + file.name;
+    preview.innerHTML = '<img src="' + URL.createObjectURL(file) + '" style="max-width:100%;max-height:110px;border-radius:4px;margin-top:2px;" />';
+  };
+  popup.appendChild(fileIn);
+
+  var preview = document.createElement('div');
+  popup.appendChild(preview);
+
+  var sendBtn = document.createElement('button');
+  sendBtn.textContent = '🖼 Send Image';
+  sendBtn.className = 'btn btn-primary';
+  sendBtn.onclick = function () {
+    var url   = urlIn.value.trim();
+    var label = labelIn.value.trim() || 'Image';
+    if (url) {
+      sendImage(label, url);
+      popup.remove();
+    } else if (fileIn.files[0]) {
+      var reader = new FileReader();
+      reader.onload = function (ev) { sendImage(label, ev.target.result); };
+      reader.readAsDataURL(fileIn.files[0]);
+      popup.remove();
+    }
+  };
+  popup.appendChild(sendBtn);
+  document.body.appendChild(popup);
+  labelIn.focus();
+
+  popup.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { e.preventDefault(); popup.remove(); }
+  });
+  setTimeout(function () {
+    document.addEventListener('mousedown', function outsideClick(ev) {
+      if (!popup.contains(ev.target) && ev.target !== anchorBtn) {
+        popup.remove();
+        document.removeEventListener('mousedown', outsideClick);
+      }
+    });
+  }, 50);
+}
 
 document.querySelectorAll('.ref-tab').forEach(function (btn) {
   btn.addEventListener('click', function () {
@@ -2914,6 +3109,44 @@ document.querySelectorAll('.ref-tab').forEach(function (btn) {
     if (pane) pane.style.display = '';
   });
 });
+
+// ── Rules tab: add send buttons to each static section ────────
+(function () {
+  var rulesPane = document.getElementById('ref-pane-rules');
+  if (!rulesPane) return;
+  rulesPane.querySelectorAll('.ref-section-hdr').forEach(function (hdr) {
+    var sendBtn = document.createElement('button');
+    sendBtn.className = 'ref-card-send';
+    sendBtn.title = 'Send to player screen';
+    sendBtn.textContent = '\uD83D\uDCDC Send';
+    sendBtn.style.cssText = 'margin-left:0.5rem;vertical-align:middle;';
+    hdr.appendChild(sendBtn);
+    sendBtn.addEventListener('click', function () {
+      // Collect all table rows in this section (up to next h3)
+      var rows = [];
+      var el = hdr.nextElementSibling;
+      while (el && el.tagName !== 'H3') {
+        if (el.tagName === 'TABLE') {
+          el.querySelectorAll('tbody tr').forEach(function (tr) {
+            var cells = Array.from(tr.querySelectorAll('td')).map(function (td) { return td.textContent.trim(); });
+            rows.push(cells.join(' — '));
+          });
+        }
+        el = el.nextElementSibling;
+      }
+      var dataHtml = rows.length
+        ? '<ul style="margin:0;padding-left:1.2em;line-height:1.7;">' +
+          rows.map(function (r) { return '<li>' + escHtml(r) + '</li>'; }).join('') +
+          '</ul>'
+        : '<em style="color:#666;">No data.</em>';
+      fetch('/api/overlay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: hdr.textContent.replace('\uD83D\uDCDC Send','').trim(), data: dataHtml, duration: 20000 })
+      });
+    });
+  });
+})();
 
 // ── Condition filter ─────────────────────────────────────────
 document.getElementById('ref-cond-filter').addEventListener('input', function () {
@@ -2964,6 +3197,12 @@ function renderReference(filterText) {
       '<button class="ref-del-btn" data-name="' + r.name.replace(/"/g, '&quot;') + '" title="Remove">✕</button>';
     var plusCell  = r.plus  ? r.plus  : '<span style="color:#444">—</span>';
     var minusCell = r.minus ? r.minus : '<span style="color:#444">—</span>';
+    var sendBtn = '<button class="ref-row-send" ' +
+      'data-name="' + r.name.replace(/"/g, '&quot;') + '" ' +
+      'data-icon="' + r.icon.replace(/"/g, '&quot;') + '" ' +
+      'data-plus="' + r.plus.replace(/"/g, '&quot;') + '" ' +
+      'data-minus="' + r.minus.replace(/"/g, '&quot;') + '" ' +
+      'title="Send to player screen">📜</button>';
     return '<tr class="ref-row ' + r.type + ' ref-row-draggable" draggable="true" ' +
       'data-cond-name="' + r.name.replace(/"/g, '&quot;') + '" ' +
       'data-cond-icon="' + r.icon.replace(/"/g, '&quot;') + '" ' +
@@ -2973,7 +3212,7 @@ function renderReference(filterText) {
       '<td><span class="cond-badge ' + r.type + '">' + r.name + '</span></td>' +
       '<td class="ref-plus-cell">'  + plusCell  + '</td>' +
       '<td class="ref-minus-cell">' + minusCell + '</td>' +
-      '<td>' + delBtn + '</td></tr>';
+      '<td style="white-space:nowrap;">' + sendBtn + delBtn + '</td></tr>';
   }).join('');
 
   dictEl.innerHTML = allRefs.length
@@ -2988,6 +3227,23 @@ function renderReference(filterText) {
       var name = btn.dataset.name;
       var idx  = conditionRefs.findIndex(function (r) { return r.name === name; });
       if (idx !== -1) { conditionRefs.splice(idx, 1); saveConditionRefs(); renderReference(); }
+    });
+  });
+
+  dictEl.querySelectorAll('.ref-row-send').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var plus  = (btn.dataset.plus  || '').trim();
+      var minus = (btn.dataset.minus || '').trim();
+      var dataHtml =
+        (plus  ? '<div style="margin-bottom:0.3rem;"><b style="color:#4ade80;">Benefit:</b> ' + escHtml(plus)  + '</div>' : '') +
+        (minus ? '<div><b style="color:#ef4444;">Penalty:</b> ' + escHtml(minus) + '</div>' : '') ||
+        '<em style="color:#666;">No description.</em>';
+      fetch('/api/overlay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: btn.dataset.icon + ' ' + btn.dataset.name, data: dataHtml, duration: 15000 })
+      });
     });
   });
 
@@ -3057,7 +3313,8 @@ function makeCard(title, metaItems, desc) {
   var full      = escHtml(desc || '');
   var needsMore = full.length > shortDesc.length;
   return '<div class="ref-card">' +
-    '<div class="ref-card-title">' + escHtml(title) + '</div>' +
+    '<div class="ref-card-header"><div class="ref-card-title">' + escHtml(title) + '</div>' +
+    '<button class="ref-card-send" title="Send to player screen">📜 Send</button></div>' +
     (metaHtml ? '<div class="ref-card-meta">' + metaHtml + '</div>' : '') +
     '<div class="ref-card-desc" id="' + id + '">' + shortDesc + (needsMore ? '…' : '') + '</div>' +
     (needsMore ? '<button class="ref-card-toggle" data-id="' + id + '" data-full="' + full.replace(/"/g,'&quot;') + '">▼ Show more</button>' : '') +
@@ -3077,6 +3334,25 @@ function bindCardToggles(el) {
         d.textContent = btn.dataset.full;
         btn.textContent = '▲ Show less';
       }
+    });
+  });
+  el.querySelectorAll('.ref-card-send').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var card    = btn.closest('.ref-card');
+      var title   = card.querySelector('.ref-card-title').textContent;
+      var metaEl  = card.querySelector('.ref-card-meta');
+      var toggleEl = card.querySelector('.ref-card-toggle');
+      var descEl  = card.querySelector('.ref-card-desc');
+      // data-full holds the HTML-escaped full description
+      var fullDesc = toggleEl ? toggleEl.dataset.full : escHtml(descEl.textContent);
+      var dataHtml =
+        (metaEl ? '<div style="color:#aaa;font-size:0.82em;margin-bottom:0.5rem;">' + escHtml(metaEl.textContent) + '</div>' : '') +
+        '<div style="line-height:1.5;">' + fullDesc.replace(/\n/g, '<br>') + '</div>';
+      fetch('/api/overlay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title, data: dataHtml, duration: 20000 })
+      });
     });
   });
 }
@@ -3393,7 +3669,32 @@ function renderMonsterStatBlock(m) {
       m.special_abilities.map(function(a){
         return '<div class="msb-action"><span class="msb-action-name">' + a.name + '.</span> ' + (a.desc||'') + '</div>';
       }).join('') : '') +
-    actionsHtml;
+    actionsHtml +
+    '<button id="monster-send-btn" class="btn btn-secondary" style="margin-top:0.75rem;font-size:0.72rem;width:100%;">📜 Send to Players</button>';
+
+  document.getElementById('monster-send-btn').addEventListener('click', function () {
+    var scores = [['STR',m.strength],['DEX',m.dexterity],['CON',m.constitution],
+                  ['INT',m.intelligence],['WIS',m.wisdom],['CHA',m.charisma]];
+    var scoreRow = scores.map(function(s){
+      return '<span style="margin-right:0.6rem;"><b>' + s[0] + '</b> ' + (s[1]||'—') + (s[1] ? ' (' + modStr(s[1]) + ')' : '') + '</span>';
+    }).join('');
+    var speed = m.speed ? Object.entries(m.speed).filter(function(e){return e[1];}).map(function(e){return e[0]+' '+e[1];}).join(', ') : '—';
+    var dataHtml =
+      '<div style="color:#aaa;font-style:italic;margin-bottom:0.4rem;">' +
+        escHtml((m.size||'') + ' ' + (m.type||'') + (m.subtype?' ('+m.subtype+')':'') + ', ' + (m.alignment||'')) +
+      '</div>' +
+      '<div style="margin-bottom:0.3rem;"><b>AC</b> ' + escHtml(String(m.armor_class||'—')) + (m.armor_desc?' ('+escHtml(m.armor_desc)+')':'') +
+        ' &nbsp;|&nbsp; <b>HP</b> ' + escHtml(String(m.hit_points||'—')) + ' (' + escHtml(m.hit_dice||'') + ')' +
+        ' &nbsp;|&nbsp; <b>Speed</b> ' + escHtml(speed) + '</div>' +
+      '<div style="margin-bottom:0.4rem;"><b>CR</b> ' + escHtml(String(m.challenge_rating||'—')) +
+        (m.xp ? ' (' + m.xp.toLocaleString() + ' XP)' : '') + '</div>' +
+      '<div style="margin-bottom:0.4rem;">' + scoreRow + '</div>';
+    fetch('/api/overlay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: m.name, data: dataHtml, duration: 20000 })
+    });
+  });
 }
 
 document.getElementById('monster-search-btn').addEventListener('click', function () {
