@@ -141,6 +141,9 @@ const clients = new Set();
 const dmClients = new Set();
 
 function broadcastClientCount() {
+  // Purge any dead connections so stale sockets don't skew the count
+  for (const c of clients)   { if (c.readyState !== WebSocket.OPEN) { clients.delete(c); dmClients.delete(c); } }
+  for (const d of dmClients) { if (d.readyState !== WebSocket.OPEN) dmClients.delete(d); }
   // Count only non-DM clients (player screens)
   const playerCount = clients.size - dmClients.size;
   const payload = JSON.stringify({ type: 'clients', count: playerCount });
@@ -212,11 +215,23 @@ wss.on('connection', (ws, req) => {
   console.log(`Client connected. Total: ${clients.size} | isDM: ${dmAuthed} | dmClients: ${dmClients.size}`);
   broadcastClientCount();
   // Always push current state to newly connected clients.
-  // DM only needs blackout state (it is the source of truth for everything else).
   if (!dmAuthed) {
     sendFullState(ws);
-  } else if (currentState.blackout) {
-    ws.send(JSON.stringify({ type: 'BLACKOUT', active: true }));
+  } else {
+    // Send complete map state snapshot so DM panel can restore after refresh/navigation
+    ws.send(JSON.stringify({
+      type: 'DM_STATE_RESTORE',
+      playerCount: clients.size - dmClients.size,
+      sceneView: currentSceneView,
+      fogStates: currentFogStates,
+      tokens: currentTokens,
+      tokensMapKey: currentTokensMapKey,
+      drawing: currentDrawing,
+      drawingMapKey: currentDrawingMapKey,
+      features: currentFeatures,
+      featureStates: currentFeatureStates,
+      blackout: currentState.blackout
+    }));
   }
 
   ws.on('message', (raw) => {
@@ -261,7 +276,7 @@ wss.on('connection', (ws, req) => {
           currentFogStates = {}; // new scene clears old fog keys
           currentFeatures = Array.isArray(message.features) ? message.features : [];
           currentFeatureStates = {};
-          const sceneViewMsg = { type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain', mapKey: message.mapKey || null, features: currentFeatures, mapMeta: message.mapMeta || null };
+          const sceneViewMsg = { type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain', mapKey: message.mapKey || null, features: currentFeatures, mapMeta: message.mapMeta || null, label: message.label || '' };
           currentSceneView = sceneViewMsg;
           currentAudio = message.audio ? { url: message.audio, loop: message.audioLoop !== false } : null;
           broadcast(sceneViewMsg);
