@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v2.4 — Web Edition)
+# D&D VTT Control Console (v2.5 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
