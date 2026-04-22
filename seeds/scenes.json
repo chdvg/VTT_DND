@@ -29,7 +29,7 @@
         "id": "phandalin-orchard-1775350349884-view-0",
         "label": "Orchard approach",
         "image": "/assets/maps/orchard_entry.jpg",
-        "audio": "/assets/audio/Forest - mixkit-little-birds-singing-in-the-trees-17.wav",
+        "audio": "/assets/audio/Atmosphere - BirdChirping.wav",
         "fog": false
       },
       {
@@ -37,8 +37,7 @@
         "label": "Orchard",
         "image": "/assets/maps/orchard.jpg",
         "audio": null,
-        "fog": false,
-        "fit": "contain"
+        "fog": false
       },
       {
         "id": "phandalin-orchard-1775350349884-view-2",

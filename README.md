@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v2.6 — Web Edition)
+# D&D VTT Control Console (v2.7 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -122,6 +122,7 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
   - Supports both mouse drag and touch drag (with scroll suppression on mobile)
   - Drag sends a `move-player-token` WebSocket action; the server validates ownership before updating positions
   - Movement is reflected in real time on every connected screen — player views and the DM Map Control panel all update simultaneously
+  - **Movement can be locked by the DM** — see Token Overlay section below
 - **Overlay popups** — dice rolls, initiative order, sent text, and sent images appear as a timed gold-bordered floating panel *over* the map (map stays visible)
 - Auto-dismiss timers: Dice 8 s · Initiative 12 s · Text 15 s · Image 20 s
 - **Fullscreen button** — ⛶ in the corner; useful for projector displays to hide browser chrome
@@ -208,6 +209,13 @@ The Reference panel is a tabbed quick-reference hub for DMs, with live API looku
 - Tokens persist per map-key in state; drag tokens to reposition or click ✕ to remove
 - **Send Live** broadcasts the current map with all tokens overlaid to player screens
 - **Real-time player movement** — when a logged-in player drags their own token, the DM Map Control panel updates instantly alongside all player screens; no manual resend needed
+- **Player movement lock** — each player token row in the token list has a 🔒/🔓 button to lock or unlock that player's ability to drag their token:
+  - 🔒 = movement currently locked (player cannot drag their token)
+  - 🔓 = movement unlocked (player can drag freely)
+  - **🔒 Lock All** button in the Token Placement header locks every player at once; click again (shown as **🔒 All Locked**) to unlock all
+  - Lock state is enforced server-side — a locked player's `move-player-token` messages are silently dropped
+  - A 🟢 indicator next to a name means that player is currently logged in via the player screen
+  - Locks persist until the DM unlocks them or the server restarts
 
 ### Annotations & Drawing
 

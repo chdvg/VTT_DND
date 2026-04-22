@@ -40,6 +40,11 @@ var selectedPlayerName = null;
 var addPartyMode       = false; // place entire party on one click
 var activeTokenMapUrl  = null;
 
+// Player movement lock state (DM-side)
+var loggedInPlayersList = [];   // names of currently logged-in players
+var playerLockState     = {};   // { name: true/false }
+var allPlayersLockedDm  = false;
+
 // ── Mob icons & colours ───────────────────────────────────────
 var MOB_ICONS = {
   Bandit: '🗡️', Bugbear: '🐻', Cultist: '🕯️', Dragon: '🐉',
@@ -160,6 +165,14 @@ function restoreDmState(msg) {
     activeDrawMapKey = drawKey;
   }
 
+  // Restore lock state
+  loggedInPlayersList = Array.isArray(msg.loggedInPlayers) ? msg.loggedInPlayers : [];
+  allPlayersLockedDm  = !!msg.allPlayersLocked;
+  playerLockState     = {};
+  if (Array.isArray(msg.lockedPlayers)) {
+    msg.lockedPlayers.forEach(function (n) { playerLockState[n] = true; });
+  }
+
   // Show map control panel and set title
   var mapControlGrid  = document.getElementById('map-control-grid');
   var mapControlTitle = document.getElementById('map-control-title');
@@ -233,6 +246,18 @@ function connectWebSocket() {
     if (msg.type === 'BLACKOUT') {
       isBlackout = msg.active;
       blackoutBtn.classList.toggle('active', !!msg.active);
+    }
+    if (msg.type === 'LOGGED_IN_PLAYERS') {
+      loggedInPlayersList = Array.isArray(msg.players) ? msg.players : [];
+      if (activeTokenMapKey && activeTokenMapUrl) renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+    }
+    if (msg.type === 'MOVEMENT_LOCK') {
+      if (msg.name) playerLockState[msg.name] = msg.locked;
+      if (activeTokenMapKey && activeTokenMapUrl) renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+    }
+    if (msg.type === 'MOVEMENT_LOCK_ALL') {
+      allPlayersLockedDm = msg.locked;
+      if (activeTokenMapKey && activeTokenMapUrl) renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
     }
     if (msg.type === 'UPDATE_TOKENS') {
       var tkMapKey = msg.mapKey || activeTokenMapKey;
@@ -1577,6 +1602,20 @@ function renderTokenControls(mapUrl, mapKey) {
     if (mapImg.complete) { drawCanvas.width = mapWrap.offsetWidth; drawCanvas.height = mapWrap.offsetHeight; redrawAnnotations(); }
   };
   mapHeaderRow.appendChild(expandBtn);
+
+  var lockAllBtn = document.createElement('button');
+  lockAllBtn.textContent = allPlayersLockedDm ? '🔒 All Locked' : '🔓 Lock All';
+  lockAllBtn.title = allPlayersLockedDm ? 'Unlock all player movement' : 'Lock all player movement';
+  lockAllBtn.style.cssText = 'font-size:0.72rem;padding:0.18rem 0.5rem;border-radius:4px;cursor:pointer;white-space:nowrap;border:1px solid ' +
+    (allPlayersLockedDm ? '#f87171' : '#30363d') + ';background:' +
+    (allPlayersLockedDm ? 'rgba(248,113,113,0.2)' : '#0d1117') + ';color:' +
+    (allPlayersLockedDm ? '#f87171' : '#888') + ';';
+  lockAllBtn.onclick = function () {
+    allPlayersLockedDm = !allPlayersLockedDm;
+    wsSend({ action: allPlayersLockedDm ? 'lock-all' : 'unlock-all' });
+    renderTokenControls(mapUrl, mapKey);
+  };
+  mapHeaderRow.appendChild(lockAllBtn);
   mapTarget.appendChild(mapHeaderRow);
 
   var mapWrap = document.createElement('div');
@@ -1960,6 +1999,33 @@ function renderTokenControls(mapUrl, mapKey) {
         });
         row.appendChild(condWrap);
       }
+      // Lock toggle for player tokens
+      if (tok.type === 'player' && tok.label) {
+        var isLocked = allPlayersLockedDm || !!playerLockState[tok.label];
+        var lockBtn = document.createElement('button');
+        lockBtn.textContent = isLocked ? '�' : '🔓';
+        lockBtn.title = isLocked ? 'Unlock movement' : 'Lock movement';
+        lockBtn.style.cssText = 'font-size:0.75rem;padding:0.05rem 0.3rem;min-width:0;flex:none;border-radius:3px;cursor:pointer;' +
+          'border:1px solid ' + (isLocked ? '#f87171' : '#444') + ';' +
+          'background:' + (isLocked ? 'rgba(248,113,113,0.15)' : 'rgba(0,0,0,0.3)') + ';' +
+          'color:' + (isLocked ? '#f87171' : '#666') + ';' +
+          (allPlayersLockedDm ? 'opacity:0.5;cursor:default;' : '');
+        lockBtn.onclick = (function (name, locked) {
+          return function () {
+            if (allPlayersLockedDm) return;
+            if (locked) {
+              playerLockState[name] = false;
+              wsSend({ action: 'unlock-player', name: name });
+            } else {
+              playerLockState[name] = true;
+              wsSend({ action: 'lock-player', name: name });
+            }
+            renderTokenControls(mapUrl, mapKey);
+          };
+        }(tok.label, isLocked));
+        row.appendChild(lockBtn);
+      }
+
       var rmBtn = document.createElement('button');
       rmBtn.textContent = '✕';
       rmBtn.className = 'btn btn-danger btn-small';
@@ -1999,6 +2065,7 @@ function renderTokenControls(mapUrl, mapKey) {
     listDiv.appendChild(clearAllBtn);
     mapTarget.appendChild(listDiv);
   }
+
 }
 
 
