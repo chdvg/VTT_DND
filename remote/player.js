@@ -22,11 +22,13 @@ var currentFeatures    = [];   // feature defs for the current map
 var currentMapMeta     = null; // { cols, rows } from builder state
 var triggeredFeatures  = {};   // { featureId: true }
 
-// Dismiss the tap-overlay on first click/touch, then play any queued audio
+var myPlayerName = null;  // set after successful login
+var myPlayerCls  = null;
+
+// Unlock audio on any click (but don't auto-dismiss overlay)
 document.addEventListener('click', function () {
   if (!audioUnlocked) {
     audioUnlocked = true;
-    if (tapOverlay) tapOverlay.classList.add('hidden');
   }
   if (pendingAudio) {
     var p = pendingAudio;
@@ -34,6 +36,128 @@ document.addEventListener('click', function () {
     playAudio(p.url, p.loop);
   }
 });
+
+function dismissTapOverlay() {
+  if (tapOverlay) tapOverlay.classList.add('hidden');
+}
+
+// ── Tap overlay button handlers ───────────────────────────────
+(function () {
+  var guestBtn    = document.getElementById('tap-guest-btn');
+  var loginBtn    = document.getElementById('tap-login-btn');
+  var backBtn     = document.getElementById('login-back-btn');
+  var submitBtn   = document.getElementById('login-submit-btn');
+  var landing     = document.getElementById('tap-landing');
+  var loginForm   = document.getElementById('tap-login-form');
+  var errEl       = document.getElementById('login-error');
+  var partySelect = document.getElementById('login-party-select');
+  var logoffBtn   = document.getElementById('logoff-btn');
+
+  // Load party list from server into the dropdown
+  function loadParty() {
+    if (!partySelect) return;
+    fetch('/api/players')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var players = Array.isArray(data) ? data : (data.players || []);
+        partySelect.innerHTML = '<option value="">Choose your character...</option>';
+        players.forEach(function (p) {
+          var opt = document.createElement('option');
+          opt.value = JSON.stringify({ name: p.name, cls: p.cls });
+          opt.textContent = p.name + ' — ' + p.cls;
+          partySelect.appendChild(opt);
+        });
+      })
+      .catch(function () {
+        partySelect.innerHTML = '<option value="">Could not load party list</option>';
+      });
+  }
+
+  if (guestBtn) {
+    guestBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      dismissTapOverlay();
+    });
+  }
+
+  if (loginBtn) {
+    loginBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      loadParty();
+      if (landing)   landing.style.display   = 'none';
+      if (loginForm) loginForm.style.display = 'flex';
+      // Pre-select from sessionStorage if available
+      var savedName = sessionStorage.getItem('dnd_player_name');
+      if (savedName && partySelect) {
+        setTimeout(function () {
+          for (var i = 0; i < partySelect.options.length; i++) {
+            try {
+              var data = JSON.parse(partySelect.options[i].value);
+              if (data.name === savedName) { partySelect.selectedIndex = i; break; }
+            } catch (e) {}
+          }
+        }, 300); // give fetch time to populate
+      }
+    });
+  }
+
+  if (backBtn) {
+    backBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (loginForm) loginForm.style.display = 'none';
+      if (landing)   landing.style.display   = 'flex';
+      if (errEl) errEl.textContent = '';
+    });
+  }
+
+  function doLogin() {
+    if (!partySelect || !errEl) return;
+    var raw = partySelect.value;
+    if (!raw) { errEl.textContent = 'Choose your character.'; return; }
+    var player;
+    try { player = JSON.parse(raw); } catch (e) { errEl.textContent = 'Invalid selection.'; return; }
+    errEl.textContent = '';
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ action: 'player-login', name: player.name, cls: player.cls }));
+      if (submitBtn) { submitBtn.textContent = 'Entering...'; submitBtn.disabled = true; }
+    } else {
+      errEl.textContent = 'Not connected — try again in a moment.';
+    }
+  }
+
+  if (submitBtn) {
+    submitBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      doLogin();
+    });
+  }
+
+  if (partySelect) {
+    partySelect.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); doLogin(); }
+    });
+  }
+
+  // Logoff button
+  if (logoffBtn) {
+    logoffBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      myPlayerName = null;
+      myPlayerCls  = null;
+      sessionStorage.removeItem('dnd_player_name');
+      sessionStorage.removeItem('dnd_player_cls');
+      logoffBtn.style.display = 'none';
+      // Re-render tokens without drag handle
+      if (currentTokens.length) renderTokenOverlay(currentTokens);
+      // Show overlay again at landing
+      if (loginForm) loginForm.style.display = 'none';
+      if (landing)   landing.style.display   = 'flex';
+      if (tapOverlay) tapOverlay.classList.remove('hidden');
+      if (submitBtn) { submitBtn.textContent = 'Enter Session'; submitBtn.disabled = false; }
+      if (errEl) errEl.textContent = '';
+    });
+  }
+}());
 
 // ── Image display ────────────────────────────────────────────
 function showImage(imageUrl, fogKey, fit) {
@@ -309,6 +433,87 @@ function renderTokenOverlay(tokens) {
         fontSize + 'px;font-family:sans-serif;user-select:none;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,0.8);';
       dot.appendChild(lbl);
     }
+
+    // Make own player token draggable
+    if (myPlayerName && tok.type === 'player' && tok.label === myPlayerName) {
+      dot.style.pointerEvents = 'auto';
+      dot.style.cursor = 'grab';
+      dot.style.touchAction = 'none';
+      (function (tokenDot, capturedOffX, capturedOffY, capturedRendW, capturedRendH) {
+        function getTokenPos(clientX, clientY) {
+          var s = sceneEl.getBoundingClientRect();
+          // Recompute letterbox in case screen resized
+          var iEl = sceneEl.querySelector('img');
+          var oX = capturedOffX, oY = capturedOffY, rW = capturedRendW, rH = capturedRendH;
+          if (iEl && iEl.naturalWidth && iEl.naturalHeight) {
+            var cWn = sceneEl.offsetWidth, cHn = sceneEl.offsetHeight;
+            var fit = iEl.style.objectFit || 'contain';
+            var sc = fit === 'cover'
+              ? Math.max(cWn / iEl.naturalWidth, cHn / iEl.naturalHeight)
+              : Math.min(cWn / iEl.naturalWidth, cHn / iEl.naturalHeight);
+            rW = iEl.naturalWidth * sc; rH = iEl.naturalHeight * sc;
+            oX = (cWn - rW) / 2;       oY = (cHn - rH) / 2;
+          }
+          return {
+            x: Math.max(0, Math.min(1, (clientX - s.left - oX) / rW)),
+            y: Math.max(0, Math.min(1, (clientY - s.top  - oY) / rH)),
+            oX: oX, oY: oY, rW: rW, rH: rH
+          };
+        }
+
+        function sendMove(x, y) {
+          if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({ action: 'move-player-token', name: myPlayerName, x: x, y: y }));
+          }
+        }
+
+        tokenDot.addEventListener('mousedown', function (e) {
+          e.stopPropagation();
+          tokenDot.style.cursor = 'grabbing';
+          function onMove(e) {
+            var p = getTokenPos(e.clientX, e.clientY);
+            tokenDot.style.left = (p.oX + p.x * p.rW) + 'px';
+            tokenDot.style.top  = (p.oY + p.y * p.rH) + 'px';
+          }
+          function onUp(e) {
+            tokenDot.style.cursor = 'grab';
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            var p = getTokenPos(e.clientX, e.clientY);
+            sendMove(p.x, p.y);
+          }
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        });
+
+        tokenDot.addEventListener('touchstart', function (e) {
+          e.stopPropagation();
+          e.preventDefault();
+          // Unlock audio if not yet done (no click event fires with preventDefault)
+          if (!audioUnlocked) {
+            audioUnlocked = true;
+            if (pendingAudio) { var pa = pendingAudio; pendingAudio = null; playAudio(pa.url, pa.loop); }
+          }
+          if (!e.touches.length) return;
+          function onMove(e) {
+            if (!e.touches.length) return;
+            var p = getTokenPos(e.touches[0].clientX, e.touches[0].clientY);
+            tokenDot.style.left = (p.oX + p.x * p.rW) + 'px';
+            tokenDot.style.top  = (p.oY + p.y * p.rH) + 'px';
+          }
+          function onEnd(e) {
+            document.removeEventListener('touchmove', onMove);
+            document.removeEventListener('touchend', onEnd);
+            if (!e.changedTouches.length) return;
+            var p = getTokenPos(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+            sendMove(p.x, p.y);
+          }
+          document.addEventListener('touchmove', onMove, { passive: false });
+          document.addEventListener('touchend', onEnd);
+        }, { passive: false });
+      }(dot, offX, offY, rendW, rendH));
+    }
+
     overlay.appendChild(dot);
   });
 
@@ -762,6 +967,23 @@ function handleMessage(msg) {
     case 'update':
       if (msg.data) showText(msg.content || '', msg.data);
       break;
+    case 'PLAYER_LOGIN_OK':
+      myPlayerName = msg.player.name;
+      myPlayerCls  = msg.player.cls;
+      sessionStorage.setItem('dnd_player_name', myPlayerName);
+      sessionStorage.setItem('dnd_player_cls',  myPlayerCls);
+      dismissTapOverlay();
+      var logoffBtnEl = document.getElementById('logoff-btn');
+      if (logoffBtnEl) logoffBtnEl.style.display = 'block';
+      if (currentTokens.length) renderTokenOverlay(currentTokens);
+      break;
+    case 'PLAYER_LOGIN_ERR': {
+      var errEl2 = document.getElementById('login-error');
+      if (errEl2) errEl2.textContent = msg.error || 'Login failed.';
+      var subBtn = document.getElementById('login-submit-btn');
+      if (subBtn) { subBtn.textContent = 'Enter Session'; subBtn.disabled = false; }
+      break;
+    }
   }
 }
 
@@ -807,17 +1029,23 @@ function handleMessage(msg) {
 }());
 
 // ── WebSocket ─────────────────────────────────────────────────
+var ws = null;
 var _retryDelay = 1000;
 
 function connect() {
   var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  var ws = new WebSocket(protocol + '//' + location.host + '/ws');
+  ws = new WebSocket(protocol + '//' + location.host + '/ws');
 
   ws.onopen = function () {
     statusEl.textContent = 'connected';
     _retryDelay = 1000; // reset backoff on successful connect
     // Server automatically pushes full state on connection.
-    // request-sync is kept as a manual fallback only (e.g. explicit user action).
+    // Auto-restore login from sessionStorage (e.g. after page refresh)
+    var savedName = sessionStorage.getItem('dnd_player_name');
+    var savedCls  = sessionStorage.getItem('dnd_player_cls');
+    if (savedName && savedCls) {
+      ws.send(JSON.stringify({ action: 'player-login', name: savedName, cls: savedCls }));
+    }
   };
 
   ws.onmessage = function (e) {

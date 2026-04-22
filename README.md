@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v2.5 — Web Edition)
+# D&D VTT Control Console (v2.6 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -112,6 +112,16 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
 
 ### Player Screen
 - **Tap-to-begin overlay** — full-screen overlay on first load; dismissing it unlocks browser audio autoplay
+- **Player Login** — on the tap overlay, players choose between *▶ Tap to Begin* (guest / audio-unlock only) or *⚔ Login as Character*:
+  - Login shows a dropdown populated from the **Player Roster** (`seeds/players.json`) — the DM controls who appears in the list
+  - Selecting a name and clicking *Enter Session* binds that player to their roster character and closes the overlay
+  - Login is persisted in `sessionStorage` so a page refresh silently re-binds without prompting again
+  - **⚔ Log Off** button appears in the bottom-left corner after login; clicking it releases the binding and returns to the tap overlay
+- **Player-controlled token movement** — once logged in, a player can drag their own token on the map:
+  - Only the token whose label matches the logged-in player's name is interactive; all other tokens remain locked
+  - Supports both mouse drag and touch drag (with scroll suppression on mobile)
+  - Drag sends a `move-player-token` WebSocket action; the server validates ownership before updating positions
+  - Movement is reflected in real time on every connected screen — player views and the DM Map Control panel all update simultaneously
 - **Overlay popups** — dice rolls, initiative order, sent text, and sent images appear as a timed gold-bordered floating panel *over* the map (map stays visible)
 - Auto-dismiss timers: Dice 8 s · Initiative 12 s · Text 15 s · Image 20 s
 - **Fullscreen button** — ⛶ in the corner; useful for projector displays to hide browser chrome
@@ -197,6 +207,7 @@ The Reference panel is a tabbed quick-reference hub for DMs, with live API looku
 - **Add Party (one-click placement)** — when 🟢 Player color is active, click **🧑‍🤝‍🧑 Add Party** then click anywhere on the map to place all party members in a compact grid centered on that point with no overlapping; existing tokens are moved rather than duplicated
 - Tokens persist per map-key in state; drag tokens to reposition or click ✕ to remove
 - **Send Live** broadcasts the current map with all tokens overlaid to player screens
+- **Real-time player movement** — when a logged-in player drags their own token, the DM Map Control panel updates instantly alongside all player screens; no manual resend needed
 
 ### Annotations & Drawing
 
@@ -290,8 +301,8 @@ Click the **🔒 Lock** button in the top-right of the DM panel header. This cle
 │   ├── builder.js          # Map Builder logic (tile paint, fog, undo, save/send)
 │   └── styles.css          # Map Builder styles
 ├── remote/
-│   ├── player.html         # Player screen layout (tap overlay, popup overlay, blackout overlay)
-│   └── player.js           # Player screen logic (image, audio, fog, overlays, blackout)
+│   ├── player.html         # Player screen layout (tap overlay, login form, popup overlay, blackout overlay)
+│   └── player.js           # Player screen logic (login, image, audio, fog, token drag, overlays)
 ├── public/assets/
 │   ├── maps/               # Map images (.jpg, .png, .webp, .gif)
 │   └── audio/              # Audio files (.mp3, .ogg, .wav)

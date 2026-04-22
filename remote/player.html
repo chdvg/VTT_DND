@@ -75,13 +75,12 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      cursor: pointer;
       user-select: none;
     }
     #tap-overlay.hidden { display: none; }
     #tap-overlay .tap-icon {
       font-size: 4rem;
-      margin-bottom: 1.5rem;
+      margin-bottom: 1rem;
     }
     #tap-overlay .tap-text {
       font-family: 'Georgia', serif;
@@ -89,7 +88,107 @@
       color: #d4af37;
       letter-spacing: 0.2em;
       text-transform: uppercase;
+      margin-bottom: 2rem;
     }
+    /* Landing: two choice buttons */
+    .tap-choice-btns {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      width: 280px;
+    }
+    .tap-choice-btns button {
+      padding: 0.85rem 1rem;
+      background: transparent;
+      border: 2px solid #d4af37;
+      border-radius: 8px;
+      color: #d4af37;
+      font-family: 'Georgia', serif;
+      font-size: 1.15rem;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+    .tap-choice-btns button:hover,
+    .tap-choice-btns button:active { background: #d4af37; color: #0d1117; }
+    /* Login form panel */
+    .tap-login-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 300px;
+    }
+    .tap-login-panel .tap-sub {
+      font-family: 'Georgia', serif;
+      font-size: 1.1rem;
+      color: #888;
+      margin-bottom: 1.5rem;
+      letter-spacing: 0.1em;
+    }
+    .login-field {
+      width: 100%;
+      margin-bottom: 0.7rem;
+    }
+    .login-field input,
+    .login-field select {
+      width: 100%;
+      padding: 0.7rem 1rem;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid #d4af37;
+      border-radius: 6px;
+      color: #f0e6c8;
+      font-family: 'Georgia', serif;
+      font-size: 1.05rem;
+      outline: none;
+    }
+    .login-field select option { background: #1a1a2e; color: #f0e6c8; }
+    .login-field input::placeholder { color: #666; }
+    .login-submit-btn {
+      width: 100%;
+      padding: 0.75rem;
+      background: #d4af37;
+      border: none;
+      border-radius: 6px;
+      color: #0d1117;
+      font-family: 'Georgia', serif;
+      font-size: 1.1rem;
+      font-weight: bold;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      margin-top: 0.2rem;
+      transition: background 0.2s;
+    }
+    .login-submit-btn:hover { background: #e6c74c; }
+    .login-submit-btn:disabled { opacity: 0.5; cursor: default; }
+    .login-error { color: #ef4444; font-size: 0.88rem; min-height: 1.2em; text-align: center; margin-top: 0.4rem; }
+    .login-back-btn {
+      margin-top: 0.9rem;
+      background: transparent;
+      border: none;
+      color: #555;
+      font-family: 'Georgia', serif;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+    .login-back-btn:hover { color: #d4af37; }
+
+    #logoff-btn {
+      position: fixed;
+      bottom: 14px;
+      left: 14px;
+      z-index: 450;
+      background: rgba(10,10,20,0.75);
+      border: 1px solid #555;
+      border-radius: 6px;
+      color: #888;
+      font-family: 'Georgia', serif;
+      font-size: 0.85rem;
+      padding: 6px 12px;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    #logoff-btn:hover { border-color: #d4af37; color: #d4af37; }
 
     #status {
       position: absolute;
@@ -314,8 +413,32 @@
 </head>
 <body>
   <div id="tap-overlay">
-    <div class="tap-icon">🎲</div>
-    <div class="tap-text">tap to begin session</div>
+    <!-- Landing -->
+    <div id="tap-landing">
+      <div class="tap-icon">🎲</div>
+      <div class="tap-text">D&amp;D Session</div>
+      <div class="tap-choice-btns">
+        <button id="tap-guest-btn">▶ Tap to Begin</button>
+        <button id="tap-login-btn">⚔ Login as Character</button>
+      </div>
+    </div>
+    <!-- Login form (hidden initially) -->
+    <div id="tap-login-form" style="display:none;">
+      <div class="tap-login-panel">
+        <div class="tap-icon">⚔</div>
+        <div class="tap-text">Who are you?</div>
+        <div class="login-field">
+          <select id="login-party-select">
+            <option value="">Loading party...</option>
+          </select>
+        </div>
+        <div class="login-field">
+          <button class="login-submit-btn" id="login-submit-btn">Enter Session</button>
+        </div>
+        <div class="login-error" id="login-error"></div>
+        <button class="login-back-btn" id="login-back-btn">← Back</button>
+      </div>
+    </div>
   </div>
   <div id="scene"></div>
   <div id="popup-overlay"></div>
@@ -336,6 +459,7 @@
   </div>
   <div id="blackout-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:#000;"></div>
   <div id="unlock-bar" style="display:none"></div>
+  <button id="logoff-btn" title="Log off character" style="display:none;">⚔ Log Off</button>
   <div id="status">connecting...</div>
   <button id="fullscreen-btn" title="Toggle fullscreen">⛶</button>
 
