@@ -137,6 +137,9 @@ let currentDrawing    = [];
 let currentDrawingMapKey = null;
 let currentFeatures      = [];  // feature defs for the active map
 let currentFeatureStates = {};  // { featureId: 'triggered' }
+const lockedPlayers    = new Set();  // names of individually-locked players
+let allPlayersLocked   = false;      // DM has locked all player movement
+const loggedInPlayers  = new Map();  // playerName -> ws
 const clients = new Set();
 const dmClients = new Set();
 
@@ -230,7 +233,10 @@ wss.on('connection', (ws, req) => {
       drawingMapKey: currentDrawingMapKey,
       features: currentFeatures,
       featureStates: currentFeatureStates,
-      blackout: currentState.blackout
+      blackout: currentState.blackout,
+      loggedInPlayers: [...loggedInPlayers.keys()],
+      lockedPlayers: [...lockedPlayers],
+      allPlayersLocked: allPlayersLocked
     }));
   }
 
@@ -241,7 +247,8 @@ wss.on('connection', (ws, req) => {
       // All mutating/DM-only actions require an authenticated DM connection
       const DM_ACTIONS = ['blackout','show','show-scene-view','clear','clear-scene','play-audio',
         'stop-audio','send-overlay','update-fog','set-rings','update-tokens',
-        'update-drawing','dm-connect','trigger-feature','reset-feature','update-features'];
+        'update-drawing','dm-connect','trigger-feature','reset-feature','update-features',
+        'lock-player','unlock-player','lock-all','unlock-all'];
       if (DM_ACTIONS.includes(message.action) && !isDm) {
         // If a DM panel is reconnecting after a server restart the session
         // will be gone — tell it to reload so it goes through login again.
@@ -369,6 +376,28 @@ wss.on('connection', (ws, req) => {
             }
           }
           break;
+        case 'lock-player': {
+          const lpName = String(message.name || '').trim().slice(0, 64);
+          if (!lpName) break;
+          lockedPlayers.add(lpName);
+          broadcast({ type: 'MOVEMENT_LOCK', name: lpName, locked: true });
+          break;
+        }
+        case 'unlock-player': {
+          const ulpName = String(message.name || '').trim().slice(0, 64);
+          if (!ulpName) break;
+          lockedPlayers.delete(ulpName);
+          broadcast({ type: 'MOVEMENT_LOCK', name: ulpName, locked: false });
+          break;
+        }
+        case 'lock-all':
+          allPlayersLocked = true;
+          broadcast({ type: 'MOVEMENT_LOCK_ALL', locked: true });
+          break;
+        case 'unlock-all':
+          allPlayersLocked = false;
+          broadcast({ type: 'MOVEMENT_LOCK_ALL', locked: false });
+          break;
         case 'player-login': {
           const loginName = String(message.name || '').trim().slice(0, 64);
           const loginCls  = String(message.cls  || '').trim().slice(0, 32);
@@ -383,7 +412,15 @@ wss.on('connection', (ws, req) => {
               fs.writeFileSync(playersPath, JSON.stringify(players, null, 2));
             }
             ws.playerName = player.name;
+            loggedInPlayers.set(player.name, ws);
             ws.send(JSON.stringify({ type: 'PLAYER_LOGIN_OK', player }));
+            // Tell player about any existing lock state
+            if (allPlayersLocked || lockedPlayers.has(player.name)) {
+              ws.send(JSON.stringify({ type: 'MOVEMENT_LOCK', name: player.name, locked: true }));
+            }
+            // Notify DM of updated logged-in list
+            const loggedInMsg = JSON.stringify({ type: 'LOGGED_IN_PLAYERS', players: [...loggedInPlayers.keys()] });
+            for (const dm of dmClients) { if (dm.readyState === WebSocket.OPEN) dm.send(loggedInMsg); }
             console.log('Player logged in:', player.name);
           } catch (e) {
             console.error('player-login error:', e);
@@ -393,6 +430,7 @@ wss.on('connection', (ws, req) => {
         }
         case 'move-player-token': {
           if (!ws.playerName) break;
+          if (allPlayersLocked || lockedPlayers.has(ws.playerName)) break;
           const tokIdx = currentTokens.findIndex(
             t => t.label === ws.playerName && t.type === 'player'
           );
@@ -415,6 +453,11 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     clients.delete(ws); dmClients.delete(ws);
+    if (ws.playerName) {
+      loggedInPlayers.delete(ws.playerName);
+      const loggedInMsg = JSON.stringify({ type: 'LOGGED_IN_PLAYERS', players: [...loggedInPlayers.keys()] });
+      for (const dm of dmClients) { if (dm.readyState === WebSocket.OPEN) dm.send(loggedInMsg); }
+    }
     console.log('Client disconnected. Total: ' + clients.size);
     broadcastClientCount();
   });

@@ -24,6 +24,7 @@ var triggeredFeatures  = {};   // { featureId: true }
 
 var myPlayerName = null;  // set after successful login
 var myPlayerCls  = null;
+var myMovementLocked = false;  // set by DM lock controls
 
 // Unlock audio on any click (but don't auto-dismiss overlay)
 document.addEventListener('click', function () {
@@ -434,8 +435,8 @@ function renderTokenOverlay(tokens) {
       dot.appendChild(lbl);
     }
 
-    // Make own player token draggable
-    if (myPlayerName && tok.type === 'player' && tok.label === myPlayerName) {
+    // Make own player token draggable (if movement is not locked)
+    if (myPlayerName && tok.type === 'player' && tok.label === myPlayerName && !myMovementLocked) {
       dot.style.pointerEvents = 'auto';
       dot.style.cursor = 'grab';
       dot.style.touchAction = 'none';
@@ -966,6 +967,16 @@ function handleMessage(msg) {
       break;
     case 'update':
       if (msg.data) showText(msg.content || '', msg.data);
+      break;
+    case 'MOVEMENT_LOCK':
+      if (msg.name === myPlayerName) {
+        myMovementLocked = msg.locked;
+        if (currentTokens.length) renderTokenOverlay(currentTokens);
+      }
+      break;
+    case 'MOVEMENT_LOCK_ALL':
+      myMovementLocked = msg.locked;
+      if (currentTokens.length) renderTokenOverlay(currentTokens);
       break;
     case 'PLAYER_LOGIN_OK':
       myPlayerName = msg.player.name;
