@@ -369,6 +369,46 @@ wss.on('connection', (ws, req) => {
             }
           }
           break;
+        case 'player-login': {
+          const loginName = String(message.name || '').trim().slice(0, 64);
+          const loginCls  = String(message.cls  || '').trim().slice(0, 32);
+          if (!loginName || !loginCls) break;
+          try {
+            const playersPath = path.join(__dirname, 'seeds', 'players.json');
+            let players = JSON.parse(fs.readFileSync(playersPath, 'utf8'));
+            let player = players.find(p => p.name.toLowerCase() === loginName.toLowerCase());
+            if (!player) {
+              player = { name: loginName, cls: loginCls };
+              players.push(player);
+              fs.writeFileSync(playersPath, JSON.stringify(players, null, 2));
+            }
+            ws.playerName = player.name;
+            ws.send(JSON.stringify({ type: 'PLAYER_LOGIN_OK', player }));
+            console.log('Player logged in:', player.name);
+          } catch (e) {
+            console.error('player-login error:', e);
+            ws.send(JSON.stringify({ type: 'PLAYER_LOGIN_ERR', error: 'Server error during login.' }));
+          }
+          break;
+        }
+        case 'move-player-token': {
+          if (!ws.playerName) break;
+          const tokIdx = currentTokens.findIndex(
+            t => t.label === ws.playerName && t.type === 'player'
+          );
+          if (tokIdx === -1) break;
+          const nx = Number(message.x);
+          const ny = Number(message.y);
+          if (isNaN(nx) || isNaN(ny) || nx < 0 || nx > 1 || ny < 0 || ny > 1) break;
+          currentTokens[tokIdx] = Object.assign({}, currentTokens[tokIdx], { x: nx, y: ny });
+          broadcast({
+            type: 'UPDATE_TOKENS',
+            tokens: currentTokens,
+            mapKey: currentTokensMapKey,
+            showRings: currentTokensShowRings
+          });
+          break;
+        }
       }
     } catch (err) { console.error('Bad message:', err); }
   });
@@ -488,7 +528,7 @@ const PLAYERS_FILE = path.join(__dirname, 'seeds', 'players.json');
 function loadPlayers() {
   try { return JSON.parse(fs.readFileSync(PLAYERS_FILE, 'utf8')); } catch { return []; }
 }
-app.get('/api/players', requireDm, (req, res) => {
+app.get('/api/players', (req, res) => {
   res.json({ players: loadPlayers() });
 });
 app.post('/api/players', requireDm, express.json({ limit: '64kb' }), (req, res) => {

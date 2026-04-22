@@ -234,6 +234,16 @@ function connectWebSocket() {
       isBlackout = msg.active;
       blackoutBtn.classList.toggle('active', !!msg.active);
     }
+    if (msg.type === 'UPDATE_TOKENS') {
+      var tkMapKey = msg.mapKey || activeTokenMapKey;
+      if (tkMapKey && Array.isArray(msg.tokens)) {
+        tokenState[tkMapKey] = msg.tokens;
+        // Only re-render if this update is for the currently visible map
+        if (tkMapKey === activeTokenMapKey && activeTokenMapUrl) {
+          renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+        }
+      }
+    }
   };
   ws.onclose = function () {
     statusDot.classList.remove('on');
