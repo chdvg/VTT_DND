@@ -78,6 +78,16 @@ header input[type="number"] {
 }
 .tile-swatch:hover .tile-label { display: block; }
 
+/* ── Kenney PNG swatches ────────────────────────────────────── */
+.kenney-swatch { background: #1a1a2e; }
+.kenney-swatch-img {
+  width: 100%; height: 100%;
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  object-fit: contain;
+}
+
 /* ── Form inputs inside sidebar ─────────────────────────────── */
 .sidebar input[type="text"], .sidebar select {
   width: 100%; padding: 0.35rem 0.5rem; background: #0d1117;
@@ -88,13 +98,28 @@ header input[type="number"] {
 
 /* ── BG image list ──────────────────────────────────────────── */
 #bg-image-list {
-  max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
+  max-height: 200px; overflow-y: auto;
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px;
+  padding: 2px;
 }
 .bg-item {
-  font-size: 0.75rem; color: #aaa; padding: 0.25rem 0.4rem;
-  border-radius: 3px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  border-radius: 4px; cursor: pointer; overflow: hidden;
+  border: 2px solid transparent;
+  background: #0d1117;
+  transition: border-color 0.15s;
+  display: flex; flex-direction: column;
 }
-.bg-item:hover { background: #21262d; color: #d4af37; }
+.bg-item:hover   { border-color: #d4af37; }
+.bg-item.selected{ border-color: #fff; }
+.bg-item-thumb {
+  width: 100%; aspect-ratio: 4/3; object-fit: cover;
+  display: block; background: #1a1a1a;
+}
+.bg-item-name {
+  font-size: 0.65rem; color: #aaa; text-align: center;
+  padding: 2px 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: #161b22;
+}
 
 /* ── Canvas area ────────────────────────────────────────────── */
 .canvas-area {
