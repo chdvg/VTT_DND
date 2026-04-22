@@ -70,6 +70,8 @@ const TILE_GROUPS = [
 // ── Procedural tile textures ──────────────────────────────────
 const _texCache  = {};
 const _patByCtx  = new WeakMap();
+// ── Kenney PNG tile image cache ───────────────────────────────
+const _kenneyImgCache = {};
 
 function _rng(seed) {
   let s = (seed | 0) + 1;
@@ -1694,6 +1696,17 @@ function renderTiles() {
 const STAMP_TILES = new Set(['tree','tree-large','tree-pine','tree-palm','mountain','hill','aura','aura-large','aura-blue','fire','fire-blue','cabin','cabin-ruin','tent','horse','cow','well','wall-ruin','door','mtn-scree','mtn-alpine','mtn-earthy','mtn-tundra','mtn-slate','road-h','road-v','road-cross','road-turn-ne','road-turn-nw','road-turn-se','road-turn-sw','road-t-n','road-t-s','road-t-e','road-t-w']);
 
 function drawTile(ctx, tile, x, y, size) {
+  if (tile.url) {
+    // Kenney PNG tile — draw from preloaded image cache
+    const img = _kenneyImgCache[tile.id];
+    if (img && img.complete && img.naturalWidth) {
+      const prevSmoothing = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, x, y, size, size);
+      ctx.imageSmoothingEnabled = prevSmoothing;
+    }
+    return;
+  }
   if (STAMP_TILES.has(tile.id)) {
     // Scale the texture canvas directly into this cell — one image per cell
     if (!_texCache[tile.id]) _texCache[tile.id] = buildTextureCanvas(tile.id);
@@ -2011,16 +2024,31 @@ function setBgImage(url) {
   bgImageEl.src = url;
 }
 
-// Load map list into sidebar
+// Load map list into sidebar as thumbnails
 fetch('/api/maps').then(r => r.json()).then(data => {
   const list = document.getElementById('bg-image-list');
-  (data.maps || []).forEach(url => {
+  const maps = data.maps || [];
+  if (!maps.length) {
+    list.innerHTML = '<div style="font-size:0.75rem;color:#555;font-style:italic;padding:0.25rem;">No maps found.</div>';
+    return;
+  }
+  maps.forEach(url => {
     const el = document.createElement('div');
     el.className = 'bg-item';
-    el.textContent = url.split('/').pop();
     el.title = url;
+    const thumb = document.createElement('img');
+    thumb.className = 'bg-item-thumb';
+    thumb.src = url;
+    thumb.alt = url.split('/').pop();
+    const name = document.createElement('div');
+    name.className = 'bg-item-name';
+    name.textContent = url.split('/').pop().replace(/\.[^.]+$/, '');
+    el.appendChild(thumb);
+    el.appendChild(name);
     el.addEventListener('click', () => {
       document.getElementById('bg-image-url').value = url;
+      document.querySelectorAll('.bg-item').forEach(i => i.classList.remove('selected'));
+      el.classList.add('selected');
       setBgImage(url);
     });
     list.appendChild(el);
@@ -2225,6 +2253,55 @@ TILE_GROUPS.forEach(group => {
     tileGrid.appendChild(sw);
   });
 });
+
+// ── Kenney PNG tile palette (async load) ──────────────────────
+fetch('/api/tiles').then(r => r.json()).then(data => {
+  const files = data.tiles || [];
+  if (!files.length) return;
+
+  // Build tile objects and preload images
+  const kenTiles = files.map(filename => {
+    const id  = 'kenney:' + filename.replace('.png', '');
+    const url = '/assets/tiles/' + filename;
+    const num = filename.replace('tile_', '').replace('.png', '');
+    const tile = { id, label: 'K-' + num, url };
+    TILES.push(tile);
+    const img = new Image();
+    img.src = url;
+    // Re-render tiles layer when each image finishes loading
+    img.onload = () => renderTiles();
+    _kenneyImgCache[id] = img;
+    return tile;
+  });
+
+  // Palette section header
+  const hdr = document.createElement('div');
+  hdr.className = 'tile-group-header';
+  hdr.textContent = 'Kenney Dungeon';
+  tileGrid.appendChild(hdr);
+
+  // Swatches — use actual PNG as background
+  kenTiles.forEach(tile => {
+    const sw = document.createElement('div');
+    sw.className = 'tile-swatch kenney-swatch';
+    sw.title = tile.label;
+    const img = document.createElement('img');
+    img.src = tile.url;
+    img.alt = tile.label;
+    img.className = 'kenney-swatch-img';
+    sw.appendChild(img);
+    const lbl = document.createElement('div');
+    lbl.className = 'tile-label';
+    lbl.textContent = tile.label;
+    sw.appendChild(lbl);
+    sw.addEventListener('click', () => {
+      activeTile = tile;
+      document.querySelectorAll('.tile-swatch').forEach(s => s.classList.remove('selected'));
+      sw.classList.add('selected');
+    });
+    tileGrid.appendChild(sw);
+  });
+}).catch(() => {});
 
 // ── Grid size controls ────────────────────────────────────────
 document.getElementById('apply-grid-btn').addEventListener('click', () => {

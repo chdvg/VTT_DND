@@ -437,6 +437,15 @@ app.get('/api/maps', (req, res) => {
   res.json({ maps });
 });
 
+app.get('/api/tiles', (req, res) => {
+  const tilesDir = path.join(__dirname, 'public/assets/tiles');
+  if (!fs.existsSync(tilesDir)) return res.json({ tiles: [] });
+  const files = fs.readdirSync(tilesDir)
+    .filter(f => f.toLowerCase().endsWith('.png'))
+    .sort();
+  res.json({ tiles: files });
+});
+
 app.get('/api/audio', (req, res) => {
   const files = listFiles('public/assets/audio', ['.mp3', '.ogg', '.wav']);
   // Parse "Category - Title.ext" or fall back to "Other"

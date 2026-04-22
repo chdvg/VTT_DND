@@ -44,7 +44,7 @@ A full tile-based map editor accessible at `/map-builder` from the DM machine (l
 - **Player tab** — pick a player from your saved roster; their class icon and color are applied automatically
 - **NPC tab** — choose from 25 standard mob types (each with a unique icon and color) or enter a custom label; tokens auto-number (e.g. Goblin 1, Goblin 2…)
 
-**Tile palette — 49 procedural tile types across 10 groups:**
+**Tile palette — 49 procedural tile types across 10 groups, plus 132 Kenney pixel-art tiles:**
 
 | Group | Tiles |
 |-------|-------|
@@ -58,8 +58,11 @@ A full tile-based map editor accessible at `/map-builder` from the DM machine (l
 | **Mountains** | Mountain, Scree, Alpine, Earthy, Tundra, Slate |
 | **Animals** | Horse, Cow |
 | **Effects** | Aura (orange/red/blue), Fire (orange/blue) |
+| **Kenney Dungeon** | 132 pixel-art tiles (K-0000 – K-0131) from the [Kenney Tiny Dungeon](https://kenney.nl/assets/tiny-dungeon) pack |
 
-Each tile renders with a unique procedural texture generated on a canvas — no external texture files needed.
+Procedural tiles render from canvas code — no external files. Kenney tiles are served from `public/assets/tiles/` and render with crisp pixel-art scaling (`image-rendering: pixelated`). Both tile types save and restore normally via the `.map.json` format.
+
+> Kenney Tiny Dungeon tileset is released under **CC0 1.0 Universal** (public domain). No attribution required. See [kenney.nl](https://kenney.nl) for more free game assets.
 
 **Grid:** Configurable columns × rows (4–60 × 4–40) and cell size (16–96 px). Changes apply without losing painted tiles.
 
