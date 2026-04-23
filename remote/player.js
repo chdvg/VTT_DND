@@ -147,7 +147,8 @@ function dismissTapOverlay() {
       myPlayerCls  = null;
       sessionStorage.removeItem('dnd_player_name');
       sessionStorage.removeItem('dnd_player_cls');
-      logoffBtn.style.display = 'none';
+      var playerHud = document.getElementById('player-hud');
+      if (playerHud) playerHud.style.display = 'none';
       // Re-render tokens without drag handle
       if (currentTokens.length) renderTokenOverlay(currentTokens);
       // Show overlay again at landing
@@ -984,8 +985,8 @@ function handleMessage(msg) {
       sessionStorage.setItem('dnd_player_name', myPlayerName);
       sessionStorage.setItem('dnd_player_cls',  myPlayerCls);
       dismissTapOverlay();
-      var logoffBtnEl = document.getElementById('logoff-btn');
-      if (logoffBtnEl) logoffBtnEl.style.display = 'block';
+      var hudEl = document.getElementById('player-hud');
+      if (hudEl) hudEl.style.display = 'flex';
       if (currentTokens.length) renderTokenOverlay(currentTokens);
       break;
     case 'PLAYER_LOGIN_ERR': {
@@ -1073,3 +1074,35 @@ function connect() {
 }
 
 connect();
+
+// ── Player Dice Bar ───────────────────────────────────────────
+(function () {
+  var resultEl = document.getElementById('player-dice-result');
+  var resultTimer = null;
+  document.querySelectorAll('.pdice-btn').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (!myPlayerName) return;
+      var die    = parseInt(btn.getAttribute('data-die'));
+      var result = Math.floor(Math.random() * die) + 1;
+
+      // Show 3D dice animation on screen (same as DM broadcast)
+      showDiceRoll(die, result);
+
+      // Show compact result in the HUD bar too
+      if (resultEl) {
+        if (resultTimer) clearTimeout(resultTimer);
+        var isCrit = (die === 20 && result === 20);
+        var isFail = (die === 20 && result === 1);
+        resultEl.textContent = 'd' + die + ': ' + result + (isCrit ? ' \uD83C\uDF1F' : isFail ? ' \uD83D\uDC80' : '');
+        resultEl.style.color = isCrit ? '#4ade80' : isFail ? '#f87171' : '#d4af37';
+        resultTimer = setTimeout(function () { resultEl.textContent = ''; }, 6000);
+      }
+
+      // Send to DM via WebSocket
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ action: 'player-dice-roll', die: die, result: result }));
+      }
+    });
+  });
+}());

@@ -37,7 +37,8 @@
         "label": "Orchard",
         "image": "/assets/maps/orchard.jpg",
         "audio": null,
-        "fog": false
+        "fog": false,
+        "fit": "cover"
       },
       {
         "id": "phandalin-orchard-1775350349884-view-2",

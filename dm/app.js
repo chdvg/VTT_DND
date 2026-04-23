@@ -31,19 +31,26 @@ var lastSceneWasSentImage = false; // true when Send Image (not a real map) was 
 // Token overlay state
 var tokenState         = {};     // mapKey -> array of {id,x,y,color,label,mobType?}
 var activeTokenMapKey  = null;
-var selectedTokenColor  = 'red';
+var selectedTokenColor  = null; // null = placement off
 var autoAddToInit       = true;  // toggle: auto-add tokens to initiative
 var showPlayerRings     = true;  // toggle: show condition rings on player screen
 var fogDeferredInit     = {};    // mapKey -> [{label, roll}] waiting for fog reveal
 var selectedMobType     = '';    // current mob type name for token labels
 var selectedPlayerName = null;
 var addPartyMode       = false; // place entire party on one click
+var movePartyMode      = false; // move entire party as one unit
+var selectedTokenIds   = new Set(); // token ids selected for group move
 var activeTokenMapUrl  = null;
 
 // Player movement lock state (DM-side)
 var loggedInPlayersList = [];   // names of currently logged-in players
 var playerLockState     = {};   // { name: true/false }
 var allPlayersLockedDm  = false;
+
+// Map feature overlay state (DM-side)
+var dmMapFeatures   = [];   // feature definitions for current map
+var dmMapMeta       = null; // { cols, rows } for current map
+var dmTriggeredFeat = {};   // { featureId: true } — which features are triggered
 
 // ── Mob icons & colours ───────────────────────────────────────
 var MOB_ICONS = {
@@ -96,6 +103,27 @@ var sbCategories    = [];   // cached from /api/audio
 // ── DOM refs ─────────────────────────────────────────────────
 var statusDot    = document.getElementById('status-dot');
 var clientCount  = document.getElementById('client-count');
+var clientCountTooltip = document.getElementById('client-count-tooltip');
+var clientCountWrap    = document.getElementById('client-count-wrap');
+var connectedList = [];
+
+if (clientCountWrap) {
+  clientCountWrap.addEventListener('mouseenter', function () {
+    if (!clientCountTooltip) return;
+    if (!connectedList.length) {
+      clientCountTooltip.textContent = 'No players connected';
+    } else {
+      clientCountTooltip.innerHTML = connectedList.map(function (c) {
+        var icon = c.type === 'player' ? '⚔️' : '👤';
+        return '<div>' + icon + ' ' + c.name + '</div>';
+      }).join('');
+    }
+    clientCountTooltip.style.display = 'block';
+  });
+  clientCountWrap.addEventListener('mouseleave', function () {
+    if (clientCountTooltip) clientCountTooltip.style.display = 'none';
+  });
+}
 var blackoutBtn  = document.getElementById('blackout-btn');
 var clearBtn     = document.getElementById('clear-btn');
 var resendMapBtn = document.getElementById('resend-map-btn');
@@ -117,6 +145,7 @@ function restoreDmState(msg) {
   if (typeof msg.playerCount === 'number') {
     clientCount.textContent = msg.playerCount + ' connected';
   }
+  if (Array.isArray(msg.connectedList)) connectedList = msg.connectedList;
 
   // Blackout
   if (msg.blackout) {
@@ -176,7 +205,15 @@ function restoreDmState(msg) {
   // Show map control panel and set title
   var mapControlGrid  = document.getElementById('map-control-grid');
   var mapControlTitle = document.getElementById('map-control-title');
-  if (mapControlGrid)  mapControlGrid.style.display = 'grid';
+  if (mapControlGrid) {
+    mapControlGrid.style.display = 'grid';
+    var hasFog = !!fogKey;
+    mapControlGrid.style.gridTemplateColumns = hasFog ? '2fr 1px 3fr' : '1fr';
+    var mcgDivider2    = document.getElementById('map-control-divider');
+    var fogControlsEl2 = document.getElementById('fog-controls-container');
+    if (mcgDivider2)    mcgDivider2.style.display    = hasFog ? '' : 'none';
+    if (fogControlsEl2) fogControlsEl2.style.display = hasFog ? '' : 'none';
+  }
   if (mapControlTitle) mapControlTitle.textContent = sv.label || (sv.image || '').split('/').pop().replace(/\.[^.]+$/, '') || 'Active Map';
 
   // Fog controls
@@ -242,6 +279,7 @@ function connectWebSocket() {
     }
     if (msg.type === 'clients') {
       clientCount.textContent = msg.count + ' connected';
+      if (Array.isArray(msg.connectedList)) connectedList = msg.connectedList;
     }
     if (msg.type === 'BLACKOUT') {
       isBlackout = msg.active;
@@ -268,6 +306,29 @@ function connectWebSocket() {
           renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
         }
       }
+    }
+    if (msg.type === 'PLAYER_DICE_ROLL') {
+      var logWrap = document.getElementById('player-dice-log-wrap');
+      var logDiv  = document.getElementById('player-dice-log');
+      if (logDiv) {
+        if (logWrap) logWrap.style.display = 'block';
+        var isCrit = (msg.die === 20 && msg.result === 20);
+        var isFail = (msg.die === 20 && msg.result === 1);
+        var entry = document.createElement('div');
+        entry.style.cssText = 'font-size:0.78rem;padding:0.2rem 0.4rem;border-radius:3px;margin-bottom:2px;' +
+          'background:' + (isCrit ? 'rgba(74,222,128,0.15)' : isFail ? 'rgba(248,113,113,0.15)' : 'rgba(255,255,255,0.04)') + ';' +
+          'color:' + (isCrit ? '#4ade80' : isFail ? '#f87171' : '#c9d1d9') + ';' +
+          'border-left:3px solid ' + (isCrit ? '#4ade80' : isFail ? '#f87171' : '#374151') + ';';
+        entry.textContent = msg.name + ' rolled d' + msg.die + ': ' + msg.result +
+          (isCrit ? ' \uD83C\uDF1F CRIT!' : isFail ? ' \uD83D\uDC80 FAIL' : '');
+        logDiv.appendChild(entry);
+        logDiv.scrollTop = logDiv.scrollHeight;
+        setTimeout(function () {
+          if (entry.parentNode) entry.parentNode.removeChild(entry);
+          if (logDiv.children.length === 0 && logWrap) logWrap.style.display = 'none';
+        }, 20000);
+      }
+      return;
     }
   };
   ws.onclose = function () {
@@ -324,6 +385,9 @@ document.getElementById('reset-map-btn').addEventListener('click', function () {
   fogMapUrl = null;
   drawStrokes = {};        // clear all annotation strokes
   tokenState = {};         // clear all token positions
+  dmMapFeatures   = [];    // clear feature overlay state
+  dmMapMeta       = null;
+  dmTriggeredFeat = {};
   // Collapse the map control panel
   var mapControlGrid  = document.getElementById('map-control-grid');
   var mapControlTitle = document.getElementById('map-control-title');
@@ -805,7 +869,14 @@ function showSceneView(sceneIdx, viewIdx) {
   // Show the Map Control panel and label it with the view name
   var mapControlGrid  = document.getElementById('map-control-grid');
   var mapControlTitle = document.getElementById('map-control-title');
-  if (mapControlGrid)  { mapControlGrid.style.display = 'grid'; }
+  if (mapControlGrid) {
+    mapControlGrid.style.display = 'grid';
+    mapControlGrid.style.gridTemplateColumns = useFog ? '2fr 1px 3fr' : '1fr';
+    var mcgDivider    = document.getElementById('map-control-divider');
+    var fogControlsEl = document.getElementById('fog-controls-container');
+    if (mcgDivider)    mcgDivider.style.display    = useFog ? '' : 'none';
+    if (fogControlsEl) fogControlsEl.style.display = useFog ? '' : 'none';
+  }
   if (mapControlTitle) { mapControlTitle.textContent = view.label || 'Active Map'; }
 
   // Feature controls — async fetch map state to get saved features
@@ -818,11 +889,16 @@ function showSceneView(sceneIdx, viewIdx) {
       .then(function (state) {
         var mapFeatures = (state && Array.isArray(state.features)) ? state.features : [];
         var mapMeta = state ? { cols: state.cols, rows: state.rows } : null;
+        // Store on DM side so feature overlay can show cell positions
+        dmMapFeatures   = mapFeatures;
+        dmMapMeta       = mapMeta;
+        dmTriggeredFeat = {};
         // Push feature definitions to server so reconnecting players receive them
         if (mapFeatures.length > 0) {
           wsSend({ action: 'update-features', features: mapFeatures, mapKey: fogKey, mapMeta: mapMeta });
         }
         renderFeatureControls(fogKey, mapFeatures, mapMeta);
+        updateDmFeatureOverlay();
       })
       .catch(function () { /* no state file — map may not be from builder */ });
   }
@@ -1162,12 +1238,14 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
     trigBtn.style.cssText += 'flex:1;font-size:0.78rem;white-space:nowrap;';
     trigBtn.onclick = function () {
       triggeredSet[feat.id] = true;
+      dmTriggeredFeat[feat.id] = true;
       wsSend({ action: 'trigger-feature', featureId: feat.id, mapKey: mapKey, feature: feat });
       trigBtn.disabled = true;
       trigBtn.textContent = '✓ Triggered';
       trigBtn.style.opacity = '0.55';
       resetBtn.disabled = false;
       resetBtn.style.opacity = '1';
+      updateDmFeatureOverlay();
     };
     btnRow.appendChild(trigBtn);
 
@@ -1178,12 +1256,14 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
     resetBtn.style.cssText += 'flex:none;font-size:0.78rem;opacity:0.4;';
     resetBtn.onclick = function () {
       delete triggeredSet[feat.id];
+      delete dmTriggeredFeat[feat.id];
       wsSend({ action: 'reset-feature', featureId: feat.id, mapKey: mapKey });
       trigBtn.disabled = false;
       trigBtn.textContent = '⚡ Trigger';
       trigBtn.style.opacity = '1';
       resetBtn.disabled = true;
       resetBtn.style.opacity = '0.4';
+      updateDmFeatureOverlay();
     };
     btnRow.appendChild(resetBtn);
     card.appendChild(btnRow);
@@ -1346,13 +1426,66 @@ function renderFogControls(mapUrl, fogKey) {
     }
   }
   mapWrap.appendChild(grid);
+
+  // Token overlay on fog map — display only, pointer-events:none so fog painting still works
+  var fogTokenOverlay = document.createElement('div');
+  fogTokenOverlay.id = 'fog-token-overlay';
+  fogTokenOverlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:5;';
+  mapWrap.appendChild(fogTokenOverlay);
+
+  // Feature cell overlay on fog map — shows outlines for all features, filled when triggered
+  var fogFeatOverlay = document.createElement('div');
+  fogFeatOverlay.className = 'dm-feat-overlay';
+  fogFeatOverlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:4;';
+  mapWrap.appendChild(fogFeatOverlay);
+
   container.appendChild(mapWrap);
+  updateFogTokenOverlay();
+  updateDmFeatureOverlay();
 }
 
 function sendFogUpdate(fogKey) {
   if (ws && ws.readyState === 1 && fogMapUrl) {
     wsSend({ action: 'update-fog', mapUrl: fogMapUrl, fogGrid: fogGrid, fogKey: fogKey });
   }
+}
+
+// Refresh the read-only token dots shown on the fog map preview.
+// Called whenever tokens change while a fog map is active.
+function updateFogTokenOverlay() {
+  var overlay = document.getElementById('fog-token-overlay');
+  if (!overlay) return;
+  overlay.innerHTML = '';
+  var mapKey = activeFogKey || activeTokenMapKey;
+  if (!mapKey) return;
+  var tokens = tokenState[mapKey] || [];
+  tokens.forEach(function (tok) {
+    var dot = document.createElement('div');
+    dot.style.cssText = 'position:absolute;width:16px;height:16px;border-radius:50%;' +
+      'background:' + tokenBgColor(tok) + ';' +
+      'border:1.5px solid rgba(255,255,255,0.75);' +
+      'display:flex;align-items:center;justify-content:center;flex-direction:column;overflow:hidden;' +
+      'left:' + (tok.x * 100) + '%;top:' + (tok.y * 100) + '%;transform:translate(-50%,-50%);' +
+      'pointer-events:none;';
+    dot.title = tok.label || '';
+    if (tok.type === 'player' && tok.cls && MOB_ICONS_CLASS[tok.cls]) {
+      var ic = document.createElement('span');
+      ic.textContent = MOB_ICONS_CLASS[tok.cls];
+      ic.style.cssText = 'font-size:9px;line-height:1;pointer-events:none;';
+      dot.appendChild(ic);
+    } else if (tok.mobType && MOB_ICONS[tok.mobType]) {
+      var ic = document.createElement('span');
+      ic.textContent = MOB_ICONS[tok.mobType];
+      ic.style.cssText = 'font-size:9px;line-height:1;pointer-events:none;';
+      dot.appendChild(ic);
+    } else if (tok.label) {
+      var lbl = document.createElement('span');
+      lbl.textContent = tok.label.slice(0, 3);
+      lbl.style.cssText = 'color:#fff;font-weight:bold;font-size:6px;font-family:sans-serif;line-height:1;pointer-events:none;';
+      dot.appendChild(lbl);
+    }
+    overlay.appendChild(dot);
+  });
 }
 
 // ============================================================
@@ -1384,6 +1517,33 @@ function makeConditionShadow(tok) {
   return shadows.join(',');
 }
 
+// Refresh all .dm-feat-overlay divs (on fog map and token map) to show
+// feature cell outlines and triggered fills for the DM.
+function updateDmFeatureOverlay() {
+  document.querySelectorAll('.dm-feat-overlay').forEach(function (overlay) {
+    overlay.innerHTML = '';
+    if (!dmMapFeatures.length || !dmMapMeta) return;
+    var cols = dmMapMeta.cols, rows = dmMapMeta.rows;
+    if (!cols || !rows) return;
+    dmMapFeatures.forEach(function (feat) {
+      (feat.cells || []).forEach(function (cell) {
+        var r = cell[0], c = cell[1];
+        var isTriggered = !!dmTriggeredFeat[feat.id];
+        var cd = document.createElement('div');
+        cd.dataset.featId = feat.id;
+        cd.style.cssText = 'position:absolute;box-sizing:border-box;pointer-events:none;' +
+          'left:' + (c / cols * 100) + '%;top:' + (r / rows * 100) + '%;' +
+          'width:' + (100 / cols) + '%;height:' + (100 / rows) + '%;' +
+          'background:' + (isTriggered ? (feat.color || '#7f1d1d') : 'transparent') + ';' +
+          'border:1px dashed ' + (feat.color || '#7f1d1d') + ';' +
+          'opacity:' + (isTriggered ? '0.7' : '0.4') + ';' +
+          'transition:background 0.3s,opacity 0.3s;';
+        overlay.appendChild(cd);
+      });
+    });
+  });
+}
+
 // ── Token condition picker popup ──────────────────────────────
 function sendTokenUpdate(mapKey) {
   // Enrich tokens with conditions from initiative tracker before broadcasting
@@ -1407,6 +1567,27 @@ function renderTokenControls(mapUrl, mapKey) {
   if (mapContainer) mapContainer.innerHTML = '';
 
   // Color picker buttons — appended directly into the flex header container
+  // Off button
+  var offBtn = document.createElement('button');
+  offBtn.textContent = '🚫 Off';
+  var placementOff = selectedTokenColor === null;
+  offBtn.title = placementOff ? 'Placement is disabled — click a color to enable' : 'Stop placing tokens';
+  offBtn.style.cssText = [
+    'flex:none', 'white-space:nowrap', 'padding:0.3rem 0.75rem',
+    'font-size:0.78rem', 'font-weight:bold', 'border-radius:4px',
+    'border:2px solid ' + (placementOff ? '#6b7280' : '#374151'),
+    'cursor:pointer', 'color:' + (placementOff ? '#e5e7eb' : '#6b7280'),
+    'background:' + (placementOff ? 'rgba(107,114,128,0.3)' : 'rgba(0,0,0,0.2)'),
+    placementOff ? 'box-shadow:0 0 6px rgba(107,114,128,0.6)' : ''
+  ].join(';') + ';';
+  offBtn.onclick = function () {
+    selectedTokenColor = null;
+    selectedPlayerName = null;
+    addPartyMode = false;
+    renderTokenControls(mapUrl, mapKey);
+  };
+  container.appendChild(offBtn);
+
   [
     { color: 'red',    label: '🔴 Enemy'   },
     { color: 'blue',   label: '🔵 Friend'  },
@@ -1433,7 +1614,8 @@ function renderTokenControls(mapUrl, mapKey) {
       isActive ? 'box-shadow:0 0 8px ' + bg : ''
     ].join(';') + ';';
     btn.onclick = function () {
-      selectedTokenColor = opt.color;
+      // Clicking the active color again turns placement off
+      selectedTokenColor = (selectedTokenColor === opt.color) ? null : opt.color;
       selectedPlayerName = null;
       addPartyMode = false;
       renderTokenControls(mapUrl, mapKey);
@@ -1471,8 +1653,8 @@ function renderTokenControls(mapUrl, mapKey) {
   };
   container.appendChild(ringsToggleBtn);
 
-  // Mob type picker (non-green only)
-  if (selectedTokenColor !== 'green') {
+  // Mob type picker (non-green only, and only when placement is active)
+  if (selectedTokenColor !== null && selectedTokenColor !== 'green') {
     var MOB_TYPES = ['Bandit','Bugbear','Cultist','Dragon','Drow','Gelatinous Cube',
       'Ghoul','Giant','Gnoll','Goblin','Guard','Hobgoblin','Kobold','Mimic',
       'Ogre','Orc','Owlbear','Skeleton','Spy','Thug','Troll','Vampire',
@@ -1616,6 +1798,46 @@ function renderTokenControls(mapUrl, mapKey) {
     renderTokenControls(mapUrl, mapKey);
   };
   mapHeaderRow.appendChild(lockAllBtn);
+
+  var movePartyBtn = document.createElement('button');
+  movePartyBtn.dataset.movePartyBtn = '1';
+  var selCount = selectedTokenIds.size;
+  movePartyBtn.textContent = movePartyMode ? ('👥 Party Move' + (selCount ? ' (' + selCount + ')' : ' — drag to select')) : '👥 Move Party';
+  movePartyBtn.title = movePartyMode ? 'Drag empty space to lasso-select tokens; drag a selected token to move the group. Click to disable.' : 'Enable group movement mode';
+  movePartyBtn.style.cssText = 'font-size:0.72rem;padding:0.18rem 0.5rem;border-radius:4px;cursor:pointer;white-space:nowrap;border:1px solid ' +
+    (movePartyMode ? '#facc15' : '#30363d') + ';background:' +
+    (movePartyMode ? 'rgba(250,204,21,0.2)' : '#0d1117') + ';color:' +
+    (movePartyMode ? '#facc15' : '#888') + ';';
+  movePartyBtn.onclick = function () {
+    movePartyMode = !movePartyMode;
+    if (!movePartyMode) selectedTokenIds.clear();
+    renderTokenControls(mapUrl, mapKey);
+  };
+  mapHeaderRow.appendChild(movePartyBtn);
+
+  if (movePartyMode) {
+    var selAllBtn = document.createElement('button');
+    selAllBtn.textContent = '☑ All Players';
+    selAllBtn.title = 'Select all player tokens';
+    selAllBtn.style.cssText = 'font-size:0.72rem;padding:0.18rem 0.5rem;border-radius:4px;cursor:pointer;white-space:nowrap;' +
+      'border:1px solid #30363d;background:#0d1117;color:#aaa;';
+    selAllBtn.onclick = function () {
+      (tokenState[mapKey] || []).forEach(function (t) { selectedTokenIds.add(t.id); });
+      renderTokenControls(mapUrl, mapKey);
+    };
+    mapHeaderRow.appendChild(selAllBtn);
+
+    var clearSelBtn = document.createElement('button');
+    clearSelBtn.textContent = '✕ Clear';
+    clearSelBtn.title = 'Clear selection';
+    clearSelBtn.style.cssText = 'font-size:0.72rem;padding:0.18rem 0.5rem;border-radius:4px;cursor:pointer;white-space:nowrap;' +
+      'border:1px solid #30363d;background:#0d1117;color:#aaa;';
+    clearSelBtn.onclick = function () {
+      selectedTokenIds.clear();
+      renderTokenControls(mapUrl, mapKey);
+    };
+    mapHeaderRow.appendChild(clearSelBtn);
+  }
   mapTarget.appendChild(mapHeaderRow);
 
   var mapWrap = document.createElement('div');
@@ -1739,20 +1961,105 @@ function renderTokenControls(mapUrl, mapKey) {
 
   var wasDragging = false; // prevent map click after a drag
 
+  // ── Lasso selection rectangle (visible only in movePartyMode) ─
+  var selRect = document.createElement('div');
+  selRect.style.cssText = 'display:none;position:absolute;border:2px dashed #facc15;' +
+    'background:rgba(250,204,21,0.08);pointer-events:none;z-index:15;box-sizing:border-box;';
+  previewOverlay.appendChild(selRect);
+
+  // Refresh dot borders/glows to reflect current selectedTokenIds
+  function updateSelectionVisuals() {
+    (tokenState[mapKey] || []).forEach(function (t) {
+      var dotEl = previewOverlay.querySelector('[data-tok-id="' + t.id + '"]');
+      if (!dotEl) return;
+      var sel = selectedTokenIds.has(t.id);
+      dotEl.style.border = sel ? '2px solid #facc15' :
+        (t.mobType ? '2px solid rgba(255,255,255,0.6)' : '2px solid rgba(255,255,255,0.9)');
+      dotEl.style.outline = sel ? '2px solid rgba(250,204,21,0.45)' : '';
+      dotEl.style.zIndex  = sel ? '12' : '10';
+    });
+    // Update button label with count
+    var btn = document.querySelector('[data-move-party-btn="1"]');
+    if (btn) {
+      var cnt = selectedTokenIds.size;
+      btn.textContent = '👥 Party Move' + (cnt ? ' (' + cnt + ')' : ' — drag to select');
+    }
+  }
+
+  // Lasso drag on empty map space when movePartyMode is on
+  mapWrap.addEventListener('mousedown', function (e) {
+    if (!movePartyMode) return;
+    if (drawModeActive) return;
+    // Only fire if the click target is the map itself (not a token dot)
+    if (e.target !== mapWrap && e.target !== mapImg && !e.target.classList.contains('sel-target')) return;
+    e.preventDefault();
+    var wRect = mapWrap.getBoundingClientRect();
+    var startNX = (e.clientX - wRect.left)  / wRect.width;
+    var startNY = (e.clientY - wRect.top)   / wRect.height;
+    var didLasso = false;
+
+    selRect.style.left   = (startNX * 100) + '%';
+    selRect.style.top    = (startNY * 100) + '%';
+    selRect.style.width  = '0';
+    selRect.style.height = '0';
+    selRect.style.display = 'block';
+
+    function onLassoMove(ev) {
+      var curNX = (ev.clientX - wRect.left) / wRect.width;
+      var curNY = (ev.clientY - wRect.top)  / wRect.height;
+      var l = Math.min(startNX, curNX), r2 = Math.max(startNX, curNX);
+      var t2 = Math.min(startNY, curNY), b = Math.max(startNY, curNY);
+      selRect.style.left   = (l  * 100) + '%';
+      selRect.style.top    = (t2 * 100) + '%';
+      selRect.style.width  = ((r2 - l) * 100) + '%';
+      selRect.style.height = ((b - t2) * 100) + '%';
+      if (Math.abs(curNX - startNX) > 0.015 || Math.abs(curNY - startNY) > 0.015) didLasso = true;
+    }
+
+    function onLassoUp(ev) {
+      document.removeEventListener('mousemove', onLassoMove);
+      document.removeEventListener('mouseup',   onLassoUp);
+      selRect.style.display = 'none';
+      if (didLasso) {
+        var curNX = (ev.clientX - wRect.left) / wRect.width;
+        var curNY = (ev.clientY - wRect.top)  / wRect.height;
+        var l = Math.min(startNX, curNX), r2 = Math.max(startNX, curNX);
+        var t2 = Math.min(startNY, curNY), b = Math.max(startNY, curNY);
+        // Select all tokens inside the rectangle
+        (tokenState[mapKey] || []).forEach(function (t) {
+          if (t.x >= l && t.x <= r2 && t.y >= t2 && t.y <= b) selectedTokenIds.add(t.id);
+        });
+        updateSelectionVisuals();
+        wasDragging = true;
+        setTimeout(function () { wasDragging = false; }, 80);
+      } else {
+        // Bare click on empty space — clear selection
+        selectedTokenIds.clear();
+        updateSelectionVisuals();
+      }
+    }
+
+    document.addEventListener('mousemove', onLassoMove);
+    document.addEventListener('mouseup',   onLassoUp);
+  });
+
   function makeDot(tok) {
     // Look up initiative entry to get current conditions for ring display
     var initEntry = initiative.find(function (e) { return e.name === tok.label; });
     var dispConds = initEntry ? (initEntry.conditions || []) : [];
     var dispTok   = Object.assign({}, tok, { conditions: dispConds });
 
+    var isSelected = selectedTokenIds.has(tok.id);
     var dot = document.createElement('div');
+    dot.dataset.tokId = tok.id || '';
     dot.style.cssText = 'position:absolute;width:20px;height:20px;border-radius:50%;' +
       'background:' + tokenBgColor(tok) + ';' +
-      'border:2px solid ' + (tok.mobType ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.9)') + ';' +
+      'border:2px solid ' + (isSelected ? '#facc15' : (tok.mobType ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.9)')) + ';' +
+      (isSelected ? 'outline:2px solid rgba(250,204,21,0.45);' : '') +
       'box-shadow:' + makeConditionShadow(dispTok) + ';display:flex;align-items:center;justify-content:center;' +
       'flex-direction:column;overflow:hidden;' +
       'left:' + (tok.x * 100) + '%;top:' + (tok.y * 100) + '%;transform:translate(-50%,-50%);' +
-      'cursor:move;pointer-events:auto;z-index:10;user-select:none;';
+      'cursor:move;pointer-events:auto;z-index:' + (isSelected ? '12' : '10') + ';user-select:none;';
 
     // Build tooltip with conditions
     var titleParts = [tok.label || ''];
@@ -1790,8 +2097,14 @@ function renderTokenControls(mapUrl, mapKey) {
         'line-height:1;user-select:none;pointer-events:none;';
       dot.appendChild(lbl);
     }
-    // Stop map click from firing when clicking a dot
-    dot.addEventListener('click', function (e) { e.stopPropagation(); });
+    // Stop map click from firing when clicking a dot; toggle selection in party-move mode
+    dot.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (!movePartyMode || wasDragging) return;
+      if (selectedTokenIds.has(tok.id)) { selectedTokenIds.delete(tok.id); }
+      else { selectedTokenIds.add(tok.id); }
+      updateSelectionVisuals();
+    });
 
     // Drop target: drag a condition row onto this token dot
     dot.addEventListener('dragover', function (e) {
@@ -1827,13 +2140,30 @@ function renderTokenControls(mapUrl, mapKey) {
       e.preventDefault();
       e.stopPropagation();
       var didMove = false;
+      var lastClientX = e.clientX;
+      var lastClientY = e.clientY;
 
       function onMove(ev) {
         var rect = mapWrap.getBoundingClientRect();
-        tok.x = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
-        tok.y = Math.max(0, Math.min(1, (ev.clientY - rect.top)  / rect.height));
-        dot.style.left = (tok.x * 100) + '%';
-        dot.style.top  = (tok.y * 100) + '%';
+        if (movePartyMode && selectedTokenIds.has(tok.id) && selectedTokenIds.size > 1) {
+          // Move all selected tokens by the same delta
+          var dx = (ev.clientX - lastClientX) / rect.width;
+          var dy = (ev.clientY - lastClientY) / rect.height;
+          lastClientX = ev.clientX;
+          lastClientY = ev.clientY;
+          (tokenState[mapKey] || []).forEach(function (t) {
+            if (!selectedTokenIds.has(t.id)) return;
+            t.x = Math.max(0, Math.min(1, t.x + dx));
+            t.y = Math.max(0, Math.min(1, t.y + dy));
+            var dotEl = previewOverlay.querySelector('[data-tok-id="' + t.id + '"]');
+            if (dotEl) { dotEl.style.left = (t.x * 100) + '%'; dotEl.style.top = (t.y * 100) + '%'; }
+          });
+        } else {
+          tok.x = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+          tok.y = Math.max(0, Math.min(1, (ev.clientY - rect.top)  / rect.height));
+          dot.style.left = (tok.x * 100) + '%';
+          dot.style.top  = (tok.y * 100) + '%';
+        }
         didMove = true;
         wasDragging = true;
         dot.style.boxShadow = '0 0 10px rgba(255,255,255,0.6)';
@@ -1845,6 +2175,7 @@ function renderTokenControls(mapUrl, mapKey) {
         dot.style.boxShadow = makeConditionShadow(dispTok);
         if (didMove) {
           sendTokenUpdate(mapKey);
+          updateFogTokenOverlay();
         }
         setTimeout(function () { wasDragging = false; }, 80);
       }
@@ -1865,6 +2196,13 @@ function renderTokenControls(mapUrl, mapKey) {
   mapWrap.addEventListener('click', function (e) {
     if (drawModeActive) return; // draw mode — canvas handles input
     if (wasDragging) return;
+    if (movePartyMode) {
+      // In party-move mode, bare click clears selection (handled by lasso-up, but fallback here)
+      selectedTokenIds.clear();
+      updateSelectionVisuals();
+      return;
+    }
+    if (selectedTokenColor === null) return; // placement is off
     var rect = mapWrap.getBoundingClientRect();
     var x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     var y = Math.max(0, Math.min(1, (e.clientY - rect.top)  / rect.height));
@@ -1962,7 +2300,12 @@ function renderTokenControls(mapUrl, mapKey) {
 
   mapTarget.appendChild(mapWrap);
 
-  // Token list
+  // Feature cell overlay on token map — mirrors fog map overlay for non-fog maps
+  var tokFeatOverlay = document.createElement('div');
+  tokFeatOverlay.className = 'dm-feat-overlay';
+  tokFeatOverlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:4;';
+  mapWrap.appendChild(tokFeatOverlay);
+  updateDmFeatureOverlay();
   var tokens = tokenState[mapKey] || [];
   if (tokens.length) {
     var listDiv = document.createElement('div');
@@ -2066,6 +2409,8 @@ function renderTokenControls(mapUrl, mapKey) {
     mapTarget.appendChild(listDiv);
   }
 
+  // Keep fog map token overlay in sync whenever tokens change
+  updateFogTokenOverlay();
 }
 
 

@@ -142,6 +142,7 @@ let allPlayersLocked   = false;      // DM has locked all player movement
 const loggedInPlayers  = new Map();  // playerName -> ws
 const clients = new Set();
 const dmClients = new Set();
+let guestCounter = 0;  // increments for each non-DM connection
 
 function broadcastClientCount() {
   // Purge any dead connections so stale sockets don't skew the count
@@ -149,7 +150,13 @@ function broadcastClientCount() {
   for (const d of dmClients) { if (d.readyState !== WebSocket.OPEN) dmClients.delete(d); }
   // Count only non-DM clients (player screens)
   const playerCount = clients.size - dmClients.size;
-  const payload = JSON.stringify({ type: 'clients', count: playerCount });
+  // Build list of connected player clients
+  const connectedList = [];
+  for (const c of clients) {
+    if (dmClients.has(c)) continue;
+    connectedList.push(c.playerName ? { name: c.playerName, type: 'player' } : { name: 'Guest #' + c.guestId, type: 'guest' });
+  }
+  const payload = JSON.stringify({ type: 'clients', count: playerCount, connectedList });
   console.log(`broadcastClientCount: total=${clients.size} dms=${dmClients.size} players=${playerCount}`);
   for (const dm of dmClients) {
     if (dm.readyState === WebSocket.OPEN) dm.send(payload);
@@ -215,6 +222,7 @@ wss.on('connection', (ws, req) => {
   clients.add(ws);
   const dmAuthed = isDmAuthed(req);
   if (dmAuthed) dmClients.add(ws);
+  if (!dmAuthed) ws.guestId = ++guestCounter;
   console.log(`Client connected. Total: ${clients.size} | isDM: ${dmAuthed} | dmClients: ${dmClients.size}`);
   broadcastClientCount();
   // Always push current state to newly connected clients.
@@ -225,6 +233,8 @@ wss.on('connection', (ws, req) => {
     ws.send(JSON.stringify({
       type: 'DM_STATE_RESTORE',
       playerCount: clients.size - dmClients.size,
+      connectedList: [...clients].filter(c => !dmClients.has(c) && c.readyState === WebSocket.OPEN)
+        .map(c => c.playerName ? { name: c.playerName, type: 'player' } : { name: 'Guest #' + c.guestId, type: 'guest' }),
       sceneView: currentSceneView,
       fogStates: currentFogStates,
       tokens: currentTokens,
@@ -418,9 +428,10 @@ wss.on('connection', (ws, req) => {
             if (allPlayersLocked || lockedPlayers.has(player.name)) {
               ws.send(JSON.stringify({ type: 'MOVEMENT_LOCK', name: player.name, locked: true }));
             }
-            // Notify DM of updated logged-in list
+            // Notify DM of updated logged-in list and connection roster
             const loggedInMsg = JSON.stringify({ type: 'LOGGED_IN_PLAYERS', players: [...loggedInPlayers.keys()] });
             for (const dm of dmClients) { if (dm.readyState === WebSocket.OPEN) dm.send(loggedInMsg); }
+            broadcastClientCount();
             console.log('Player logged in:', player.name);
           } catch (e) {
             console.error('player-login error:', e);
@@ -445,6 +456,21 @@ wss.on('connection', (ws, req) => {
             mapKey: currentTokensMapKey,
             showRings: currentTokensShowRings
           });
+          break;
+        }
+        case 'player-dice-roll': {
+          if (!ws.playerName) break;
+          const pdie    = parseInt(message.die)    || 0;
+          const presult = parseInt(message.result) || 0;
+          if (!pdie || presult < 1 || presult > pdie) break;
+          // Send named roll to DM clients
+          const dmRollMsg     = JSON.stringify({ type: 'PLAYER_DICE_ROLL', name: ws.playerName, die: pdie, result: presult });
+          for (const dm of dmClients) { if (dm.readyState === WebSocket.OPEN) dm.send(dmRollMsg); }
+          // Broadcast anonymous roll to every other connected client (all player screens incl. tap-to-enter)
+          const anonRollMsg = JSON.stringify({ type: 'DICE_ROLL', die: pdie, result: presult });
+          for (const c of clients) {
+            if (c !== ws && c.readyState === WebSocket.OPEN) c.send(anonRollMsg);
+          }
           break;
         }
       }
