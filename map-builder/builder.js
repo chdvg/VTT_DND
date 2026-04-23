@@ -1604,6 +1604,7 @@ function openFeatureModal(editId) {
     document.getElementById('feat-animation').value   = feat.animation || 'shake-reveal';
     document.getElementById('feat-color').value       = feat.color || '#1a0a00';
     document.getElementById('feat-description').value = feat.description || '';
+    document.getElementById('feat-auto-trigger').checked = !!feat.autoTrigger;
     cellsEl.textContent = (feat.cells || []).length + ' cell(s) selected.';
     // Load cells into pending for re-selection
     pendingFeatureCells = (feat.cells || []).map(c => [...c]);
@@ -1614,6 +1615,7 @@ function openFeatureModal(editId) {
     document.getElementById('feat-animation').value   = 'shake-reveal';
     document.getElementById('feat-color').value       = '#1a0a00';
     document.getElementById('feat-description').value = '';
+    document.getElementById('feat-auto-trigger').checked = false;
     cellsEl.textContent = pendingFeatureCells.length + ' cell(s) selected.';
   }
   modal.classList.remove('hidden');
@@ -1645,8 +1647,9 @@ document.getElementById('feat-save-btn').addEventListener('click', () => {
     type:        document.getElementById('feat-type').value,
     animation:   document.getElementById('feat-animation').value,
     color:       document.getElementById('feat-color').value,
-    description: document.getElementById('feat-description').value.trim(),
-    cells:       pendingFeatureCells.map(c => [...c]),
+    description:  document.getElementById('feat-description').value.trim(),
+    autoTrigger:  document.getElementById('feat-auto-trigger').checked,
+    cells:        pendingFeatureCells.map(c => [...c]),
   };
   if (editingFeatureId) {
     const idx = features.findIndex(f => f.id === editingFeatureId);

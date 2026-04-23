@@ -330,6 +330,21 @@ function connectWebSocket() {
       }
       return;
     }
+    // Auto-trigger: server fires TRIGGER_FEATURE when a player token touches an auto-trigger feature
+    if (msg.type === 'TRIGGER_FEATURE' && msg.autoTriggered && msg.feature) {
+      var atFeat = msg.feature;
+      dmTriggeredFeat[atFeat.id] = true;
+      updateDmFeatureOverlay();
+      // Update the rendered card buttons if visible
+      var card = document.getElementById('feat-card-' + atFeat.id);
+      if (card) {
+        var tBtn = card.querySelector('.btn-danger');
+        var rBtn = card.querySelector('.btn-secondary');
+        if (tBtn) { tBtn.disabled = true; tBtn.textContent = '✓ Triggered'; tBtn.style.opacity = '0.55'; }
+        if (rBtn) { rBtn.disabled = false; rBtn.style.opacity = '1'; }
+      }
+      return;
+    }
   };
   ws.onclose = function () {
     statusDot.classList.remove('on');
@@ -894,9 +909,8 @@ function showSceneView(sceneIdx, viewIdx) {
         dmMapMeta       = mapMeta;
         dmTriggeredFeat = {};
         // Push feature definitions to server so reconnecting players receive them
-        if (mapFeatures.length > 0) {
-          wsSend({ action: 'update-features', features: mapFeatures, mapKey: fogKey, mapMeta: mapMeta });
-        }
+        // Always send even if empty so server gets mapMeta for auto-trigger coord conversion
+        wsSend({ action: 'update-features', features: mapFeatures, mapKey: fogKey, mapMeta: mapMeta });
         renderFeatureControls(fogKey, mapFeatures, mapMeta);
         updateDmFeatureOverlay();
       })
@@ -1229,6 +1243,13 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
     animEl.textContent = (ANIM_LABELS[feat.animation] || feat.animation) + ' • ' + (feat.cells || []).length + ' cells';
     card.appendChild(animEl);
 
+    if (feat.autoTrigger) {
+      var autoEl = document.createElement('div');
+      autoEl.style.cssText = 'font-size:0.7rem;color:#facc15;margin-bottom:0.3rem;';
+      autoEl.textContent = '⚡ Auto-triggers on player contact';
+      card.appendChild(autoEl);
+    }
+
     var btnRow = document.createElement('div');
     btnRow.style.cssText = 'display:flex;gap:0.3rem;';
 
@@ -1236,6 +1257,13 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
     trigBtn.className = 'btn btn-small btn-danger';
     trigBtn.textContent = '⚡ Trigger';
     trigBtn.style.cssText += 'flex:1;font-size:0.78rem;white-space:nowrap;';
+    // Apply initial state from tracked triggered set (e.g. after auto-trigger or page restore)
+    var alreadyTriggered = !!dmTriggeredFeat[feat.id];
+    if (alreadyTriggered) {
+      trigBtn.disabled = true;
+      trigBtn.textContent = '✓ Triggered';
+      trigBtn.style.opacity = '0.55';
+    }
     trigBtn.onclick = function () {
       triggeredSet[feat.id] = true;
       dmTriggeredFeat[feat.id] = true;
@@ -1252,8 +1280,8 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
     var resetBtn = document.createElement('button');
     resetBtn.className = 'btn btn-small btn-secondary';
     resetBtn.textContent = '↩ Reset';
-    resetBtn.disabled = true;
-    resetBtn.style.cssText += 'flex:none;font-size:0.78rem;opacity:0.4;';
+    resetBtn.disabled = !alreadyTriggered;
+    resetBtn.style.cssText += 'flex:none;font-size:0.78rem;opacity:' + (alreadyTriggered ? '1' : '0.4') + ';';
     resetBtn.onclick = function () {
       delete triggeredSet[feat.id];
       delete dmTriggeredFeat[feat.id];

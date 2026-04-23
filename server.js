@@ -137,6 +137,7 @@ let currentDrawing    = [];
 let currentDrawingMapKey = null;
 let currentFeatures      = [];  // feature defs for the active map
 let currentFeatureStates = {};  // { featureId: 'triggered' }
+let currentMapMeta       = null; // { cols, rows } for active map grid
 const lockedPlayers    = new Set();  // names of individually-locked players
 let allPlayersLocked   = false;      // DM has locked all player movement
 const loggedInPlayers  = new Map();  // playerName -> ws
@@ -293,6 +294,7 @@ wss.on('connection', (ws, req) => {
           currentFogStates = {}; // new scene clears old fog keys
           currentFeatures = Array.isArray(message.features) ? message.features : [];
           currentFeatureStates = {};
+          if (message.mapMeta) currentMapMeta = message.mapMeta;
           const sceneViewMsg = { type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain', mapKey: message.mapKey || null, features: currentFeatures, mapMeta: message.mapMeta || null, label: message.label || '' };
           currentSceneView = sceneViewMsg;
           currentAudio = message.audio ? { url: message.audio, loop: message.audioLoop !== false } : null;
@@ -374,6 +376,7 @@ wss.on('connection', (ws, req) => {
         case 'update-features':
           // DM has fetched map state and is supplying feature definitions
           currentFeatures = Array.isArray(message.features) ? message.features : [];
+          if (message.mapMeta) currentMapMeta = message.mapMeta;
           // Update the cached scene view so reconnects get features too
           if (currentSceneView) {
             currentSceneView.features = currentFeatures;
@@ -456,6 +459,29 @@ wss.on('connection', (ws, req) => {
             mapKey: currentTokensMapKey,
             showRings: currentTokensShowRings
           });
+          // Auto-trigger any features whose cells overlap the token's new grid cell
+          const autoMeta = currentMapMeta || (currentSceneView && currentSceneView.mapMeta) || null;
+          if (autoMeta && autoMeta.cols && autoMeta.rows && currentFeatures.length) {
+            const autoCol = Math.floor(nx * autoMeta.cols);
+            const autoRow = Math.floor(ny * autoMeta.rows);
+            for (const autoFeat of currentFeatures) {
+              if (!autoFeat.autoTrigger) continue;
+              if (currentFeatureStates[autoFeat.id] === 'triggered') continue;
+              const hit = (autoFeat.cells || []).some(c => c[0] === autoRow && c[1] === autoCol);
+              if (hit) {
+                currentFeatureStates[autoFeat.id] = 'triggered';
+                broadcast({
+                  type: 'TRIGGER_FEATURE',
+                  feature: autoFeat,
+                  allFeatures: currentFeatures,
+                  mapKey: currentTokensMapKey,
+                  mapMeta: autoMeta,
+                  autoTriggered: true,
+                  triggeredBy: ws.playerName,
+                });
+              }
+            }
+          }
           break;
         }
         case 'player-dice-roll': {
