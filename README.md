@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v2.7 — Web Edition)
+# D&D VTT Control Console (v2.8 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -126,6 +126,11 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
 - **Overlay popups** — dice rolls, initiative order, sent text, and sent images appear as a timed gold-bordered floating panel *over* the map (map stays visible)
 - Auto-dismiss timers: Dice 8 s · Initiative 12 s · Text 15 s · Image 20 s
 - **Fullscreen button** — ⛶ in the corner; useful for projector displays to hide browser chrome
+- **Player Dice Roller** — after logging in, a compact HUD bar appears at the bottom-left of the player screen next to the Log Off button:
+  - Buttons for d4, d6, d8, d10, d12, d20, and d% (d100)
+  - Rolling triggers the full 3D dice animation on the rolling player's screen
+  - The same anonymous roll animation plays on every other connected player screen (including the tap-to-enter screen) simultaneously
+  - The DM sees a named entry in the **🎲 Player Rolls** log beneath the Initiative Tracker: who rolled, which die, and the result — color-coded green for nat-20 crits and red for nat-1 fails, auto-clearing after 20 seconds
 
 ### Map Control Panel
 - **⬛ BLACKOUT** — toggles a solid black overlay that covers the *entire* player screen including any popups. Click again to reveal. Audio stops on blackout.
@@ -216,6 +221,14 @@ The Reference panel is a tabbed quick-reference hub for DMs, with live API looku
   - Lock state is enforced server-side — a locked player's `move-player-token` messages are silently dropped
   - A 🟢 indicator next to a name means that player is currently logged in via the player screen
   - Locks persist until the DM unlocks them or the server restarts
+- **🚫 Off mode (token placement)** — token placement starts in **Off** mode by default; no tokens are placed accidentally when loading a map. Click a color to activate placement; click the active color again (or the 🚫 Off button) to disable it. The mob and player type pickers are hidden while placement is off.
+- **👥 Move Party (group move)** — a **👥 Move Party** toggle button appears in the token header:
+  - While active, click any player token dot to select/deselect it (gold highlight)
+  - **☑ All Players** selects every player token at once; **✕ Clear** deselects all
+  - Lasso-drag on empty map space to box-select multiple tokens
+  - Dragging any selected token moves the entire selection by the same delta, keeping relative positions intact
+  - The button label shows a count of currently selected tokens, e.g. *👥 Move Party (3)*
+- **Feature cell overlay on DM map** — when a map with builder features is loaded, feature cell boundaries are shown directly on both the fog map preview and the token map as dashed outlines in each feature's color; triggered features fill solid so the DM can see exactly what the players are seeing without needing a second screen
 
 ### Annotations & Drawing
 
@@ -228,8 +241,10 @@ The Reference panel is a tabbed quick-reference hub for DMs, with live API looku
 - **Draggable sections** — grab the ⠿ handle on any panel header and drag it to reorder; layout is saved per-browser in `localStorage`
 - **Send Text** — push a labelled text block as a timed overlay to players
 - **Send Image** — push any image URL or local file upload as a timed overlay
-- **Dice Roller** — d4 through d100; optional broadcast to players
-- **Connected indicator** — live count of connected player browsers in the header
+- **Dice Roller** — d4 through d100; optional broadcast to players with a 3D animated die on the player screen
+- **Connected indicator** — live count of connected player browsers shown in the header; hover it to see a tooltip listing each connected client by name or guest ID
+- **No-fog full width** — when a scene map has fog disabled the Map Control panel expands so the token/draw area fills the full panel width
+- **Token overlay on fog map** — when a fog map is active the DM fog grid preview also shows read-only token dots so the DM can see token positions while painting fog without switching panels
 
 ---
 
@@ -406,6 +421,13 @@ Scenes are stored in `seeds/scenes.json`. Structure:
 | `OVERLAY` | server → player | `{ title, data, duration }` |
 | `BLACKOUT` | server → player | `{ active: true\|false }` |
 | `CLEAR` | server → player | — |
+| `DICE_ROLL` | server → player | `{ die, result }` — anonymous roll broadcast to all players |
+| `PLAYER_DICE_ROLL` | server → DM | `{ name, die, result }` — named roll for DM log |
+| `TRIGGER_FEATURE` | server → player | `{ feature, allFeatures, mapKey, mapMeta }` |
+| `RESET_FEATURE` | server → player | `{ featureId, mapKey }` |
+| `MOVEMENT_LOCK` | server → player | `{ name, locked }` |
+| `MOVEMENT_LOCK_ALL` | server → player | `{ locked }` |
+| `LOGGED_IN_PLAYERS` | server → DM | `{ players: [...names] }` |
 
 ---
 

@@ -10,7 +10,10 @@
   <header>
     <h1>🎲 DM Control Panel</h1>
     <div class="header-controls">
-      <span id="client-count">0 connected</span>
+      <div id="client-count-wrap" style="position:relative;display:inline-block;cursor:default;">
+        <span id="client-count">0 connected</span>
+        <div id="client-count-tooltip" style="display:none;position:absolute;top:calc(100% + 6px);right:0;min-width:140px;background:#1a1f2e;border:1px solid #30363d;border-radius:6px;padding:0.45rem 0.6rem;z-index:999;white-space:nowrap;font-size:0.75rem;color:#ccc;box-shadow:0 4px 12px rgba(0,0,0,0.5);"></div>
+      </div>
       <span id="status-dot" class="status-dot off"></span>
       <a href="/map-builder" class="dm-logout-btn" title="Open Map Builder" style="color:#d4af37;border-color:#d4af37;">🗺️ Map Builder</a>
       <a href="/dm-logout" class="dm-logout-btn" title="Lock DM panel">🔒 Lock</a>
@@ -63,7 +66,7 @@
       </div>
       <div id="map-control-grid" style="display:none;grid-template-columns:2fr 1px 3fr;gap:0 1.25rem;">
         <div id="fog-controls-container"></div>
-        <div style="background:#2a2f3a;align-self:stretch;"></div>
+        <div id="map-control-divider" style="background:#2a2f3a;align-self:stretch;"></div>
         <div style="display:flex;flex-direction:column;gap:0.5rem;">
           <div id="token-controls-container" style="display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;"></div>
           <div id="token-map-container"></div>
@@ -362,6 +365,12 @@
             🎲 Quick Roll d20 for All
           </button>
         </details>
+
+        <!-- Player dice roll log -->
+        <div id="player-dice-log-wrap" style="margin-top:0.9rem;display:none;">
+          <div style="font-size:0.7rem;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;color:#555;margin-bottom:0.3rem;">🎲 Player Rolls</div>
+          <div id="player-dice-log" style="max-height:110px;overflow-y:auto;display:flex;flex-direction:column;gap:0.2rem;"></div>
+        </div>
       </section>
     </aside>
   </div><!-- end app-layout -->
