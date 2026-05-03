@@ -27,6 +27,7 @@ var myPlayerCls  = null;
 var myMovementLocked = false;  // set by DM lock controls
 var myTarget     = null;       // label of my current combat target
 var allTargets   = {};         // playerName -> targetLabel (all players' targets)
+var gridEnabled  = false;      // DM-toggled grid overlay
 
 // Unlock audio on any click (but don't auto-dismiss overlay)
 document.addEventListener('click', function () {
@@ -192,6 +193,9 @@ function showImage(imageUrl, fogKey, fit) {
       if (fogKey && fogStates[fogKey]) {
         renderFogOverlay(fogStates[fogKey], img);
       }
+      if (gridEnabled) {
+        renderGridOverlay(img);
+      }
       if (currentTokens.length) {
         renderTokenOverlay(currentTokens);
       }
@@ -224,6 +228,54 @@ function clearScene() {
     sceneEl.innerHTML = '';
     sceneEl.classList.remove('fading');
   }, 150);
+}
+
+// ── Grid overlay ─────────────────────────────────────────────
+function renderGridOverlay(imgEl) {
+  var existing = sceneEl.querySelector('.grid-overlay');
+  if (existing) existing.remove();
+  if (!gridEnabled) return;
+  var cols = (currentMapMeta && currentMapMeta.cols) || 20;
+  var rows = (currentMapMeta && currentMapMeta.rows) || 20;
+  var el = imgEl || sceneEl.querySelector('img');
+  if (!el) return;
+  var cW = sceneEl.offsetWidth, cH = sceneEl.offsetHeight;
+  var offX = 0, offY = 0, rendW = cW, rendH = cH;
+  if (el.naturalWidth && el.naturalHeight) {
+    var fitMode = el.style.objectFit || 'contain';
+    var scale = fitMode === 'cover'
+      ? Math.max(cW / el.naturalWidth, cH / el.naturalHeight)
+      : Math.min(cW / el.naturalWidth, cH / el.naturalHeight);
+    rendW = el.naturalWidth  * scale;
+    rendH = el.naturalHeight * scale;
+    offX  = (cW - rendW) / 2;
+    offY  = (cH - rendH) / 2;
+  }
+  var svgNS = 'http://www.w3.org/2000/svg';
+  var svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('class', 'grid-overlay');
+  svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:15;';
+  var cellW = rendW / cols;
+  var cellH = rendH / rows;
+  for (var ci = 0; ci <= cols; ci++) {
+    var vl = document.createElementNS(svgNS, 'line');
+    var vx = offX + ci * cellW;
+    vl.setAttribute('x1', vx); vl.setAttribute('y1', offY);
+    vl.setAttribute('x2', vx); vl.setAttribute('y2', offY + rendH);
+    vl.setAttribute('stroke', 'white'); vl.setAttribute('stroke-opacity', '0.25');
+    vl.setAttribute('stroke-width', '1');
+    svg.appendChild(vl);
+  }
+  for (var ri = 0; ri <= rows; ri++) {
+    var hl = document.createElementNS(svgNS, 'line');
+    var hy = offY + ri * cellH;
+    hl.setAttribute('x1', offX); hl.setAttribute('y1', hy);
+    hl.setAttribute('x2', offX + rendW); hl.setAttribute('y2', hy);
+    hl.setAttribute('stroke', 'white'); hl.setAttribute('stroke-opacity', '0.25');
+    hl.setAttribute('stroke-width', '1');
+    svg.appendChild(hl);
+  }
+  sceneEl.appendChild(svg);
 }
 
 // ── Fog overlay ──────────────────────────────────────────────
@@ -276,6 +328,13 @@ function renderFogOverlay(fogGrid, imgEl) {
 
 // ── Token overlay ─────────────────────────────────────────────
 var TOKEN_COLORS = { red: '#dc2626', blue: '#2563eb', yellow: '#ca8a04', green: '#16a34a' };
+var ITEM_ICONS = {
+  'Chest': '🎁', 'Gold': '🪙', 'Potion': '🧪', 'Scroll': '📜',
+  'Weapon': '⚔️', 'Shield': '🛡️', 'Armor': '🥋', 'Key': '🗝️',
+  'Gem': '💎', 'Staff': '🪄', 'Bow': '🏹', 'Ring': '💍',
+  'Book': '📖', 'Lantern': '🪔', 'Barrel': '🛢️', 'Loot': '💰',
+  'Trap': '⚙️', 'Door': '🚪', 'Amulet': '📿', 'Food': '🍖',
+};
 var CLASS_ICONS  = {
   Rogue: '🗡️', Priest: '✝️', Cleric: '✝️', Sorcerer: '🔮',
   Wizard: '🪄', Fighter: '🛡️', Paladin: '⚔️', Druid: '🌿',
@@ -359,7 +418,11 @@ function renderTokenOverlay(tokens) {
     var left  = offX + tok.x * rendW;
     var top   = offY + tok.y * rendH;
     var isPlayer = tok.type === 'player' && tok.cls;
-    var isMob    = tok.mobType && MOB_ICONS[tok.mobType];
+    var isMob    = tok.mobType && (MOB_ICONS[tok.mobType] || CLASS_ICONS[tok.mobType]);
+    var isItem   = tok.type === 'item';
+
+    // Hidden tokens are DM-only — never shown on player screens
+    if (tok.hidden) return;
 
     // Hide non-player tokens that fall in a fogged (unrevealed) cell
     if (!isPlayer && fogGrid && fogRows && fogCols) {
@@ -369,17 +432,21 @@ function renderTokenOverlay(tokens) {
     }
 
     var color, border;
-    if (isPlayer) {
+    if (isItem) {
+      color  = '#78350f';
+      border = '2px solid #fbbf24';
+    } else if (isPlayer) {
       color  = CLASS_COLORS[tok.cls] || '#3b82f6';
       border = '3px solid #d4af37';
     } else if (isMob) {
-      color  = MOB_COLORS[tok.mobType] || TOKEN_COLORS[tok.color] || '#888';
+      color  = MOB_COLORS[tok.mobType] || CLASS_COLORS[tok.mobType] || TOKEN_COLORS[tok.color] || '#888';
       border = '2px solid rgba(255,255,255,0.7)';
     } else {
       color  = TOKEN_COLORS[tok.color] || tok.color || '#888';
       border = '3px solid rgba(255,255,255,0.85)';
     }
 
+    var borderRadius = isItem ? '4px' : '50%';
     var dot = document.createElement('div');
     dot.className = 'token-dot';
     dot.dataset.tokenLabel = tok.label || '';
@@ -387,7 +454,7 @@ function renderTokenOverlay(tokens) {
       'position:absolute',
       'width:'   + tokenSize + 'px',
       'height:'  + tokenSize + 'px',
-      'border-radius:50%',
+      'border-radius:' + borderRadius,
       'background:' + color,
       'border:' + border,
       'box-shadow:' + makeConditionShadow(tok, Math.max(4, Math.round(tokenSize * 0.1))),
@@ -401,7 +468,13 @@ function renderTokenOverlay(tokens) {
       'overflow:hidden'
     ].join(';') + ';';
 
-    if (isPlayer) {
+    if (isItem) {
+      var itemIcon = ITEM_ICONS[tok.itemType] || '🎁';
+      var iconEl = document.createElement('span');
+      iconEl.textContent = itemIcon;
+      iconEl.style.cssText = 'font-size:' + iconSize + 'px;line-height:1;display:block;';
+      dot.appendChild(iconEl);
+    } else if (isPlayer) {
       var icon = CLASS_ICONS[tok.cls] || '⚔️';
       var iconEl = document.createElement('span');
       iconEl.textContent = icon;
@@ -417,7 +490,7 @@ function renderTokenOverlay(tokens) {
         dot.appendChild(lbl);
       }
     } else if (isMob) {
-      var icon = MOB_ICONS[tok.mobType];
+      var icon = MOB_ICONS[tok.mobType] || CLASS_ICONS[tok.mobType];
       var iconEl = document.createElement('span');
       iconEl.textContent = icon;
       iconEl.style.cssText = 'font-size:' + iconSize + 'px;line-height:1;display:block;';
@@ -444,7 +517,7 @@ function renderTokenOverlay(tokens) {
     // Targeting highlight logic:
     // - Logged-in player: only pulse their own target
     // - Spectator (no login): pulse all targeted mobs
-    if (tok.type !== 'player') {
+    if (!isItem && tok.type !== 'player') {
       var isMyTarget = (myTarget === tok.label);
       var targetedByAny = false;
       for (var tpn in allTargets) {
@@ -462,8 +535,8 @@ function renderTokenOverlay(tokens) {
       }
     }
 
-    // ── Targeting: make mob tokens clickable for logged-in players ──
-    if (myPlayerName && tok.type !== 'player') {
+    // ── Targeting: make non-player, non-item tokens clickable for logged-in players ──
+    if (myPlayerName && tok.type !== 'player' && !isItem) {
       dot.style.pointerEvents = 'auto';
       dot.style.cursor = 'crosshair';
       (function (label) {
@@ -509,6 +582,13 @@ function renderTokenOverlay(tokens) {
         }
 
         function sendMove(x, y) {
+          // Snap to grid cell centre if grid is enabled
+          if (gridEnabled && currentMapMeta) {
+            var gc = Math.max(0, Math.min(currentMapMeta.cols - 1, Math.floor(x * currentMapMeta.cols)));
+            var gr = Math.max(0, Math.min(currentMapMeta.rows - 1, Math.floor(y * currentMapMeta.rows)));
+            x = (gc + 0.5) / currentMapMeta.cols;
+            y = (gr + 0.5) / currentMapMeta.rows;
+          }
           if (ws && ws.readyState === 1) {
             ws.send(JSON.stringify({ action: 'move-player-token', name: myPlayerName, x: x, y: y }));
           }
@@ -963,7 +1043,10 @@ function handleMessage(msg) {
     case 'UPDATE_FOG':
       if (msg.fogKey) {
         fogStates[msg.fogKey] = msg.fogGrid;
-        if (msg.fogKey === currentFogKey) renderFogOverlay(msg.fogGrid, sceneEl.querySelector('img'));
+        if (msg.fogKey === currentFogKey) {
+          renderFogOverlay(msg.fogGrid, sceneEl.querySelector('img'));
+          renderTokenOverlay(currentTokens); // re-check which tokens are in fogged cells
+        }
       }
       break;
     case 'PLAY_AUDIO':
@@ -1067,6 +1150,10 @@ function handleMessage(msg) {
       playAttackAnimation(msg.targets || [], atkType);
       break;
     }
+    case 'GRID_TOGGLE':
+      gridEnabled = !!msg.enabled;
+      renderGridOverlay(sceneEl.querySelector('img'));
+      break;
     case 'PLAYER_LOGIN_OK':
       myPlayerName = msg.player.name;
       myPlayerCls  = msg.player.cls;
