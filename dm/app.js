@@ -54,8 +54,21 @@ var dmTriggeredFeat = {};   // { featureId: true } — which features are trigge
 
 // Combat targeting state (DM-side)
 var dmTargets = {};  // playerName -> targetLabel
+var gridEnabled = false; // DM-toggled grid overlay
+
+// Item token state
+var selectedItemType = 'Chest'; // current item type for placement
 
 // ── Mob icons & colours ───────────────────────────────────────
+// ── Item icons ───────────────────────────────────────────────
+var ITEM_ICONS = {
+  'Chest': '🎁', 'Gold': '🪙', 'Potion': '🧪', 'Scroll': '📜',
+  'Weapon': '⚔️', 'Shield': '🛡️', 'Armor': '🥋', 'Key': '🗝️',
+  'Gem': '💎', 'Staff': '🪄', 'Bow': '🏹', 'Ring': '💍',
+  'Book': '📖', 'Lantern': '🪔', 'Barrel': '🛢️', 'Loot': '💰',
+  'Trap': '⚙️', 'Door': '🚪', 'Amulet': '📿', 'Food': '🍖',
+};
+
 var MOB_ICONS = {
   Bandit: '🗡️', Bugbear: '🐻', Cultist: '🕯️', Dragon: '🐉',
   Drow: '🕷️', 'Gelatinous Cube': '🫧', Ghoul: '👻', Giant: '🏔️',
@@ -241,6 +254,9 @@ function restoreDmState(msg) {
   if (msg.currentTargets && typeof msg.currentTargets === 'object') {
     dmTargets = msg.currentTargets;
   }
+  if (typeof msg.gridEnabled === 'boolean') {
+    gridEnabled = msg.gridEnabled;
+  }
 
   if (msg.features && msg.features.length) {
     renderFeatureControls(mapKey, msg.features, sv.mapMeta || null);
@@ -352,6 +368,11 @@ function connectWebSocket() {
     }
     if (msg.type === 'ATTACK_ANIMATION') {
       // DM map animation is now played locally in playDmAttackAnimation() — skip WS echo
+      return;
+    }
+    if (msg.type === 'GRID_TOGGLE') {
+      gridEnabled = !!msg.enabled;
+      if (activeTokenMapKey && activeTokenMapUrl) renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
       return;
     }
     // Auto-trigger: server fires TRIGGER_FEATURE when a player token touches an auto-trigger feature
@@ -1544,12 +1565,14 @@ function updateFogTokenOverlay() {
 // Mob Token Overlay
 // ============================================================
 function tokenCssColor(color) {
-  return color === 'red' ? '#dc2626'
-       : color === 'blue' ? '#2563eb'
+  return color === 'red'   ? '#dc2626'
+       : color === 'blue'  ? '#2563eb'
        : color === 'green' ? '#16a34a'
+       : color === 'item'  ? '#92400e'
        : '#ca8a04';
 }
 function tokenBgColor(tok) {
+  if (tok.type === 'item') return '#78350f';
   if (tok.type === 'player' && tok.cls && CLASS_COLORS_DM[tok.cls]) return CLASS_COLORS_DM[tok.cls];
   if (tok.mobType && MOB_COLORS[tok.mobType]) return MOB_COLORS[tok.mobType];
   return tokenCssColor(tok.color);
@@ -1608,6 +1631,14 @@ function sendTokenUpdate(mapKey) {
   wsSend({ action: 'update-tokens', tokens: enriched, mapKey: mapKey, showRings: showPlayerRings });
 }
 
+// Snap a normalized (0-1) position to the nearest grid cell centre when grid is enabled
+function snapPosToGrid(x, y) {
+  if (!gridEnabled || !dmMapMeta) return { x: x, y: y };
+  var sc = Math.max(0, Math.min(dmMapMeta.cols - 1, Math.floor(x * dmMapMeta.cols)));
+  var sr = Math.max(0, Math.min(dmMapMeta.rows - 1, Math.floor(y * dmMapMeta.rows)));
+  return { x: (sc + 0.5) / dmMapMeta.cols, y: (sr + 0.5) / dmMapMeta.rows };
+}
+
 function renderTokenControls(mapUrl, mapKey) {
   activeTokenMapKey = mapKey;
   activeTokenMapUrl = mapUrl;
@@ -1645,7 +1676,8 @@ function renderTokenControls(mapUrl, mapKey) {
     { color: 'red',    label: '🔴 Enemy'   },
     { color: 'blue',   label: '🔵 Friend'  },
     { color: 'yellow', label: '🟡 Unknown' },
-    { color: 'green',  label: '🟢 Player'  }
+    { color: 'green',  label: '🟢 Player'  },
+    { color: 'item',   label: '🎁 Item'    }
   ].forEach(function (opt) {
     var btn = document.createElement('button');
     btn.textContent = opt.label;
@@ -1706,8 +1738,32 @@ function renderTokenControls(mapUrl, mapKey) {
   };
   container.appendChild(ringsToggleBtn);
 
-  // Mob type picker (non-green only, and only when placement is active)
-  if (selectedTokenColor !== null && selectedTokenColor !== 'green') {
+  // Item type picker (only when item color is active)
+  if (selectedTokenColor === 'item') {
+    var ITEM_TYPES_LIST = Object.keys(ITEM_ICONS);
+    var itemRow = document.createElement('div');
+    itemRow.style.cssText = 'display:flex;gap:0.4rem;align-items:center;flex-wrap:nowrap;';
+    var itemLbl = document.createElement('span');
+    itemLbl.textContent = 'Item Type:';
+    itemLbl.style.cssText = 'font-size:0.75rem;color:#888;white-space:nowrap;';
+    itemRow.appendChild(itemLbl);
+    var itemSel = document.createElement('select');
+    itemSel.style.cssText = 'background:#0d1117;border:1px solid #fbbf24;border-radius:4px;color:#fbbf24;' +
+      'padding:0.22rem 0.4rem;font-size:0.77rem;flex:1;min-width:110px;';
+    ITEM_TYPES_LIST.forEach(function (t) {
+      var o = document.createElement('option');
+      o.value = t;
+      o.textContent = ITEM_ICONS[t] + ' ' + t;
+      if (t === selectedItemType) o.selected = true;
+      itemSel.appendChild(o);
+    });
+    itemSel.onchange = function () { selectedItemType = itemSel.value; };
+    itemRow.appendChild(itemSel);
+    container.appendChild(itemRow);
+  }
+
+  // Mob type picker (non-green, non-item only, and only when placement is active)
+  if (selectedTokenColor !== null && selectedTokenColor !== 'green' && selectedTokenColor !== 'item') {
     var MOB_TYPES = ['Bandit','Bugbear','Cultist','Dragon','Drow','Gelatinous Cube',
       'Ghoul','Giant','Gnoll','Goblin','Guard','Hobgoblin','Kobold','Mimic',
       'Ogre','Orc','Owlbear','Skeleton','Spy','Thug','Troll','Vampire',
@@ -1868,6 +1924,17 @@ function renderTokenControls(mapUrl, mapKey) {
   };
   mapHeaderRow.appendChild(movePartyBtn);
 
+  // Grid overlay toggle button
+  var gridBtn = document.createElement('button');
+  gridBtn.style.cssText = 'font-size:0.72rem;padding:0.18rem 0.5rem;border-radius:4px;cursor:pointer;white-space:nowrap;border:1px solid ' +
+    (gridEnabled ? '#60a5fa' : '#30363d') + ';background:' +
+    (gridEnabled ? 'rgba(96,165,250,0.15)' : '#0d1117') + ';color:' +
+    (gridEnabled ? '#60a5fa' : '#888') + ';';
+  gridBtn.textContent = gridEnabled ? '⊞ Grid: ON' : '⊞ Grid: OFF';
+  gridBtn.title = 'Toggle grid overlay on all screens (helps track movement per cell)';
+  gridBtn.onclick = function () { wsSend({ action: 'toggle-grid' }); };
+  mapHeaderRow.appendChild(gridBtn);
+
   if (movePartyMode) {
     var selAllBtn = document.createElement('button');
     selAllBtn.textContent = '☑ All Players';
@@ -1962,7 +2029,41 @@ function renderTokenControls(mapUrl, mapKey) {
   mapImg.addEventListener('load', sizeDrawCanvas);
   if (mapImg.complete && mapImg.naturalWidth) setTimeout(sizeDrawCanvas, 10);
 
-  // Mouse drawing on the shared canvas
+  // Grid overlay on DM preview
+  function renderDmGridNow() {
+    var oldGrid = mapWrap.querySelector('.dm-grid-overlay');
+    if (oldGrid) oldGrid.remove();
+    if (!gridEnabled) return;
+    var cols = (dmMapMeta && dmMapMeta.cols) || 20;
+    var rows = (dmMapMeta && dmMapMeta.rows) || 20;
+    var svgNS = 'http://www.w3.org/2000/svg';
+    var g = document.createElementNS(svgNS, 'svg');
+    g.setAttribute('class', 'dm-grid-overlay');
+    g.setAttribute('viewBox', '0 0 100 100');
+    g.setAttribute('preserveAspectRatio', 'none');
+    g.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:6;width:100%;height:100%;';
+    for (var ci = 0; ci <= cols; ci++) {
+      var vl = document.createElementNS(svgNS, 'line');
+      var vx = (ci / cols) * 100;
+      vl.setAttribute('x1', vx); vl.setAttribute('y1', 0);
+      vl.setAttribute('x2', vx); vl.setAttribute('y2', 100);
+      vl.setAttribute('stroke', 'white'); vl.setAttribute('stroke-opacity', '0.22');
+      vl.setAttribute('stroke-width', '0.25');
+      g.appendChild(vl);
+    }
+    for (var ri = 0; ri <= rows; ri++) {
+      var hl = document.createElementNS(svgNS, 'line');
+      var hy = (ri / rows) * 100;
+      hl.setAttribute('x1', 0); hl.setAttribute('y1', hy);
+      hl.setAttribute('x2', 100); hl.setAttribute('y2', hy);
+      hl.setAttribute('stroke', 'white'); hl.setAttribute('stroke-opacity', '0.22');
+      hl.setAttribute('stroke-width', '0.25');
+      g.appendChild(hl);
+    }
+    mapWrap.appendChild(g);
+  }
+  mapImg.addEventListener('load', renderDmGridNow);
+  if (mapImg.complete && mapImg.naturalWidth) setTimeout(renderDmGridNow, 15);
   var drawingActive = false;
   var currentDrawStroke = null;
   function getDrawMousePos(e) {
@@ -2103,15 +2204,17 @@ function renderTokenControls(mapUrl, mapKey) {
     var dispTok   = Object.assign({}, tok, { conditions: dispConds });
 
     var isSelected = selectedTokenIds.has(tok.id);
-    // Check if this token is a combat target
-    var isTargeted  = Object.values(dmTargets).indexOf(tok.label) !== -1;
-    var targetingThis = Object.keys(dmTargets).filter(function(p){ return dmTargets[p] === tok.label; });
+    var isItem = tok.type === 'item';
+    // Items cannot be combat targets
+    var isTargeted  = !isItem && Object.values(dmTargets).indexOf(tok.label) !== -1;
+    var targetingThis = isItem ? [] : Object.keys(dmTargets).filter(function(p){ return dmTargets[p] === tok.label; });
     var dot = document.createElement('div');
     dot.dataset.tokId = tok.id || '';
     dot.dataset.tokenLabel = tok.label || '';
-    dot.style.cssText = 'position:absolute;width:20px;height:20px;border-radius:50%;' +
+    dot.style.cssText = 'position:absolute;width:20px;height:20px;' +
+      'border-radius:' + (isItem ? '4px' : '50%') + ';' +
       'background:' + tokenBgColor(tok) + ';' +
-      'border:2px solid ' + (isSelected ? '#facc15' : (tok.mobType ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.9)')) + ';' +
+      'border:2px solid ' + (isSelected ? '#facc15' : isItem ? '#fbbf24' : (tok.mobType ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.9)')) + ';' +
       (isSelected ? 'outline:2px solid rgba(250,204,21,0.45);' : '') +
       (isTargeted  ? 'box-shadow:0 0 0 3px rgba(239,68,68,0.9),0 0 0 6px rgba(239,68,68,0.3),' + makeConditionShadow(dispTok) + ';' : 'box-shadow:' + makeConditionShadow(dispTok) + ';') +
       'display:flex;align-items:center;justify-content:center;' +
@@ -2124,7 +2227,19 @@ function renderTokenControls(mapUrl, mapKey) {
     if (dispConds.length) titleParts.push(dispConds.map(function (c) { return c.icon + ' ' + c.name; }).join(', '));
     dot.title = titleParts.join(' | ');
 
-    if (tok.type === 'player' && tok.cls && MOB_ICONS_CLASS[tok.cls]) {
+    if (isItem) {
+      var itemIconEl = document.createElement('span');
+      itemIconEl.textContent = ITEM_ICONS[tok.itemType] || '🎁';
+      itemIconEl.style.cssText = 'font-size:11px;line-height:1;display:block;pointer-events:none;';
+      dot.appendChild(itemIconEl);
+      var itemNum = tok.label ? tok.label.replace(tok.itemType || '', '').trim() : '';
+      if (itemNum) {
+        var itemNumEl = document.createElement('span');
+        itemNumEl.textContent = itemNum;
+        itemNumEl.style.cssText = 'color:#fbbf24;font-weight:bold;font-size:7px;line-height:1;font-family:sans-serif;pointer-events:none;';
+        dot.appendChild(itemNumEl);
+      }
+    } else if (tok.type === 'player' && tok.cls && MOB_ICONS_CLASS[tok.cls]) {
       var iconEl = document.createElement('span');
       iconEl.textContent = MOB_ICONS_CLASS[tok.cls];
       iconEl.style.cssText = 'font-size:11px;line-height:1;display:block;pointer-events:none;';
@@ -2247,6 +2362,23 @@ function renderTokenControls(mapUrl, mapKey) {
         document.removeEventListener('mouseup', onUp);
         dot.style.boxShadow = makeConditionShadow(dispTok);
         if (didMove) {
+          // Snap whole group or single token to grid cell centre on release
+          if (gridEnabled && dmMapMeta) {
+            if (movePartyMode && selectedTokenIds.has(tok.id) && selectedTokenIds.size > 1) {
+              (tokenState[mapKey] || []).forEach(function (t) {
+                if (!selectedTokenIds.has(t.id)) return;
+                var s = snapPosToGrid(t.x, t.y);
+                t.x = s.x; t.y = s.y;
+                var dotEl = previewOverlay.querySelector('[data-tok-id="' + t.id + '"]');
+                if (dotEl) { dotEl.style.left = (t.x * 100) + '%'; dotEl.style.top = (t.y * 100) + '%'; }
+              });
+            } else {
+              var sn = snapPosToGrid(tok.x, tok.y);
+              tok.x = sn.x; tok.y = sn.y;
+              dot.style.left = (tok.x * 100) + '%';
+              dot.style.top  = (tok.y * 100) + '%';
+            }
+          }
           sendTokenUpdate(mapKey);
           updateFogTokenOverlay();
         }
@@ -2279,6 +2411,7 @@ function renderTokenControls(mapUrl, mapKey) {
     var rect = mapWrap.getBoundingClientRect();
     var x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     var y = Math.max(0, Math.min(1, (e.clientY - rect.top)  / rect.height));
+    if (gridEnabled && dmMapMeta) { var sp = snapPosToGrid(x, y); x = sp.x; y = sp.y; }
     // ── Add Party mode: place all party members in a grid around click ──
     if (selectedTokenColor === 'green' && addPartyMode && playerRoster.length) {
       var n = playerRoster.length;
@@ -2325,6 +2458,11 @@ function renderTokenControls(mapUrl, mapKey) {
         return;
       }
       label = selectedPlayerName;
+    } else if (selectedTokenColor === 'item') {
+      var itemCount = tokenState[mapKey].filter(function (t) {
+        return t.itemType === selectedItemType;
+      }).length + 1;
+      label = selectedItemType + ' ' + itemCount;
     } else {
       if (selectedMobType) {
         var typeCount = tokenState[mapKey].filter(function (t) {
@@ -2342,14 +2480,17 @@ function renderTokenControls(mapUrl, mapKey) {
     if (selectedTokenColor === 'green') {
       var rp = playerRoster.find(function (p) { return p.name === selectedPlayerName; });
       if (rp) { newTok.type = 'player'; newTok.cls = rp.cls; }
+    } else if (selectedTokenColor === 'item') {
+      newTok.type = 'item';
+      newTok.itemType = selectedItemType;
     } else if (selectedMobType) {
       newTok.mobType = selectedMobType;
     }
     tokenState[mapKey].push(newTok);
     sendTokenUpdate(mapKey);
     renderTokenControls(mapUrl, mapKey);
-    // Auto-add to initiative if toggle is on and not already present
-    if (autoAddToInit && selectedTokenColor !== 'green') {
+    // Auto-add to initiative if toggle is on and not already present (items are never added)
+    if (autoAddToInit && selectedTokenColor !== 'green' && selectedTokenColor !== 'item') {
       var alreadyInInit = initiative.some(function (e) { return e.name === label; });
       if (!alreadyInInit) {
         // Check if the token's map cell is still fogged
@@ -3108,7 +3249,7 @@ function refreshMapMobsSection() {
   var summary = document.getElementById('init-map-mobs-summary');
   if (!list) return;
   var tokens = (activeTokenMapKey && tokenState[activeTokenMapKey]) ? tokenState[activeTokenMapKey] : [];
-  var mobs = tokens.filter(function(t) { return t.type !== 'player' && t.label; });
+  var mobs = tokens.filter(function(t) { return t.type !== 'player' && t.type !== 'item' && t.label; });
   list.innerHTML = '';
   if (!mobs.length) {
     list.innerHTML = '<span style="color:#555;font-size:0.78rem;">No mob tokens on current map</span>';
