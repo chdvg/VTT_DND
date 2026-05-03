@@ -36,6 +36,8 @@ var autoAddToInit       = true;  // toggle: auto-add tokens to initiative
 var showPlayerRings     = true;  // toggle: show condition rings on player screen
 var fogDeferredInit     = {};    // mapKey -> [{label, roll}] waiting for fog reveal
 var selectedMobType     = '';    // current mob type name for token labels
+var selectedEnemyName  = '';    // optional named override for enemy placement (e.g. "Klarg")
+var selectedFriendName = '';    // optional name for Friend/Unknown token placement
 var selectedPlayerName = null;
 var addPartyMode       = false; // place entire party on one click
 var movePartyMode      = false; // move entire party as one unit
@@ -1575,6 +1577,7 @@ function tokenBgColor(tok) {
   if (tok.type === 'item') return '#78350f';
   if (tok.type === 'player' && tok.cls && CLASS_COLORS_DM[tok.cls]) return CLASS_COLORS_DM[tok.cls];
   if (tok.mobType && MOB_COLORS[tok.mobType]) return MOB_COLORS[tok.mobType];
+  if (tok.mobType && CLASS_COLORS_DM[tok.mobType]) return CLASS_COLORS_DM[tok.mobType];
   return tokenCssColor(tok.color);
 }
 
@@ -1762,12 +1765,14 @@ function renderTokenControls(mapUrl, mapKey) {
     container.appendChild(itemRow);
   }
 
-  // Mob type picker (non-green, non-item only, and only when placement is active)
-  if (selectedTokenColor !== null && selectedTokenColor !== 'green' && selectedTokenColor !== 'item') {
+  // Enemy (red): mob type picker + optional named enemy field
+  if (selectedTokenColor === 'red') {
     var MOB_TYPES = ['Bandit','Bugbear','Cultist','Dragon','Drow','Gelatinous Cube',
       'Ghoul','Giant','Gnoll','Goblin','Guard','Hobgoblin','Kobold','Mimic',
       'Ogre','Orc','Owlbear','Skeleton','Spy','Thug','Troll','Vampire',
       'Werewolf','Wolf','Zombie'];
+    var CLASS_TYPES = Object.keys(MOB_ICONS_CLASS);
+    var allMobTypes = MOB_TYPES.concat(CLASS_TYPES);
     var mobRow = document.createElement('div');
     mobRow.style.cssText = 'display:flex;gap:0.4rem;align-items:center;flex-wrap:nowrap;';
     var mobLbl = document.createElement('span');
@@ -1779,16 +1784,31 @@ function renderTokenControls(mapUrl, mapKey) {
       'padding:0.22rem 0.4rem;font-size:0.77rem;flex:1;min-width:100px;';
     var blankOpt = document.createElement('option');
     blankOpt.value = '';
-    blankOpt.textContent = '— Generic (E1, F1…)';
+    blankOpt.textContent = '— Generic (E1, E2…)';
     mobSel.appendChild(blankOpt);
+    // Monsters group
+    var grpMonsters = document.createElement('optgroup');
+    grpMonsters.label = '── Monsters ──';
     MOB_TYPES.forEach(function (t) {
       var o = document.createElement('option');
       o.value = t;
-      o.textContent = t;
+      o.textContent = (MOB_ICONS[t] ? MOB_ICONS[t] + ' ' : '') + t;
       if (t === selectedMobType) o.selected = true;
-      mobSel.appendChild(o);
+      grpMonsters.appendChild(o);
     });
-    if (selectedMobType && !MOB_TYPES.includes(selectedMobType)) mobSel.value = '';
+    mobSel.appendChild(grpMonsters);
+    // Classes group
+    var grpClasses = document.createElement('optgroup');
+    grpClasses.label = '── Classes ──';
+    CLASS_TYPES.forEach(function (t) {
+      var o = document.createElement('option');
+      o.value = t;
+      o.textContent = (MOB_ICONS_CLASS[t] ? MOB_ICONS_CLASS[t] + ' ' : '') + t;
+      if (t === selectedMobType) o.selected = true;
+      grpClasses.appendChild(o);
+    });
+    mobSel.appendChild(grpClasses);
+    if (selectedMobType && !allMobTypes.includes(selectedMobType)) mobSel.value = '';
     mobSel.onchange = function () {
       selectedMobType = mobSel.value;
       customMobInput.value = '';
@@ -1798,7 +1818,7 @@ function renderTokenControls(mapUrl, mapKey) {
     var customMobInput = document.createElement('input');
     customMobInput.type = 'text';
     customMobInput.placeholder = 'Custom…';
-    customMobInput.value = (selectedMobType && !MOB_TYPES.includes(selectedMobType)) ? selectedMobType : '';
+    customMobInput.value = (selectedMobType && !allMobTypes.includes(selectedMobType)) ? selectedMobType : '';
     customMobInput.style.cssText = 'background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6e6e6;' +
       'padding:0.22rem 0.4rem;font-size:0.77rem;width:80px;';
     customMobInput.oninput = function () {
@@ -1807,6 +1827,41 @@ function renderTokenControls(mapUrl, mapKey) {
     };
     mobRow.appendChild(customMobInput);
     container.appendChild(mobRow);
+    // Named enemy override (e.g. "Klarg") — optional
+    var enemyNameRow = document.createElement('div');
+    enemyNameRow.style.cssText = 'display:flex;gap:0.4rem;align-items:center;flex-wrap:nowrap;';
+    var enemyNameLbl = document.createElement('span');
+    enemyNameLbl.textContent = 'Name (optional):';
+    enemyNameLbl.style.cssText = 'font-size:0.75rem;color:#888;white-space:nowrap;';
+    enemyNameRow.appendChild(enemyNameLbl);
+    var enemyNameInput = document.createElement('input');
+    enemyNameInput.type = 'text';
+    enemyNameInput.placeholder = 'e.g. Klarg';
+    enemyNameInput.value = selectedEnemyName;
+    enemyNameInput.style.cssText = 'background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6e6e6;' +
+      'padding:0.22rem 0.4rem;font-size:0.77rem;flex:1;min-width:100px;';
+    enemyNameInput.oninput = function () { selectedEnemyName = enemyNameInput.value.trim(); };
+    enemyNameRow.appendChild(enemyNameInput);
+    container.appendChild(enemyNameRow);
+  }
+
+  // Friend (blue) / Unknown (yellow): optional name field only — no mob type picker
+  if (selectedTokenColor === 'blue' || selectedTokenColor === 'yellow') {
+    var friendNameRow = document.createElement('div');
+    friendNameRow.style.cssText = 'display:flex;gap:0.4rem;align-items:center;flex-wrap:nowrap;';
+    var friendNameLbl = document.createElement('span');
+    friendNameLbl.textContent = 'Name (optional):';
+    friendNameLbl.style.cssText = 'font-size:0.75rem;color:#888;white-space:nowrap;';
+    friendNameRow.appendChild(friendNameLbl);
+    var friendNameInput = document.createElement('input');
+    friendNameInput.type = 'text';
+    friendNameInput.placeholder = selectedTokenColor === 'blue' ? 'e.g. Sildar' : 'e.g. Cloaked Figure';
+    friendNameInput.value = selectedFriendName;
+    friendNameInput.style.cssText = 'background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6e6e6;' +
+      'padding:0.22rem 0.4rem;font-size:0.77rem;flex:1;min-width:120px;';
+    friendNameInput.oninput = function () { selectedFriendName = friendNameInput.value.trim(); };
+    friendNameRow.appendChild(friendNameInput);
+    container.appendChild(friendNameRow);
   }
 
   // Player quick-place buttons (only shown when Player color is active)
@@ -2250,9 +2305,9 @@ function renderTokenControls(mapUrl, mapKey) {
         'font-family:sans-serif;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,0.9);' +
         'white-space:nowrap;overflow:hidden;max-width:18px;';
       dot.appendChild(nmEl);
-    } else if (tok.mobType && MOB_ICONS[tok.mobType]) {
+    } else if (tok.mobType && (MOB_ICONS[tok.mobType] || MOB_ICONS_CLASS[tok.mobType])) {
       var iconEl = document.createElement('span');
-      iconEl.textContent = MOB_ICONS[tok.mobType];
+      iconEl.textContent = MOB_ICONS[tok.mobType] || MOB_ICONS_CLASS[tok.mobType];
       iconEl.style.cssText = 'font-size:11px;line-height:1;display:block;pointer-events:none;';
       dot.appendChild(iconEl);
       var num = tok.label ? tok.label.replace(tok.mobType, '').trim() : '';
@@ -2463,14 +2518,32 @@ function renderTokenControls(mapUrl, mapKey) {
         return t.itemType === selectedItemType;
       }).length + 1;
       label = selectedItemType + ' ' + itemCount;
-    } else {
-      if (selectedMobType) {
+    } else if (selectedTokenColor === 'red') {
+      if (selectedEnemyName) {
+        var baseName = selectedEnemyName;
+        var sameNameCount = tokenState[mapKey].filter(function (t) {
+          return t.label === baseName || t.label.startsWith(baseName + ' ');
+        }).length;
+        label = sameNameCount === 0 ? baseName : baseName + ' ' + (sameNameCount + 1);
+      } else if (selectedMobType) {
         var typeCount = tokenState[mapKey].filter(function (t) {
           return t.label.startsWith(selectedMobType + ' ');
         }).length + 1;
         label = selectedMobType + ' ' + typeCount;
       } else {
-        var prefix = { red: 'E', blue: 'F', yellow: 'U' }[selectedTokenColor] || '?';
+        var count = tokenState[mapKey].filter(function (t) { return t.color === 'red'; }).length + 1;
+        label = 'E' + count;
+      }
+    } else {
+      // blue / yellow
+      if (selectedFriendName) {
+        var baseName = selectedFriendName;
+        var sameNameCount = tokenState[mapKey].filter(function (t) {
+          return t.label === baseName || t.label.startsWith(baseName + ' ');
+        }).length;
+        label = sameNameCount === 0 ? baseName : baseName + ' ' + (sameNameCount + 1);
+      } else {
+        var prefix = { blue: 'F', yellow: 'U' }[selectedTokenColor] || '?';
         var count  = tokenState[mapKey].filter(function (t) { return t.color === selectedTokenColor; }).length + 1;
         label = prefix + count;
       }
@@ -2483,7 +2556,7 @@ function renderTokenControls(mapUrl, mapKey) {
     } else if (selectedTokenColor === 'item') {
       newTok.type = 'item';
       newTok.itemType = selectedItemType;
-    } else if (selectedMobType) {
+    } else if (selectedTokenColor === 'red' && selectedMobType) {
       newTok.mobType = selectedMobType;
     }
     tokenState[mapKey].push(newTok);

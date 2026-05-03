@@ -418,7 +418,7 @@ function renderTokenOverlay(tokens) {
     var left  = offX + tok.x * rendW;
     var top   = offY + tok.y * rendH;
     var isPlayer = tok.type === 'player' && tok.cls;
-    var isMob    = tok.mobType && MOB_ICONS[tok.mobType];
+    var isMob    = tok.mobType && (MOB_ICONS[tok.mobType] || CLASS_ICONS[tok.mobType]);
     var isItem   = tok.type === 'item';
 
     // Hide non-player tokens that fall in a fogged (unrevealed) cell
@@ -436,7 +436,7 @@ function renderTokenOverlay(tokens) {
       color  = CLASS_COLORS[tok.cls] || '#3b82f6';
       border = '3px solid #d4af37';
     } else if (isMob) {
-      color  = MOB_COLORS[tok.mobType] || TOKEN_COLORS[tok.color] || '#888';
+      color  = MOB_COLORS[tok.mobType] || CLASS_COLORS[tok.mobType] || TOKEN_COLORS[tok.color] || '#888';
       border = '2px solid rgba(255,255,255,0.7)';
     } else {
       color  = TOKEN_COLORS[tok.color] || tok.color || '#888';
@@ -487,7 +487,7 @@ function renderTokenOverlay(tokens) {
         dot.appendChild(lbl);
       }
     } else if (isMob) {
-      var icon = MOB_ICONS[tok.mobType];
+      var icon = MOB_ICONS[tok.mobType] || CLASS_ICONS[tok.mobType];
       var iconEl = document.createElement('span');
       iconEl.textContent = icon;
       iconEl.style.cssText = 'font-size:' + iconSize + 'px;line-height:1;display:block;';
