@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v2.8 — Web Edition)
+# D&D VTT Control Console (v2.9 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -123,7 +123,7 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
   - Drag sends a `move-player-token` WebSocket action; the server validates ownership before updating positions
   - Movement is reflected in real time on every connected screen — player views and the DM Map Control panel all update simultaneously
   - **Movement can be locked by the DM** — see Token Overlay section below
-- **Overlay popups** — dice rolls, initiative order, sent text, and sent images appear as a timed gold-bordered floating panel *over* the map (map stays visible)
+- **Overlay popups** — dice rolls, initiative order, sent text, and sent images appear as a timed semi-transparent parchment panel anchored to the **top-center** of the screen so attack animations and tokens remain visible beneath it
 - Auto-dismiss timers: Dice 8 s · Initiative 12 s · Text 15 s · Image 20 s
 - **Fullscreen button** — ⛶ in the corner; useful for projector displays to hide browser chrome
 - **Player Dice Roller** — after logging in, a compact HUD bar appears at the bottom-left of the player screen next to the Log Off button:
@@ -149,6 +149,20 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
 - **Persistence** — the current round, turn position, and all entries survive a page refresh (saved to `localStorage`).
 - **⚔️ Send** and **⏭️ Next** buttons are always visible in the Initiative Tracker panel.
 - **Condition rings on map tokens** — conditions assigned in the tracker automatically drive colored rings on the corresponding map token; rings expire and update as turns advance.
+- **📍 Mobs on Map quick-add** — a collapsible section lists every non-player token on the current active map as chip buttons:
+  - **Click** a chip → pre-fills the mob name field so you can enter a roll and add normally
+  - **Shift+click** → adds the mob instantly with a random d20 roll
+  - Chips for mobs already in the initiative list appear dimmed; the section header shows a live count
+- **🎯 Combat Targeting System** — each initiative entry has a **🎯 Target** button to assign who that combatant attacks:
+  - Players tap a mob token on their own screen to set it as their target; their chosen target is highlighted with a pulsing red ring
+  - The DM can also assign targets manually for any combatant (players, mobs, or NPCs) using the 🎯 Target panel in the initiative entry — useful when a player can't connect a browser
+  - When **Next Turn** is clicked, attack animations fire automatically before advancing:
+    - Active player has a target → attack animation plays on that target on all screens
+    - Active mob has players targeting it (or a DM-assigned target) → attack animation plays on those player tokens
+  - Animation type is class-aware: Sorcerer / Wizard / Druid / Cleric / Priest / Bard → ✨ spell flash; all others → ⚔️ sword swipe
+  - Target assignments are stored server-side and replayed to late-joining players
+  - Clearing a scene resets all targeting state
+- **⚔️ Attack Log** — a running log below the initiative table records every auto-triggered attack: attacker name (gold), target(s) (red), spell/sword icon, and timestamp. A **Clear** button wipes the log.
 
 ### Monster Lookup
 
@@ -200,6 +214,9 @@ The Reference panel is a tabbed quick-reference hub for DMs, with live API looku
 
 ### Token Overlay
 
+- **Combat targeting indicators on the map** — targeted mob tokens display a pulsing red ring and 🎯 crosshair badge:
+  - On a **logged-in player screen**: only their own target pulses
+  - On a **spectator / projector screen** (no login) or the **DM map**: all currently targeted mobs pulse
 - Place colored token markers directly on any scene map in the DM panel
 - Color codes: 🔴 Enemy · 🔵 Friend · 🟡 Unknown · 🟢 Player
 - **Class icons** — player tokens automatically display a class emoji (🗡️ Rogue, 🛡️ Fighter, 🔮 Sorcerer, etc.) and a unique class color drawn from the player roster
@@ -428,6 +445,16 @@ Scenes are stored in `seeds/scenes.json`. Structure:
 | `MOVEMENT_LOCK` | server → player | `{ name, locked }` |
 | `MOVEMENT_LOCK_ALL` | server → player | `{ locked }` |
 | `LOGGED_IN_PLAYERS` | server → DM | `{ players: [...names] }` |
+| `SET_TARGET` | server → all | `{ player, target }` — combat target assignment (player name → mob label) |
+| `ATTACK_ANIMATION` | server → player | `{ attacker, targets[] }` — triggers sword/spell animation on target tokens |
+
+**DM → Server additional actions:**
+
+| Action | Payload | Effect |
+|--------|---------|--------|
+| `set-target` | `{ target }` | Player sets their own attack target |
+| `dm-set-target` | `{ player, target }` | DM assigns a target on behalf of any combatant (stored server-side) |
+| `trigger-attack` | `{ attacker, targets[] }` | DM broadcasts attack animation to all player screens |
 
 ---
 

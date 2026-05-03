@@ -4,23 +4,11 @@
     "cls": "Rogue"
   },
   {
-    "name": "Wil",
-    "cls": "Priest"
-  },
-  {
     "name": "Josh",
     "cls": "Sorcerer"
   },
   {
     "name": "Katie",
     "cls": "Fighter"
-  },
-  {
-    "name": "Ian",
-    "cls": "Druid"
-  },
-  {
-    "name": "Dobby",
-    "cls": "FatChub"
   }
 ]

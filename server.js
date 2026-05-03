@@ -141,6 +141,7 @@ let currentMapMeta       = null; // { cols, rows } for active map grid
 const lockedPlayers    = new Set();  // names of individually-locked players
 let allPlayersLocked   = false;      // DM has locked all player movement
 const loggedInPlayers  = new Map();  // playerName -> ws
+let currentTargets     = {};         // playerName -> targetLabel (combat targeting)
 const clients = new Set();
 const dmClients = new Set();
 let guestCounter = 0;  // increments for each non-DM connection
@@ -210,6 +211,10 @@ function sendFullState(ws) {
     }
   }
   // Audio — we don't restart audio on reconnect (too disruptive if it's mid-play)
+  // Targeting state
+  for (const [player, target] of Object.entries(currentTargets)) {
+    if (target) ws.send(JSON.stringify({ type: 'SET_TARGET', player, target }));
+  }
 }
 
 // Ping all open connections every 25s to keep them alive through NAT/VPN
@@ -247,7 +252,8 @@ wss.on('connection', (ws, req) => {
       blackout: currentState.blackout,
       loggedInPlayers: [...loggedInPlayers.keys()],
       lockedPlayers: [...lockedPlayers],
-      allPlayersLocked: allPlayersLocked
+      allPlayersLocked: allPlayersLocked,
+      currentTargets: currentTargets
     }));
   }
 
@@ -259,7 +265,7 @@ wss.on('connection', (ws, req) => {
       const DM_ACTIONS = ['blackout','show','show-scene-view','clear','clear-scene','play-audio',
         'stop-audio','send-overlay','update-fog','set-rings','update-tokens',
         'update-drawing','dm-connect','trigger-feature','reset-feature','update-features',
-        'lock-player','unlock-player','lock-all','unlock-all'];
+        'lock-player','unlock-player','lock-all','unlock-all','trigger-attack','dm-set-target'];
       if (DM_ACTIONS.includes(message.action) && !isDm) {
         // If a DM panel is reconnecting after a server restart the session
         // will be gone — tell it to reload so it goes through login again.
@@ -294,7 +300,7 @@ wss.on('connection', (ws, req) => {
           currentFogStates = {}; // new scene clears old fog keys
           currentFeatures = Array.isArray(message.features) ? message.features : [];
           currentFeatureStates = {};
-          if (message.mapMeta) currentMapMeta = message.mapMeta;
+          currentTargets = {};
           const sceneViewMsg = { type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain', mapKey: message.mapKey || null, features: currentFeatures, mapMeta: message.mapMeta || null, label: message.label || '' };
           currentSceneView = sceneViewMsg;
           currentAudio = message.audio ? { url: message.audio, loop: message.audioLoop !== false } : null;
@@ -314,6 +320,7 @@ wss.on('connection', (ws, req) => {
           currentAudio = null;
           currentFeatures = [];
           currentFeatureStates = {};
+          currentTargets = {};
           broadcast({ type: 'CLEAR' }); break;
         case 'clear-scene':
           currentSceneView = null;
@@ -324,6 +331,7 @@ wss.on('connection', (ws, req) => {
           currentFogStates = {};
           currentFeatures = [];
           currentFeatureStates = {};
+          currentTargets = {};
           broadcast({ type: 'CLEAR_SCENE' }); break;
         case 'play-audio':
           if (message.url) {
@@ -411,6 +419,31 @@ wss.on('connection', (ws, req) => {
           allPlayersLocked = false;
           broadcast({ type: 'MOVEMENT_LOCK_ALL', locked: false });
           break;
+        case 'dm-set-target': {
+          // DM assigns a target on behalf of any combatant (player or mob)
+          const dmTgtName   = String(message.player || '').trim().slice(0, 64);
+          const dmTgtTarget = String(message.target || '').trim().slice(0, 64);
+          if (dmTgtName) {
+            if (dmTgtTarget) {
+              currentTargets[dmTgtName] = dmTgtTarget;
+            } else {
+              delete currentTargets[dmTgtName];
+            }
+            broadcast({ type: 'SET_TARGET', player: dmTgtName, target: dmTgtTarget || null });
+          }
+          break;
+        }
+        case 'trigger-attack': {
+          // DM broadcasts an attack animation: attacker hits an array of target labels
+          const atkAttacker = String(message.attacker || '').trim().slice(0, 64);
+          const atkTargets  = Array.isArray(message.targets)
+            ? message.targets.map(t => String(t).trim().slice(0, 64)).filter(Boolean)
+            : [];
+          if (atkAttacker && atkTargets.length) {
+            broadcast({ type: 'ATTACK_ANIMATION', attacker: atkAttacker, targets: atkTargets });
+          }
+          break;
+        }
         case 'player-login': {
           const loginName = String(message.name || '').trim().slice(0, 64);
           const loginCls  = String(message.cls  || '').trim().slice(0, 32);
@@ -482,6 +515,17 @@ wss.on('connection', (ws, req) => {
               }
             }
           }
+          break;
+        }
+        case 'set-target': {
+          if (!ws.playerName) break;
+          const tgt = String(message.target || '').trim().slice(0, 64);
+          if (tgt) {
+            currentTargets[ws.playerName] = tgt;
+          } else {
+            delete currentTargets[ws.playerName];
+          }
+          broadcast({ type: 'SET_TARGET', player: ws.playerName, target: tgt || null });
           break;
         }
         case 'player-dice-roll': {
