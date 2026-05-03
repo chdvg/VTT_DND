@@ -3393,6 +3393,11 @@ function refreshMapMobsSection() {
     }
     row.appendChild(chip);
     list.appendChild(row);
+  });
+}
+
+document.getElementById('init-clear-btn').addEventListener('click', function () {
+  // Remove only mobs — keep players in the round
   initiative = initiative.filter(function (e) { return e.isPlayer; });
   currentTurn = 0;
   saveInitiative();
