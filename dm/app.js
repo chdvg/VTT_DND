@@ -199,9 +199,17 @@ function restoreDmState(msg) {
     }
   }
 
-  // Restore token state
+  // Restore token state for the active map
   if (mapKey && msg.tokens && msg.tokens.length) {
     tokenState[mapKey] = msg.tokens;
+  }
+  // Restore all maps' token states (persisted across restarts)
+  if (msg.allTokenStates && typeof msg.allTokenStates === 'object') {
+    Object.keys(msg.allTokenStates).forEach(function (k) {
+      if (!tokenState[k] || !tokenState[k].length) {
+        tokenState[k] = msg.allTokenStates[k];
+      }
+    });
   }
 
   // Restore draw strokes
@@ -1632,6 +1640,8 @@ function sendTokenUpdate(mapKey) {
     return t;
   });
   wsSend({ action: 'update-tokens', tokens: enriched, mapKey: mapKey, showRings: showPlayerRings });
+  // Persist full tokenState (all maps) so it survives server restart
+  wsSend({ action: 'sync-all-tokens', tokenState: tokenState });
 }
 
 // Snap a normalized (0-1) position to the nearest grid cell centre when grid is enabled

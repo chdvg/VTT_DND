@@ -9,6 +9,61 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });
 
+// ── Persistence ───────────────────────────────────────────────
+const DATA_DIR   = path.join(__dirname, 'data');
+const STATE_FILE = path.join(DATA_DIR, 'state.json');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+
+function saveState() {
+  try {
+    const snapshot = {
+      currentSceneView,
+      currentFogStates,
+      currentTokens,
+      currentTokensMapKey,
+      currentTokensShowRings,
+      currentDrawing,
+      currentDrawingMapKey,
+      currentFeatures,
+      currentFeatureStates,
+      currentMapMeta,
+      currentTargets,
+      gridEnabled,
+      allPlayersLocked,
+      blackout: currentState.blackout,
+      allTokenStates,
+    };
+    fs.writeFileSync(STATE_FILE, JSON.stringify(snapshot));
+  } catch (e) {
+    console.error('saveState error:', e.message);
+  }
+}
+
+function loadState() {
+  try {
+    if (!fs.existsSync(STATE_FILE)) return;
+    const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    if (saved.currentSceneView)       currentSceneView       = saved.currentSceneView;
+    if (saved.currentFogStates)       currentFogStates       = saved.currentFogStates;
+    if (Array.isArray(saved.currentTokens)) currentTokens    = saved.currentTokens;
+    if (saved.currentTokensMapKey)    currentTokensMapKey    = saved.currentTokensMapKey;
+    if (saved.currentTokensShowRings !== undefined) currentTokensShowRings = saved.currentTokensShowRings;
+    if (Array.isArray(saved.currentDrawing)) currentDrawing  = saved.currentDrawing;
+    if (saved.currentDrawingMapKey)   currentDrawingMapKey   = saved.currentDrawingMapKey;
+    if (Array.isArray(saved.currentFeatures)) currentFeatures = saved.currentFeatures;
+    if (saved.currentFeatureStates)   currentFeatureStates   = saved.currentFeatureStates;
+    if (saved.currentMapMeta)         currentMapMeta         = saved.currentMapMeta;
+    if (saved.currentTargets)         currentTargets         = saved.currentTargets;
+    if (typeof saved.gridEnabled === 'boolean') gridEnabled  = saved.gridEnabled;
+    if (typeof saved.allPlayersLocked === 'boolean') allPlayersLocked = saved.allPlayersLocked;
+    if (typeof saved.blackout === 'boolean') currentState.blackout = saved.blackout;
+    if (saved.allTokenStates && typeof saved.allTokenStates === 'object') allTokenStates = saved.allTokenStates;
+    console.log('State restored from disk.');
+  } catch (e) {
+    console.error('loadState error:', e.message);
+  }
+}
+
 // ── DM Password Auth ─────────────────────────────────────────
 const DM_PASSWORD = process.env.DM_PASSWORD || 'dm1234';
 const SESSION_SECRET = crypto.randomBytes(32).toString('hex'); // ephemeral per-run
@@ -142,9 +197,14 @@ const lockedPlayers    = new Set();  // names of individually-locked players
 let allPlayersLocked   = false;      // DM has locked all player movement
 const loggedInPlayers  = new Map();  // playerName -> ws
 let currentTargets     = {};         // playerName -> targetLabel (combat targeting)
+let gridEnabled        = false;      // DM-toggled grid overlay (shown on all screens)
+let allTokenStates     = {};         // mapKey -> tokens[], persisted from DM (all maps)
 const clients = new Set();
 const dmClients = new Set();
 let guestCounter = 0;  // increments for each non-DM connection
+
+// Restore persisted state before starting
+loadState();
 
 function broadcastClientCount() {
   // Purge any dead connections so stale sockets don't skew the count
@@ -215,6 +275,10 @@ function sendFullState(ws) {
   for (const [player, target] of Object.entries(currentTargets)) {
     if (target) ws.send(JSON.stringify({ type: 'SET_TARGET', player, target }));
   }
+  // Grid overlay state
+  if (gridEnabled) {
+    ws.send(JSON.stringify({ type: 'GRID_TOGGLE', enabled: true }));
+  }
 }
 
 // Ping all open connections every 25s to keep them alive through NAT/VPN
@@ -253,7 +317,9 @@ wss.on('connection', (ws, req) => {
       loggedInPlayers: [...loggedInPlayers.keys()],
       lockedPlayers: [...lockedPlayers],
       allPlayersLocked: allPlayersLocked,
-      currentTargets: currentTargets
+      currentTargets: currentTargets,
+      gridEnabled: gridEnabled,
+      allTokenStates: allTokenStates,
     }));
   }
 
@@ -265,7 +331,8 @@ wss.on('connection', (ws, req) => {
       const DM_ACTIONS = ['blackout','show','show-scene-view','clear','clear-scene','play-audio',
         'stop-audio','send-overlay','update-fog','set-rings','update-tokens',
         'update-drawing','dm-connect','trigger-feature','reset-feature','update-features',
-        'lock-player','unlock-player','lock-all','unlock-all','trigger-attack','dm-set-target'];
+        'lock-player','unlock-player','lock-all','unlock-all','trigger-attack','dm-set-target',
+        'toggle-grid','sync-all-tokens'];
       if (DM_ACTIONS.includes(message.action) && !isDm) {
         // If a DM panel is reconnecting after a server restart the session
         // will be gone — tell it to reload so it goes through login again.
@@ -306,7 +373,9 @@ wss.on('connection', (ws, req) => {
           currentAudio = message.audio ? { url: message.audio, loop: message.audioLoop !== false } : null;
           broadcast(sceneViewMsg);
           broadcast({ type: 'UPDATE_TOKENS', tokens: [], mapKey: currentTokensMapKey });
-          broadcast({ type: 'UPDATE_DRAWING', strokes: [], mapKey: currentDrawingMapKey }); break;
+          broadcast({ type: 'UPDATE_DRAWING', strokes: [], mapKey: currentDrawingMapKey });
+          saveState();
+          break;
         }
         case 'clear':
           currentSceneId = null;
@@ -321,7 +390,10 @@ wss.on('connection', (ws, req) => {
           currentFeatures = [];
           currentFeatureStates = {};
           currentTargets = {};
-          broadcast({ type: 'CLEAR' }); break;
+          allTokenStates = {};
+          broadcast({ type: 'CLEAR' });
+          saveState();
+          break;
         case 'clear-scene':
           currentSceneView = null;
           currentTokens = [];
@@ -332,7 +404,10 @@ wss.on('connection', (ws, req) => {
           currentFeatures = [];
           currentFeatureStates = {};
           currentTargets = {};
-          broadcast({ type: 'CLEAR_SCENE' }); break;
+          allTokenStates = {};
+          broadcast({ type: 'CLEAR_SCENE' });
+          saveState();
+          break;
         case 'play-audio':
           if (message.url) {
             currentAudio = { url: message.url, loop: message.loop !== false };
@@ -347,7 +422,9 @@ wss.on('connection', (ws, req) => {
           if (message.fogKey) {
             currentFogStates[message.fogKey] = message.fogGrid;
           }
-          broadcast({ type: 'UPDATE_FOG', fogGrid: message.fogGrid, fogKey: message.fogKey }); break;
+          broadcast({ type: 'UPDATE_FOG', fogGrid: message.fogGrid, fogKey: message.fogKey });
+          saveState();
+          break;
         case 'set-rings':
           currentTokensShowRings = message.showRings !== undefined ? message.showRings : true;
           broadcast({ type: 'SET_RINGS', showRings: currentTokensShowRings }); break;
@@ -355,11 +432,22 @@ wss.on('connection', (ws, req) => {
           currentTokens = Array.isArray(message.tokens) ? message.tokens : [];
           currentTokensMapKey = message.mapKey || null;
           currentTokensShowRings = message.showRings !== undefined ? message.showRings : true;
-          broadcast({ type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey, showRings: currentTokensShowRings }); break;
+          broadcast({ type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey, showRings: currentTokensShowRings });
+          saveState();
+          break;
+        case 'sync-all-tokens':
+          // DM sends its full tokenState (all maps) for persistence
+          if (message.tokenState && typeof message.tokenState === 'object') {
+            allTokenStates = message.tokenState;
+            saveState();
+          }
+          break;
         case 'update-drawing':
           currentDrawing = Array.isArray(message.strokes) ? message.strokes : [];
           currentDrawingMapKey = message.mapKey || null;
-          broadcast({ type: 'UPDATE_DRAWING', strokes: currentDrawing, mapKey: currentDrawingMapKey }); break;
+          broadcast({ type: 'UPDATE_DRAWING', strokes: currentDrawing, mapKey: currentDrawingMapKey });
+          saveState();
+          break;
         case 'trigger-feature':
           if (message.featureId) {
             currentFeatureStates[message.featureId] = 'triggered';
@@ -444,6 +532,11 @@ wss.on('connection', (ws, req) => {
           }
           break;
         }
+        case 'toggle-grid':
+          gridEnabled = !gridEnabled;
+          broadcast({ type: 'GRID_TOGGLE', enabled: gridEnabled });
+          saveState();
+          break;
         case 'player-login': {
           const loginName = String(message.name || '').trim().slice(0, 64);
           const loginCls  = String(message.cls  || '').trim().slice(0, 32);
