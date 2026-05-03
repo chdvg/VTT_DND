@@ -1264,14 +1264,22 @@ connect();
 // Re-render position-dependent overlays on resize / phone rotation
 var _resizeTimer = null;
 window.addEventListener('resize', function () {
+  // Remove stale pixel-positioned overlays immediately so they don't appear
+  // at the wrong position (e.g. portrait coords visible in landscape corner)
+  sceneEl.querySelectorAll('.fog-overlay, .token-overlay, .feature-overlay')
+    .forEach(function (el) { el.remove(); });
   clearTimeout(_resizeTimer);
   _resizeTimer = setTimeout(function () {
-    var imgEl = sceneEl.querySelector('img');
-    if (currentFogKey && fogStates[currentFogKey]) {
-      renderFogOverlay(fogStates[currentFogKey], imgEl);
-    }
-    if (currentTokens.length) renderTokenOverlay(currentTokens);
-  }, 150);
+    // rAF ensures iOS has actually reflowed the viewport before we read offsetWidth/offsetHeight
+    requestAnimationFrame(function () {
+      var imgEl = sceneEl.querySelector('img');
+      if (currentFogKey && fogStates[currentFogKey]) {
+        renderFogOverlay(fogStates[currentFogKey], imgEl);
+      }
+      if (currentTokens.length) renderTokenOverlay(currentTokens);
+      if (currentFeatures && currentFeatures.length) renderFeatureOverlay(currentFeatures, imgEl);
+    });
+  }, 200);
 });
 
 // ── Player Dice Bar ───────────────────────────────────────────
