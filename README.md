@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v2.9 — Web Edition)
+# D&D VTT Control Console (v3.5 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -221,6 +221,18 @@ The Reference panel is a tabbed quick-reference hub for DMs, with live API looku
 - Color codes: 🔴 Enemy · 🔵 Friend · 🟡 Unknown · 🟢 Player
 - **Class icons** — player tokens automatically display a class emoji (🗡️ Rogue, 🛡️ Fighter, 🔮 Sorcerer, etc.) and a unique class color drawn from the player roster
 - **Mob type icons** — 25 standard monster types (Goblin 👺, Dragon 🐉, Skeleton 💀, Vampire 🧛, etc.) each with a distinct color; auto-numbering labels each placed token (Goblin 1, Goblin 2…)
+- **Class enemies** — enemy placement picker also includes a **Classes** optgroup (Rogue, Wizard, Fighter, etc.) for humanoid NPCs; uses icon + class color same as player tokens
+- **Named enemies / NPCs** — optional **Name** field when placing enemy tokens; deduped with a counter suffix if multiple copies are placed (e.g. *Glasstaff*, *Glasstaff 2*). Leave blank for auto-numbering
+- **Friend / Unknown tokens** — simple optional name field; no mob type picker
+- **📦 Item tokens** — place item markers (Chest, Gold, Sword, Potion, and 17 more types) directly on the map:
+  - Square shape, gold border, emoji icon (e.g. 🎁 🪙 ⚔️)
+  - Hidden automatically by fog of war, just like enemy tokens
+  - Never targetable by players; never added to initiative
+  - 20 item types: Chest, Gold, Sword, Shield, Potion, Scroll, Bow, Staff, Dagger, Amulet, Ring, Helmet, Boots, Gloves, Spellbook, Bomb, Key, Gem, Bag, Unknown
+- **👁️ Invisibility toggle** — every token (enemies, friends, players, items) has an eye button in the TOKEN PLACEMENT list:
+  - 👁️ = visible to players (default)
+  - 🙈 = hidden from players — DM sees a faded token with purple border; player screens skip it entirely
+  - Also accessible in the collapsible "Tokens on Map" section in the right sidebar
 - **Condition rings** — when a combatant in the initiative tracker has active buffs or debuffs, their map token displays colored rings: 🟢 green for buffs, 🔴 red for debuffs; multiple conditions stack as concentric rings outward
   - Rings update instantly when conditions are added, removed, or expire on turn advance
   - Token list below the map shows condition badges with icon, name, and rounds remaining
@@ -246,6 +258,7 @@ The Reference panel is a tabbed quick-reference hub for DMs, with live API looku
   - Dragging any selected token moves the entire selection by the same delta, keeping relative positions intact
   - The button label shows a count of currently selected tokens, e.g. *👥 Move Party (3)*
 - **Feature cell overlay on DM map** — when a map with builder features is loaded, feature cell boundaries are shown directly on both the fog map preview and the token map as dashed outlines in each feature's color; triggered features fill solid so the DM can see exactly what the players are seeing without needing a second screen
+- **Persistent token state** — all token positions across every map survive server restarts; the DM's full tokenState is synced to `data/state.json` on every update and restored automatically on reconnect
 
 ### Annotations & Drawing
 
@@ -325,6 +338,8 @@ Replace `dm1234` with your password. Don't commit this to a public repo.
 Click the **🔒 Lock** button in the top-right of the DM panel header. This clears your session and redirects back to the login page.
 
 > Sessions are in-memory — restarting the server automatically logs everyone out.
+
+> **Token & map state persists across restarts.** Token positions for every map are saved to `data/state.json` on every change and restored automatically when the server starts. The `data/` folder is created automatically and is not committed to git.
 
 ---
 
