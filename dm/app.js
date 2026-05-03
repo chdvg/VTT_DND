@@ -2675,6 +2675,23 @@ function renderTokenControls(mapUrl, mapKey) {
         row.appendChild(lockBtn);
       }
 
+      // Visibility toggle
+      var eyeBtn2 = document.createElement('button');
+        eyeBtn2.textContent = tok.hidden ? '🙈' : '👁️';
+        eyeBtn2.title = tok.hidden ? 'Hidden from players — click to reveal' : 'Visible to players — click to hide';
+        eyeBtn2.style.cssText = 'font-size:0.75rem;padding:0.05rem 0.3rem;min-width:0;flex:none;border-radius:3px;cursor:pointer;' +
+          'border:1px solid ' + (tok.hidden ? '#7c3aed' : '#374151') + ';' +
+          'background:' + (tok.hidden ? 'rgba(124,58,237,0.25)' : 'rgba(0,0,0,0.3)') + ';' +
+          'color:' + (tok.hidden ? '#c4b5fd' : '#6b7280') + ';';
+        eyeBtn2.onclick = (function (t, mk) {
+          return function () {
+            t.hidden = !t.hidden;
+            sendTokenUpdate(mk);
+            renderTokenControls(mapUrl, mk);
+          };
+        })(tok, mapKey);
+        row.appendChild(eyeBtn2);
+
       var rmBtn = document.createElement('button');
       rmBtn.textContent = '✕';
       rmBtn.className = 'btn btn-danger btn-small';

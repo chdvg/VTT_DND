@@ -1043,7 +1043,10 @@ function handleMessage(msg) {
     case 'UPDATE_FOG':
       if (msg.fogKey) {
         fogStates[msg.fogKey] = msg.fogGrid;
-        if (msg.fogKey === currentFogKey) renderFogOverlay(msg.fogGrid, sceneEl.querySelector('img'));
+        if (msg.fogKey === currentFogKey) {
+          renderFogOverlay(msg.fogGrid, sceneEl.querySelector('img'));
+          renderTokenOverlay(currentTokens); // re-check which tokens are in fogged cells
+        }
       }
       break;
     case 'PLAY_AUDIO':
