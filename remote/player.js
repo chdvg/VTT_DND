@@ -421,6 +421,9 @@ function renderTokenOverlay(tokens) {
     var isMob    = tok.mobType && (MOB_ICONS[tok.mobType] || CLASS_ICONS[tok.mobType]);
     var isItem   = tok.type === 'item';
 
+    // Hidden tokens are DM-only — never shown on player screens
+    if (tok.hidden) return;
+
     // Hide non-player tokens that fall in a fogged (unrevealed) cell
     if (!isPlayer && fogGrid && fogRows && fogCols) {
       var gridC = Math.min(fogCols - 1, Math.max(0, Math.floor(tok.x * fogCols)));

@@ -2260,6 +2260,7 @@ function renderTokenControls(mapUrl, mapKey) {
 
     var isSelected = selectedTokenIds.has(tok.id);
     var isItem = tok.type === 'item';
+    var isHidden = !!tok.hidden;
     // Items cannot be combat targets
     var isTargeted  = !isItem && Object.values(dmTargets).indexOf(tok.label) !== -1;
     var targetingThis = isItem ? [] : Object.keys(dmTargets).filter(function(p){ return dmTargets[p] === tok.label; });
@@ -2269,19 +2270,27 @@ function renderTokenControls(mapUrl, mapKey) {
     dot.style.cssText = 'position:absolute;width:20px;height:20px;' +
       'border-radius:' + (isItem ? '4px' : '50%') + ';' +
       'background:' + tokenBgColor(tok) + ';' +
-      'border:2px solid ' + (isSelected ? '#facc15' : isItem ? '#fbbf24' : (tok.mobType ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.9)')) + ';' +
+      'border:2px solid ' + (isSelected ? '#facc15' : isItem ? '#fbbf24' : isHidden ? '#a78bfa' : (tok.mobType ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.9)')) + ';' +
       (isSelected ? 'outline:2px solid rgba(250,204,21,0.45);' : '') +
       (isTargeted  ? 'box-shadow:0 0 0 3px rgba(239,68,68,0.9),0 0 0 6px rgba(239,68,68,0.3),' + makeConditionShadow(dispTok) + ';' : 'box-shadow:' + makeConditionShadow(dispTok) + ';') +
       'display:flex;align-items:center;justify-content:center;' +
       'flex-direction:column;overflow:visible;' +
       'left:' + (tok.x * 100) + '%;top:' + (tok.y * 100) + '%;transform:translate(-50%,-50%);' +
+      'opacity:' + (isHidden ? '0.45' : '1') + ';' +
       'cursor:move;pointer-events:auto;z-index:' + (isSelected ? '12' : '10') + ';user-select:none;';
 
-    // Build tooltip with conditions
     var titleParts = [tok.label || ''];
+    if (isHidden) titleParts.push('👁️‍🗨️ Hidden from players');
     if (dispConds.length) titleParts.push(dispConds.map(function (c) { return c.icon + ' ' + c.name; }).join(', '));
     dot.title = titleParts.join(' | ');
 
+    // Hidden indicator badge
+    if (isHidden) {
+      var hideBadge = document.createElement('span');
+      hideBadge.textContent = '🙈';
+      hideBadge.style.cssText = 'position:absolute;top:-8px;left:-8px;font-size:9px;pointer-events:none;z-index:5;';
+      dot.appendChild(hideBadge);
+    }
     if (isItem) {
       var itemIconEl = document.createElement('span');
       itemIconEl.textContent = ITEM_ICONS[tok.itemType] || '🎁';
@@ -3322,39 +3331,68 @@ function refreshMapMobsSection() {
   var summary = document.getElementById('init-map-mobs-summary');
   if (!list) return;
   var tokens = (activeTokenMapKey && tokenState[activeTokenMapKey]) ? tokenState[activeTokenMapKey] : [];
-  var mobs = tokens.filter(function(t) { return t.type !== 'player' && t.type !== 'item' && t.label; });
+  var mobs = tokens.filter(function(t) { return t.type !== 'item' && t.label; });
   list.innerHTML = '';
   if (!mobs.length) {
-    list.innerHTML = '<span style="color:#555;font-size:0.78rem;">No mob tokens on current map</span>';
-    if (summary) summary.textContent = '📍 Mobs on Map';
+    list.innerHTML = '<span style="color:#555;font-size:0.78rem;">No tokens on current map</span>';
+    if (summary) summary.textContent = '📍 Tokens on Map';
     return;
   }
-  if (summary) summary.textContent = '📍 Mobs on Map (' + mobs.length + ')';
+  if (summary) summary.textContent = '📍 Tokens on Map (' + mobs.length + ')';
   mobs.forEach(function(tok) {
     var alreadyIn = initiative.some(function(e) { return e.name === tok.label; });
-    var chip = document.createElement('button');
-    chip.className = 'btn btn-small' + (alreadyIn ? ' btn-secondary' : ' btn-primary');
-    chip.style.cssText = 'font-size:0.75rem;padding:0.2rem 0.5rem;opacity:' + (alreadyIn ? '0.45' : '1') + ';';
-    var icon = (MOB_ICONS && MOB_ICONS[tok.mobType]) ? MOB_ICONS[tok.mobType] + ' ' : '';
-    chip.textContent = icon + tok.label;
-    chip.title = alreadyIn ? 'Already in initiative' : 'Click to fill • Shift+click to add instantly';
-    chip.addEventListener('click', function(e) {
-      if (e.shiftKey) {
-        if (!alreadyIn) {
-          addToInitiative(tok.label, Math.floor(Math.random() * 20) + 1, false, '');
-          refreshMapMobsSection();
-        }
-      } else {
-        document.getElementById('init-name').value = tok.label;
-        document.getElementById('init-roll').focus();
-      }
-    });
-    list.appendChild(chip);
-  });
-}
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:0.3rem;align-items:center;';
 
-document.getElementById('init-clear-btn').addEventListener('click', function () {
-  // Remove only mobs — keep players in the round
+    // Visibility toggle button
+    var eyeBtn = document.createElement('button');
+    eyeBtn.textContent = tok.hidden ? '🙈' : '👁️';
+    eyeBtn.title = tok.hidden ? 'Invisible — click to reveal to players' : 'Visible — click to hide from players';
+    eyeBtn.style.cssText = 'flex:none;font-size:0.82rem;padding:0.1rem 0.35rem;border-radius:4px;cursor:pointer;' +
+      'border:1px solid ' + (tok.hidden ? '#7c3aed' : '#374151') + ';' +
+      'background:' + (tok.hidden ? 'rgba(124,58,237,0.25)' : 'rgba(0,0,0,0.3)') + ';' +
+      'color:' + (tok.hidden ? '#c4b5fd' : '#6b7280') + ';';
+    eyeBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      tok.hidden = !tok.hidden;
+      sendTokenUpdate(activeTokenMapKey);
+      refreshMapMobsSection();
+    });
+    row.appendChild(eyeBtn);
+
+    // Token chip (initiative button for non-player tokens)
+    var chip = document.createElement('button');
+    if (tok.type === 'player') {
+      chip.className = 'btn btn-small btn-secondary';
+      chip.style.cssText = 'font-size:0.75rem;padding:0.2rem 0.5rem;flex:1;text-align:left;' +
+        (tok.hidden ? 'opacity:0.5;text-decoration:line-through;' : '');
+      var pIcon = MOB_ICONS_CLASS[tok.cls] || '⚔️';
+      chip.textContent = pIcon + ' ' + tok.label + ' (player)';
+      chip.title = 'Player token';
+      chip.addEventListener('click', function() {});
+    } else {
+      chip.className = 'btn btn-small' + (alreadyIn ? ' btn-secondary' : ' btn-primary');
+      chip.style.cssText = 'font-size:0.75rem;padding:0.2rem 0.5rem;flex:1;text-align:left;opacity:' +
+        (tok.hidden ? '0.5' : (alreadyIn ? '0.45' : '1')) + ';' +
+        (tok.hidden ? 'text-decoration:line-through;' : '');
+      var mobIcon = (MOB_ICONS && MOB_ICONS[tok.mobType]) ? MOB_ICONS[tok.mobType] + ' ' :
+                    (MOB_ICONS_CLASS && MOB_ICONS_CLASS[tok.mobType]) ? MOB_ICONS_CLASS[tok.mobType] + ' ' : '';
+      chip.textContent = mobIcon + tok.label;
+      chip.title = alreadyIn ? 'Already in initiative' : 'Click to fill • Shift+click to add instantly';
+      chip.addEventListener('click', function(e) {
+        if (e.shiftKey) {
+          if (!alreadyIn) {
+            addToInitiative(tok.label, Math.floor(Math.random() * 20) + 1, false, '');
+            refreshMapMobsSection();
+          }
+        } else {
+          document.getElementById('init-name').value = tok.label;
+          document.getElementById('init-roll').focus();
+        }
+      });
+    }
+    row.appendChild(chip);
+    list.appendChild(row);
   initiative = initiative.filter(function (e) { return e.isPlayer; });
   currentTurn = 0;
   saveInitiative();
