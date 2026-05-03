@@ -544,9 +544,7 @@ function renderTokenOverlay(tokens) {
           e.stopPropagation();
           var newTarget = (myTarget === label) ? null : label;
           myTarget = newTarget;
-          if (ws && ws.readyState === 1) {
-            ws.send(JSON.stringify({ action: 'set-target', target: newTarget || '' }));
-          }
+          wsSend({ action: 'set-target', target: newTarget || '' });
           renderTokenOverlay(currentTokens);
         }
         dot.addEventListener('click', doTarget);
@@ -589,9 +587,7 @@ function renderTokenOverlay(tokens) {
             x = (gc + 0.5) / currentMapMeta.cols;
             y = (gr + 0.5) / currentMapMeta.rows;
           }
-          if (ws && ws.readyState === 1) {
-            ws.send(JSON.stringify({ action: 'move-player-token', name: myPlayerName, x: x, y: y }));
-          }
+          wsSend({ action: 'move-player-token', name: myPlayerName, x: x, y: y });
         }
 
         tokenDot.addEventListener('mousedown', function (e) {
@@ -1220,6 +1216,16 @@ function handleMessage(msg) {
 // ── WebSocket ─────────────────────────────────────────────────
 var ws = null;
 var _retryDelay = 1000;
+var _wsQueue = [];
+
+function wsSend(obj) {
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify(obj));
+  } else if (obj.action !== 'move-player-token') {
+    _wsQueue.push(obj);
+    if (_wsQueue.length > 10) _wsQueue.shift(); // cap queue
+  }
+}
 
 function connect() {
   var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1235,6 +1241,9 @@ function connect() {
     if (savedName && savedCls) {
       ws.send(JSON.stringify({ action: 'player-login', name: savedName, cls: savedCls }));
     }
+    // Flush messages queued while disconnected
+    var q = _wsQueue.splice(0);
+    q.forEach(function (m) { ws.send(JSON.stringify(m)); });
   };
 
   ws.onmessage = function (e) {
@@ -1251,6 +1260,19 @@ function connect() {
 }
 
 connect();
+
+// Re-render position-dependent overlays on resize / phone rotation
+var _resizeTimer = null;
+window.addEventListener('resize', function () {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(function () {
+    var imgEl = sceneEl.querySelector('img');
+    if (currentFogKey && fogStates[currentFogKey]) {
+      renderFogOverlay(fogStates[currentFogKey], imgEl);
+    }
+    if (currentTokens.length) renderTokenOverlay(currentTokens);
+  }, 150);
+});
 
 // ── Player Dice Bar ───────────────────────────────────────────
 (function () {
@@ -1277,9 +1299,7 @@ connect();
       }
 
       // Send to DM via WebSocket
-      if (ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ action: 'player-dice-roll', die: die, result: result }));
-      }
+      wsSend({ action: 'player-dice-roll', die: die, result: result });
     });
   });
 }());
