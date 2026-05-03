@@ -52,6 +52,9 @@ var dmMapFeatures   = [];   // feature definitions for current map
 var dmMapMeta       = null; // { cols, rows } for current map
 var dmTriggeredFeat = {};   // { featureId: true } — which features are triggered
 
+// Combat targeting state (DM-side)
+var dmTargets = {};  // playerName -> targetLabel
+
 // ── Mob icons & colours ───────────────────────────────────────
 var MOB_ICONS = {
   Bandit: '🗡️', Bugbear: '🐻', Cultist: '🕯️', Dragon: '🐉',
@@ -234,6 +237,11 @@ function restoreDmState(msg) {
   // Feature controls — use saved features if available, else re-fetch from map builder
   var featureContainer = document.getElementById('feature-controls-container');
   if (featureContainer) featureContainer.innerHTML = '';
+  // Restore combat targets
+  if (msg.currentTargets && typeof msg.currentTargets === 'object') {
+    dmTargets = msg.currentTargets;
+  }
+
   if (msg.features && msg.features.length) {
     renderFeatureControls(mapKey, msg.features, sv.mapMeta || null);
   } else {
@@ -328,6 +336,22 @@ function connectWebSocket() {
           if (logDiv.children.length === 0 && logWrap) logWrap.style.display = 'none';
         }, 20000);
       }
+      return;
+    }
+    if (msg.type === 'SET_TARGET') {
+      if (msg.player) {
+        if (msg.target) {
+          dmTargets[msg.player] = msg.target;
+        } else {
+          delete dmTargets[msg.player];
+        }
+        renderInitiative();
+        if (activeTokenMapKey && activeTokenMapUrl) renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+      }
+      return;
+    }
+    if (msg.type === 'ATTACK_ANIMATION') {
+      // DM map animation is now played locally in playDmAttackAnimation() — skip WS echo
       return;
     }
     // Auto-trigger: server fires TRIGGER_FEATURE when a player token touches an auto-trigger feature
@@ -1588,6 +1612,7 @@ function renderTokenControls(mapUrl, mapKey) {
   activeTokenMapKey = mapKey;
   activeTokenMapUrl = mapUrl;
   if (!tokenState[mapKey]) tokenState[mapKey] = [];
+  refreshMapMobsSection();
 
   var container = document.getElementById('token-controls-container');
   container.innerHTML = '';
@@ -2078,14 +2103,19 @@ function renderTokenControls(mapUrl, mapKey) {
     var dispTok   = Object.assign({}, tok, { conditions: dispConds });
 
     var isSelected = selectedTokenIds.has(tok.id);
+    // Check if this token is a combat target
+    var isTargeted  = Object.values(dmTargets).indexOf(tok.label) !== -1;
+    var targetingThis = Object.keys(dmTargets).filter(function(p){ return dmTargets[p] === tok.label; });
     var dot = document.createElement('div');
     dot.dataset.tokId = tok.id || '';
+    dot.dataset.tokenLabel = tok.label || '';
     dot.style.cssText = 'position:absolute;width:20px;height:20px;border-radius:50%;' +
       'background:' + tokenBgColor(tok) + ';' +
       'border:2px solid ' + (isSelected ? '#facc15' : (tok.mobType ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.9)')) + ';' +
       (isSelected ? 'outline:2px solid rgba(250,204,21,0.45);' : '') +
-      'box-shadow:' + makeConditionShadow(dispTok) + ';display:flex;align-items:center;justify-content:center;' +
-      'flex-direction:column;overflow:hidden;' +
+      (isTargeted  ? 'box-shadow:0 0 0 3px rgba(239,68,68,0.9),0 0 0 6px rgba(239,68,68,0.3),' + makeConditionShadow(dispTok) + ';' : 'box-shadow:' + makeConditionShadow(dispTok) + ';') +
+      'display:flex;align-items:center;justify-content:center;' +
+      'flex-direction:column;overflow:visible;' +
       'left:' + (tok.x * 100) + '%;top:' + (tok.y * 100) + '%;transform:translate(-50%,-50%);' +
       'cursor:move;pointer-events:auto;z-index:' + (isSelected ? '12' : '10') + ';user-select:none;';
 
@@ -2124,6 +2154,21 @@ function renderTokenControls(mapUrl, mapKey) {
       lbl.style.cssText = 'color:#fff;font-weight:bold;font-size:8px;font-family:sans-serif;' +
         'line-height:1;user-select:none;pointer-events:none;';
       dot.appendChild(lbl);
+    }
+    // Targeting indicator: show crosshair + attacker names on targeted tokens
+    if (isTargeted) {
+      var xh = document.createElement('span');
+      xh.textContent = '🎯';
+      xh.style.cssText = 'position:absolute;top:-9px;right:-9px;font-size:10px;pointer-events:none;z-index:5;';
+      dot.appendChild(xh);
+      if (targetingThis.length) {
+        var atkBadge = document.createElement('span');
+        atkBadge.textContent = targetingThis.join(',');
+        atkBadge.style.cssText = 'position:absolute;top:22px;left:50%;transform:translateX(-50%);' +
+          'font-size:7px;color:#f87171;font-family:sans-serif;font-weight:bold;white-space:nowrap;' +
+          'pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,1);';
+        dot.appendChild(atkBadge);
+      }
     }
     // Stop map click from firing when clicking a dot; toggle selection in party-move mode
     dot.addEventListener('click', function (e) {
@@ -3058,6 +3103,42 @@ document.getElementById('init-add-btn').addEventListener('click', function () {
   document.getElementById('init-roll').value = '';
 });
 
+function refreshMapMobsSection() {
+  var list = document.getElementById('init-map-mobs-list');
+  var summary = document.getElementById('init-map-mobs-summary');
+  if (!list) return;
+  var tokens = (activeTokenMapKey && tokenState[activeTokenMapKey]) ? tokenState[activeTokenMapKey] : [];
+  var mobs = tokens.filter(function(t) { return t.type !== 'player' && t.label; });
+  list.innerHTML = '';
+  if (!mobs.length) {
+    list.innerHTML = '<span style="color:#555;font-size:0.78rem;">No mob tokens on current map</span>';
+    if (summary) summary.textContent = '📍 Mobs on Map';
+    return;
+  }
+  if (summary) summary.textContent = '📍 Mobs on Map (' + mobs.length + ')';
+  mobs.forEach(function(tok) {
+    var alreadyIn = initiative.some(function(e) { return e.name === tok.label; });
+    var chip = document.createElement('button');
+    chip.className = 'btn btn-small' + (alreadyIn ? ' btn-secondary' : ' btn-primary');
+    chip.style.cssText = 'font-size:0.75rem;padding:0.2rem 0.5rem;opacity:' + (alreadyIn ? '0.45' : '1') + ';';
+    var icon = (MOB_ICONS && MOB_ICONS[tok.mobType]) ? MOB_ICONS[tok.mobType] + ' ' : '';
+    chip.textContent = icon + tok.label;
+    chip.title = alreadyIn ? 'Already in initiative' : 'Click to fill • Shift+click to add instantly';
+    chip.addEventListener('click', function(e) {
+      if (e.shiftKey) {
+        if (!alreadyIn) {
+          addToInitiative(tok.label, Math.floor(Math.random() * 20) + 1, false, '');
+          refreshMapMobsSection();
+        }
+      } else {
+        document.getElementById('init-name').value = tok.label;
+        document.getElementById('init-roll').focus();
+      }
+    });
+    list.appendChild(chip);
+  });
+}
+
 document.getElementById('init-clear-btn').addEventListener('click', function () {
   // Remove only mobs — keep players in the round
   initiative = initiative.filter(function (e) { return e.isPlayer; });
@@ -3073,6 +3154,56 @@ document.getElementById('init-reset-btn').addEventListener('click', function () 
   renderInitiative();
 });
 
+document.getElementById('attack-log-clear-btn').addEventListener('click', function () {
+  var log = document.getElementById('attack-log');
+  if (log) log.innerHTML = '';
+});
+
+function logAttack(attacker, targets) {
+  var log = document.getElementById('attack-log');
+  if (!log) return;
+  var isSpell = false;
+  var atkTok = (tokenState[activeTokenMapKey] || []).find(function(t){ return t.label === attacker; });
+  if (atkTok && atkTok.cls && ['Sorcerer','Wizard','Druid','Cleric','Priest','Bard'].includes(atkTok.cls)) isSpell = true;
+  var attackerEntry = initiative.find(function(e){ return e.name === attacker; });
+  if (!attackerEntry && !atkTok) return; // no animation if no targets at all
+  var icon = isSpell ? '✨' : '⚔️';
+  var now = new Date();
+  var time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0') + ':' + now.getSeconds().toString().padStart(2,'0');
+  var entry = document.createElement('div');
+  entry.style.cssText = 'font-size:0.76rem;padding:0.18rem 0.4rem;border-radius:3px;' +
+    'background:rgba(255,255,255,0.03);border-left:3px solid #d4af37;' +
+    'color:#c9d1d9;font-family:sans-serif;display:flex;gap:0.4rem;align-items:baseline;';
+  var timeEl = document.createElement('span');
+  timeEl.textContent = time;
+  timeEl.style.cssText = 'color:#444;font-size:0.65rem;flex-shrink:0;';
+  var msgEl = document.createElement('span');
+  msgEl.innerHTML = icon + ' <b style="color:#e2c97e">' + escHtml(attacker) + '</b> attacks <b style="color:#f87171">' + escHtml(targets.join(', ')) + '</b>';
+  entry.appendChild(timeEl);
+  entry.appendChild(msgEl);
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+
+function playDmAttackAnimation(attacker, targets) {
+  var mapOverlayWrap = document.getElementById('token-map-container');
+  if (!mapOverlayWrap) return;
+  var isSpell = false;
+  var atkTok = (tokenState[activeTokenMapKey] || []).find(function(t){ return t.label === attacker; });
+  if (atkTok && atkTok.cls && ['Sorcerer','Wizard','Druid','Cleric','Priest','Bard'].includes(atkTok.cls)) isSpell = true;
+  targets.forEach(function(label) {
+    var tdot = mapOverlayWrap.querySelector('[data-token-label="' + label + '"]');
+    if (!tdot) return;
+    var icon = document.createElement('span');
+    icon.textContent = isSpell ? '✨' : '⚔️';
+    icon.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
+      'font-size:1.6em;pointer-events:none;z-index:200;animation:' +
+      (isSpell ? 'dm-spell-flash' : 'dm-sword-swipe') + ' 0.75s ease forwards;';
+    tdot.appendChild(icon);
+    icon.addEventListener('animationend', function(){ icon.remove(); }, { once: true });
+  });
+}
+
 function nextInitiativeTurn() {
   if (!initiative.length) return;
   // Tick down conditions for the combatant whose turn is ending
@@ -3087,13 +3218,38 @@ function nextInitiativeTurn() {
     });
     if (entry.conditions.length < had) expiredForIdx = currentTurn;
   }
+
+  // ── Determine attack targets for animation ─────────────────
+  var atkAttacker = null, atkTargets = [];
+  if (entry) {
+    if (entry.isPlayer) {
+      var playerTarget = dmTargets[entry.name];
+      if (playerTarget) { atkAttacker = entry.name; atkTargets = [playerTarget]; }
+    } else {
+      // Players who set this mob as their target
+      var attackedPlayers = Object.keys(dmTargets).filter(function (p) {
+        return initiative.some(function(e){ return e.isPlayer && e.name === p; }) && dmTargets[p] === entry.name;
+      });
+      // DM-assigned direct attack target for this mob
+      if (dmTargets[entry.name] && attackedPlayers.indexOf(dmTargets[entry.name]) === -1) {
+        attackedPlayers.push(dmTargets[entry.name]);
+      }
+      if (attackedPlayers.length) { atkAttacker = entry.name; atkTargets = attackedPlayers; }
+    }
+  }
+
   currentTurn = (currentTurn + 1) % initiative.length;
   saveInitiative();
   renderInitiative();
   sendInitiative();
   if (activeTokenMapKey) {
-    sendTokenUpdate(activeTokenMapKey);
+    // Rebuild map first so dots are fresh, then animate immediately (no WS roundtrip needed)
     renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+  }
+  if (atkAttacker) {
+    logAttack(atkAttacker, atkTargets);
+    playDmAttackAnimation(atkAttacker, atkTargets);
+    wsSend({ action: 'trigger-attack', attacker: atkAttacker, targets: atkTargets });
   }
   // Flash entry whose conditions just expired (after re-render so node is fresh)
   if (expiredForIdx >= 0) {
@@ -3141,9 +3297,11 @@ var CONDITIONS = [
 var conditionRefs = JSON.parse(localStorage.getItem('dnd-cond-refs') || '[]');
 function saveConditionRefs() { localStorage.setItem('dnd-cond-refs', JSON.stringify(conditionRefs)); }
 
-var openCondPanel = null; // index of entry with open cond panel
+var openCondPanel  = null; // index of entry with open cond panel
+var openTargetPanel = null; // index of entry with open target picker
 
 function renderInitiative() {
+  refreshMapMobsSection();
   var list = document.getElementById('init-list');
   list.innerHTML = '';
   for (var i = 0; i < initiative.length; i++) {
@@ -3198,7 +3356,35 @@ function renderInitiative() {
     if (entry.cls) {
       nameSpan.innerHTML += ' <span style="font-size:0.65rem;color:#d4af37;border:1px solid #555;border-radius:2px;padding:0 3px;vertical-align:middle;">' + escHtml(entry.cls) + '</span>';
     }
+    // Show this player's combat target if set
+    if (entry.isPlayer && dmTargets[entry.name]) {
+      nameSpan.innerHTML += ' <span style="font-size:0.65rem;color:#f87171;border:1px solid #f87171;border-radius:2px;padding:0 4px;vertical-align:middle;white-space:nowrap;">🎯 ' + escHtml(dmTargets[entry.name]) + '</span>';
+    }
+    // Show if any player is targeting this mob
+    var targetingThis = Object.keys(dmTargets).filter(function(p){ return dmTargets[p] === entry.name; });
+    if (!entry.isPlayer && targetingThis.length) {
+      nameSpan.innerHTML += ' <span style="font-size:0.65rem;color:#fb923c;border:1px solid #fb923c;border-radius:2px;padding:0 4px;vertical-align:middle;white-space:nowrap;">⚔️ ' + escHtml(targetingThis.join(', ')) + '</span>';
+    }
     top.appendChild(nameSpan);
+
+    // Target assignment button (DM sets who this combatant attacks)
+    var tgtBtn = document.createElement('button');
+    tgtBtn.className = 'init-cond-btn';
+    var myDmTarget = dmTargets[entry.name];
+    tgtBtn.title = 'Assign attack target';
+    tgtBtn.textContent = myDmTarget ? ('🎯 ' + myDmTarget) : '🎯 Target';
+    tgtBtn.style.cssText = myDmTarget
+      ? 'color:#f87171;border-color:#f87171;font-size:0.68rem;'
+      : 'font-size:0.68rem;';
+    tgtBtn.onclick = (function (idx) {
+      return function (e) {
+        e.stopPropagation();
+        openTargetPanel = (openTargetPanel === idx) ? null : idx;
+        openCondPanel = null;
+        renderInitiative();
+      };
+    })(i);
+    top.appendChild(tgtBtn);
 
     // Conditions button
     var condBtn = document.createElement('button');
@@ -3209,6 +3395,7 @@ function renderInitiative() {
       return function (e) {
         e.stopPropagation();
         openCondPanel = (openCondPanel === idx) ? null : idx;
+        openTargetPanel = null;
         renderInitiative();
       };
     })(i);
@@ -3249,6 +3436,56 @@ function renderInitiative() {
         badges.appendChild(badge);
       });
       div.appendChild(badges);
+    }
+
+    // ── Target picker panel ──
+    if (openTargetPanel === i) {
+      var tgtPanel = document.createElement('div');
+      tgtPanel.className = 'init-cond-panel';
+      tgtPanel.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.3rem;padding:0.4rem 0.5rem;';
+
+      // Determine valid target options: players see mob entries, mobs/all see player entries + all others
+      var curEntry = initiative[i];
+      var targetOptions = initiative.filter(function(e, ei) {
+        return ei !== i && e.name !== curEntry.name;
+      });
+
+      // Clear button first
+      var clearTgt = document.createElement('button');
+      clearTgt.className = 'btn btn-small btn-danger';
+      clearTgt.style.cssText = 'font-size:0.72rem;padding:0.15rem 0.45rem;';
+      clearTgt.textContent = '✕ None';
+      clearTgt.onclick = (function(eName) {
+        return function() {
+          delete dmTargets[eName];
+          wsSend({ action: 'dm-set-target', player: eName, target: '' });
+          openTargetPanel = null;
+          renderInitiative();
+          if (activeTokenMapKey && activeTokenMapUrl) renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+        };
+      })(curEntry.name);
+      tgtPanel.appendChild(clearTgt);
+
+      targetOptions.forEach(function(opt) {
+        var chip = document.createElement('button');
+        var isActive = dmTargets[curEntry.name] === opt.name;
+        chip.className = 'btn btn-small ' + (isActive ? 'btn-primary' : 'btn-secondary');
+        chip.style.cssText = 'font-size:0.72rem;padding:0.15rem 0.45rem;' + (isActive ? 'outline:1px solid #f87171;' : '');
+        var pcBadge = opt.isPlayer ? ' [PC]' : '';
+        chip.textContent = opt.name + pcBadge;
+        chip.onclick = (function(attackerName, targetName) {
+          return function() {
+            dmTargets[attackerName] = targetName;
+            wsSend({ action: 'dm-set-target', player: attackerName, target: targetName });
+            openTargetPanel = null;
+            renderInitiative();
+            if (activeTokenMapKey && activeTokenMapUrl) renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+          };
+        })(curEntry.name, opt.name);
+        tgtPanel.appendChild(chip);
+      });
+
+      div.appendChild(tgtPanel);
     }
 
     // ── Condition panel (inline, shown when open) ──
@@ -3366,7 +3603,8 @@ function renderInitiative() {
 window.removeInit = function (i) {
   initiative.splice(i, 1);
   if (currentTurn >= initiative.length) currentTurn = 0;
-  if (openCondPanel === i) openCondPanel = null;
+  if (openCondPanel  === i) openCondPanel  = null;
+  if (openTargetPanel === i) openTargetPanel = null;
   saveInitiative();
   renderInitiative();
 };

@@ -25,6 +25,8 @@ var triggeredFeatures  = {};   // { featureId: true }
 var myPlayerName = null;  // set after successful login
 var myPlayerCls  = null;
 var myMovementLocked = false;  // set by DM lock controls
+var myTarget     = null;       // label of my current combat target
+var allTargets   = {};         // playerName -> targetLabel (all players' targets)
 
 // Unlock audio on any click (but don't auto-dismiss overlay)
 document.addEventListener('click', function () {
@@ -379,6 +381,8 @@ function renderTokenOverlay(tokens) {
     }
 
     var dot = document.createElement('div');
+    dot.className = 'token-dot';
+    dot.dataset.tokenLabel = tok.label || '';
     dot.style.cssText = [
       'position:absolute',
       'width:'   + tokenSize + 'px',
@@ -434,6 +438,47 @@ function renderTokenOverlay(tokens) {
       lbl.style.cssText = 'color:rgba(255,255,255,0.97);font-weight:bold;font-size:' +
         fontSize + 'px;font-family:sans-serif;user-select:none;line-height:1;text-shadow:0 1px 3px rgba(0,0,0,0.8);';
       dot.appendChild(lbl);
+    }
+
+    // ── Targeting: visual indicators ──────────────────────────
+    // Targeting highlight logic:
+    // - Logged-in player: only pulse their own target
+    // - Spectator (no login): pulse all targeted mobs
+    if (tok.type !== 'player') {
+      var isMyTarget = (myTarget === tok.label);
+      var targetedByAny = false;
+      for (var tpn in allTargets) {
+        if (allTargets[tpn] === tok.label) { targetedByAny = true; break; }
+      }
+      var shouldPulse = myPlayerName ? isMyTarget : targetedByAny;
+      if (shouldPulse) {
+        dot.classList.add('is-target');
+        if (isMyTarget) {
+          var xhair = document.createElement('span');
+          xhair.className = 'target-crosshair';
+          xhair.textContent = '🎯';
+          dot.appendChild(xhair);
+        }
+      }
+    }
+
+    // ── Targeting: make mob tokens clickable for logged-in players ──
+    if (myPlayerName && tok.type !== 'player') {
+      dot.style.pointerEvents = 'auto';
+      dot.style.cursor = 'crosshair';
+      (function (label) {
+        function doTarget(e) {
+          e.stopPropagation();
+          var newTarget = (myTarget === label) ? null : label;
+          myTarget = newTarget;
+          if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({ action: 'set-target', target: newTarget || '' }));
+          }
+          renderTokenOverlay(currentTokens);
+        }
+        dot.addEventListener('click', doTarget);
+        dot.addEventListener('touchend', function(e) { e.preventDefault(); doTarget(e); }, { passive: false });
+      }(tok.label));
     }
 
     // Make own player token draggable (if movement is not locked)
@@ -774,6 +819,25 @@ function showDiceRoll(die, result) {
   }, { once: true });
 }
 
+// ── Attack animation ──────────────────────────────────────────
+function playAttackAnimation(targetLabels, animType) {
+  var overlay = sceneEl.querySelector('.token-overlay');
+  if (!overlay) return;
+  targetLabels.forEach(function (label) {
+    var dot = overlay.querySelector('[data-token-label="' + label + '"]');
+    if (!dot) return;
+    dot.style.overflow = 'visible'; // allow icon to scale outside dot bounds
+    var icon = document.createElement('span');
+    icon.className = 'attack-anim-icon ' + (animType || 'sword');
+    icon.textContent = animType === 'spell' ? '✨' : '⚔️';
+    dot.appendChild(icon);
+    icon.addEventListener('animationend', function () {
+      icon.remove();
+      dot.style.overflow = 'hidden'; // restore
+    }, { once: true });
+  });
+}
+
 // ── Overlay popup (dice, initiative) ─────────────────────────
 function showOverlay(title, html, duration) {
   if (popupTimer) { clearTimeout(popupTimer); popupTimer = null; }
@@ -924,6 +988,8 @@ function handleMessage(msg) {
       currentTokens = [];
       currentDrawing = [];
       currentFeatures = [];
+      allTargets = {};
+      myTarget = null;
       break;
     case 'OVERLAY':
       showOverlay(msg.title, msg.data, msg.duration);
@@ -979,11 +1045,35 @@ function handleMessage(msg) {
       myMovementLocked = msg.locked;
       if (currentTokens.length) renderTokenOverlay(currentTokens);
       break;
+    case 'SET_TARGET':
+      if (msg.player) {
+        if (msg.target) {
+          allTargets[msg.player] = msg.target;
+        } else {
+          delete allTargets[msg.player];
+        }
+        // Keep myTarget in sync if this is me
+        if (msg.player === myPlayerName) myTarget = msg.target || null;
+        if (currentTokens.length) renderTokenOverlay(currentTokens);
+      }
+      break;
+    case 'ATTACK_ANIMATION': {
+      var atkType = 'sword';
+      // If the attacker is a spell-class player, use spell anim
+      var atkTok = currentTokens.find(function(t){ return t.label === msg.attacker; });
+      if (atkTok && atkTok.cls && ['Sorcerer','Wizard','Druid','Cleric','Priest','Bard'].includes(atkTok.cls)) {
+        atkType = 'spell';
+      }
+      playAttackAnimation(msg.targets || [], atkType);
+      break;
+    }
     case 'PLAYER_LOGIN_OK':
       myPlayerName = msg.player.name;
       myPlayerCls  = msg.player.cls;
       sessionStorage.setItem('dnd_player_name', myPlayerName);
       sessionStorage.setItem('dnd_player_cls',  myPlayerCls);
+      // Restore any target this player had (may have been received before login from sendFullState)
+      if (allTargets[myPlayerName]) myTarget = allTargets[myPlayerName];
       dismissTapOverlay();
       var hudEl = document.getElementById('player-hud');
       if (hudEl) hudEl.style.display = 'flex';

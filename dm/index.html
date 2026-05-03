@@ -350,6 +350,11 @@
           <input type="number" id="init-roll" placeholder="Roll" min="1" max="30" />
           <button id="init-add-btn" class="btn btn-small btn-primary">+ Add Mob</button>
         </div>
+        <details id="init-map-mobs-details" style="margin-top:0.5rem;">
+          <summary id="init-map-mobs-summary" style="cursor:pointer;color:#d4af37;font-size:0.82rem;user-select:none;">📍 Mobs on Map</summary>
+          <div id="init-map-mobs-list" style="margin-top:0.4rem;display:flex;flex-wrap:wrap;gap:0.3rem;"></div>
+          <div style="font-size:0.7rem;color:#666;margin-top:0.35rem;">Click to fill name • Shift+click to add instantly with random roll</div>
+        </details>
         <details id="init-players-details" style="margin-top:0.9rem;">
           <summary style="cursor:pointer;color:#d4af37;font-size:0.82rem;user-select:none;">👥 Player Roster</summary>
           <div id="init-player-list" style="margin-top:0.5rem;"></div>
@@ -370,6 +375,15 @@
         <div id="player-dice-log-wrap" style="margin-top:0.9rem;display:none;">
           <div style="font-size:0.7rem;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;color:#555;margin-bottom:0.3rem;">🎲 Player Rolls</div>
           <div id="player-dice-log" style="max-height:110px;overflow-y:auto;display:flex;flex-direction:column;gap:0.2rem;"></div>
+        </div>
+
+        <!-- Attack log -->
+        <div id="attack-log-wrap" style="margin-top:0.9rem;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;">
+            <span style="font-size:0.7rem;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;color:#555;">⚔️ Attack Log</span>
+            <button id="attack-log-clear-btn" style="font-size:0.65rem;padding:0.1rem 0.4rem;background:none;border:1px solid #333;border-radius:3px;color:#555;cursor:pointer;">Clear</button>
+          </div>
+          <div id="attack-log" style="max-height:130px;overflow-y:auto;display:flex;flex-direction:column;gap:0.15rem;"></div>
         </div>
       </section>
     </aside>
