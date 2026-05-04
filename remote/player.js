@@ -80,6 +80,7 @@ function dismissTapOverlay() {
   if (guestBtn) {
     guestBtn.addEventListener('click', function (e) {
       e.stopPropagation();
+      sessionStorage.setItem('dnd_guest_tapped', '1'); // remember so page-refresh skips overlay
       dismissTapOverlay();
     });
   }
@@ -160,8 +161,16 @@ function dismissTapOverlay() {
       if (tapOverlay) tapOverlay.classList.remove('hidden');
       if (submitBtn) { submitBtn.textContent = 'Enter Session'; submitBtn.disabled = false; }
       if (errEl) errEl.textContent = '';
+      sessionStorage.removeItem('dnd_guest_tapped'); // clear guest flag when logging off
     });
   }
+
+  // Auto-dismiss tap overlay on page load if the projector already tapped this session.
+  // Lets the central table screen survive a forced refresh without manual tap.
+  if (sessionStorage.getItem('dnd_guest_tapped') && !sessionStorage.getItem('dnd_player_name')) {
+    dismissTapOverlay();
+  }
+
 }());
 
 // ── Image display ────────────────────────────────────────────
@@ -533,6 +542,18 @@ function renderTokenOverlay(tokens) {
           dot.appendChild(xhair);
         }
       }
+    }
+
+    // ── Death overlay: red X over dead tokens ──────────────────
+    if (tok.dead) {
+      dot.style.opacity = '0.5';
+      dot.style.border = '2px solid #ef4444';
+      var deadX = document.createElement('div');
+      deadX.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;' +
+        'pointer-events:none;z-index:6;font-size:' + Math.round(tokenSize * 0.6) + 'px;font-weight:bold;' +
+        'color:#ef4444;text-shadow:0 1px 3px rgba(0,0,0,0.9);line-height:1;';
+      deadX.textContent = '✕';
+      dot.appendChild(deadX);
     }
 
     // ── Targeting: make non-player, non-item tokens clickable for logged-in players ──
@@ -1045,6 +1066,11 @@ function handleMessage(msg) {
         }
       }
       break;
+    case 'SET_FOG_KEY':
+      currentFogKey = msg.fogKey || null;
+      renderFogOverlay(currentFogKey ? (fogStates[currentFogKey] || null) : null, sceneEl.querySelector('img'));
+      renderTokenOverlay(currentTokens);
+      break;
     case 'PLAY_AUDIO':
       if (msg.url) playAudio(msg.url, msg.loop === true);
       break;
@@ -1150,6 +1176,9 @@ function handleMessage(msg) {
       gridEnabled = !!msg.enabled;
       renderGridOverlay(sceneEl.querySelector('img'));
       break;
+    case 'ping':
+      // Server heartbeat — no response needed; _lastMsgAt already updated above
+      break;
     case 'PLAYER_LOGIN_OK':
       myPlayerName = msg.player.name;
       myPlayerCls  = msg.player.cls;
@@ -1217,6 +1246,46 @@ function handleMessage(msg) {
 var ws = null;
 var _retryDelay = 1000;
 var _wsQueue = [];
+var _lastMsgAt = Date.now();
+var _reconnectTimer = null;
+var _syncBtn = document.getElementById('sync-btn');
+
+// scheduleReconnect — ensures only one pending reconnect at a time.
+// Caps at 3s so the projector screen re-connects within seconds, not up to 10s.
+function scheduleReconnect() {
+  if (_reconnectTimer) return;
+  _reconnectTimer = setTimeout(function () {
+    _reconnectTimer = null;
+    connect();
+  }, _retryDelay);
+  _retryDelay = Math.min(_retryDelay * 1.5, 3000);
+}
+
+// Watchdog: server pings every 30s. If silent for 35s the socket is zombie.
+// Close it so onclose fires and scheduleReconnect re-establishes the link.
+setInterval(function () {
+  if (ws && ws.readyState === 1 && Date.now() - _lastMsgAt > 35000) {
+    console.warn('[WS] silent for 35s — forcing reconnect');
+    ws.close();
+  }
+}, 15000);
+
+if (_syncBtn) {
+  _syncBtn.addEventListener('click', function () {
+    _syncBtn.classList.add('syncing');
+    setTimeout(function () { _syncBtn.classList.remove('syncing'); }, 1200);
+    if (ws && ws.readyState === 1) {
+      // Connection live — just ask for a full state replay
+      ws.send(JSON.stringify({ action: 'request-sync' }));
+    } else {
+      // Dead/closing — force a fresh reconnect (login restores from sessionStorage)
+      if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
+      if (ws) { try { ws.close(); } catch(e) {} }
+      _retryDelay = 1000;
+      connect();
+    }
+  });
+}
 
 function wsSend(obj) {
   if (ws && ws.readyState === 1) {
@@ -1228,11 +1297,14 @@ function wsSend(obj) {
 }
 
 function connect() {
+  // Guard: never open a second socket while one is already live or mid-handshake
+  if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
   var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(protocol + '//' + location.host + '/ws');
 
   ws.onopen = function () {
     statusEl.textContent = 'connected';
+    _lastMsgAt = Date.now(); // reset watchdog on fresh connection
     _retryDelay = 1000; // reset backoff on successful connect
     // Server automatically pushes full state on connection.
     // Auto-restore login from sessionStorage (e.g. after page refresh)
@@ -1244,22 +1316,44 @@ function connect() {
     // Flush messages queued while disconnected
     var q = _wsQueue.splice(0);
     q.forEach(function (m) { ws.send(JSON.stringify(m)); });
+    // Explicitly request full state sync in case we missed updates while reconnecting
+    ws.send(JSON.stringify({ action: 'request-sync' }));
   };
 
   ws.onmessage = function (e) {
+    _lastMsgAt = Date.now(); // keep watchdog alive
     try { handleMessage(JSON.parse(e.data)); } catch(err) { console.error(err); }
   };
 
   ws.onclose = function () {
     statusEl.textContent = 'reconnecting...';
-    setTimeout(connect, _retryDelay);
-    _retryDelay = Math.min(_retryDelay * 1.5, 10000); // cap at 10s
+    scheduleReconnect();
   };
 
-  ws.onerror = function () { ws.close(); };
+  ws.onerror = function () { ws.close(); }; // onclose fires next and calls scheduleReconnect
 }
 
 connect();
+
+// When the projector screen wakes up / tab regains focus: immediately sync.
+// This is the key fix for the central table display drifting out of sync.
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState !== 'visible') return;
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ action: 'request-sync' }));
+  } else {
+    if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
+    _retryDelay = 1000;
+    connect();
+  }
+});
+
+// When the device network comes back online: reconnect immediately, don't wait for backoff.
+window.addEventListener('online', function () {
+  if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
+  _retryDelay = 1000;
+  connect();
+});
 
 // Re-render position-dependent overlays on resize / phone rotation
 var _resizeTimer = null;

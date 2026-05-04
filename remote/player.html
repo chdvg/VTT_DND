@@ -283,6 +283,28 @@
     #fullscreen-btn.hidden { opacity: 0; pointer-events: none; }
     #fullscreen-btn:hover { background: rgba(212,175,55,0.2); }
 
+    #sync-btn {
+      position: fixed;
+      top: 56px;
+      right: 10px;
+      z-index: 400;
+      background: rgba(10,10,20,0.7);
+      border: 1px solid #555;
+      border-radius: 6px;
+      color: #888;
+      font-size: 1.1rem;
+      width: 38px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
+    }
+    #sync-btn:hover { border-color: #d4af37; color: #d4af37; }
+    #sync-btn.syncing { border-color: #22c55e; color: #22c55e; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     /* ── 3D Dice Roll Overlay ── */
     #dice-overlay {
       position: fixed;
@@ -531,6 +553,7 @@
 
   <div id="status">connecting...</div>
   <button id="fullscreen-btn" title="Toggle fullscreen">⛶</button>
+  <button id="sync-btn" title="Resync with DM">🔄</button>
 
   <script src="/remote/player.js"></script>
 </body>
