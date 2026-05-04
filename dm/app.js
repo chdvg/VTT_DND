@@ -5100,19 +5100,55 @@ renderInitiative();
   });
 }());
 
-// ── Right Sidebar drag-to-resize ──────────────────────────────
+// ── Right Sidebar collapse + drag-to-resize ─────────────────────
 (function () {
   var sidebar = document.getElementById('sidebar-right');
+  var btn     = document.getElementById('sidebar-right-toggle');
   var handle  = document.getElementById('sidebar-right-resize');
-  if (!sidebar || !handle) return;
+  if (!sidebar) return;
+
+  // Wrap existing children in .sidebar-right-inner so collapse can hide them
+  var inner = document.createElement('div');
+  inner.className = 'sidebar-right-inner';
+  while (sidebar.firstChild) inner.appendChild(sidebar.firstChild);
+  sidebar.appendChild(inner);
+  // Re-append the collapse button and resize handle outside inner
+  if (btn)    sidebar.insertBefore(btn, inner);
+  if (handle) sidebar.insertBefore(handle, inner);
 
   var MIN_WIDTH = 200;
   var MAX_WIDTH = 700;
-  var resizing  = false;
-  var startX    = 0;
-  var startW    = 0;
+  var lastWidth = 340;
+
+  // Toggle collapse/expand
+  if (btn) {
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      sidebar.classList.add('animating');
+      setTimeout(function () { sidebar.classList.remove('animating'); }, 220);
+      if (sidebar.classList.contains('collapsed')) {
+        sidebar.classList.remove('collapsed');
+        sidebar.style.width    = lastWidth + 'px';
+        sidebar.style.minWidth = lastWidth + 'px';
+        btn.textContent = '›';
+      } else {
+        lastWidth = sidebar.offsetWidth || lastWidth;
+        sidebar.classList.add('collapsed');
+        sidebar.style.width    = '32px';
+        sidebar.style.minWidth = '32px';
+        btn.textContent = '‹';
+      }
+    });
+  }
+
+  // Drag-to-resize
+  if (!handle) return;
+  var resizing = false;
+  var startX   = 0;
+  var startW   = 0;
 
   handle.addEventListener('mousedown', function (e) {
+    if (sidebar.classList.contains('collapsed')) return;
     e.preventDefault();
     resizing = true;
     startX   = e.clientX;
@@ -5127,6 +5163,7 @@ renderInitiative();
     var newW = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startW - (e.clientX - startX)));
     sidebar.style.width    = newW + 'px';
     sidebar.style.minWidth = newW + 'px';
+    lastWidth = newW;
   });
 
   document.addEventListener('mouseup', function () {

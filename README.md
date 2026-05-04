@@ -14,6 +14,8 @@ A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Nod
 | Players / Projector | `http://<server-ip>:3000/remote/player` | Player view (maps, fog, audio, overlays) |
 | Map Builder | `http://localhost:3000/map-builder` | Tile-based map editor |
 
+> The DM panel runs on the DM's machine only. There is no separate remote DM interface — all DM controls are in the main panel at `http://localhost:3000`.
+
 The DM panel and player screen stay in sync via WebSocket. Everything the DM does — showing a map, playing audio, updating fog of war — is pushed to all connected player browsers instantly.
 
 ---
