@@ -261,13 +261,13 @@ function sendFullState(ws) {
   }
   // Features — send definitions first so the overlay can be built
   if (currentFeatures.length) {
-    ws.send(JSON.stringify({ type: 'UPDATE_FEATURES', features: currentFeatures, mapKey: currentTokensMapKey, mapMeta: (currentSceneView && currentSceneView.mapMeta) || null }));
+    ws.send(JSON.stringify({ type: 'UPDATE_FEATURES', features: currentFeatures, mapKey: currentTokensMapKey, mapMeta: (currentSceneView && currentSceneView.mapMeta) || currentMapMeta || null }));
   }
   // Feature states — replay any triggered features to reconnecting players
   for (const [fid, fstate] of Object.entries(currentFeatureStates)) {
     if (fstate === 'triggered') {
       const feat = currentFeatures.find(f => f.id === fid);
-      if (feat) ws.send(JSON.stringify({ type: 'TRIGGER_FEATURE', feature: feat, allFeatures: currentFeatures, mapKey: currentTokensMapKey, mapMeta: (currentSceneView && currentSceneView.mapMeta) || null }));
+      if (feat) ws.send(JSON.stringify({ type: 'TRIGGER_FEATURE', feature: feat, allFeatures: currentFeatures, mapKey: currentTokensMapKey, mapMeta: (currentSceneView && currentSceneView.mapMeta) || currentMapMeta || null }));
     }
   }
   // Audio — we don't restart audio on reconnect (too disruptive if it's mid-play)
@@ -478,7 +478,7 @@ wss.on('connection', (ws, req) => {
                 feature: feat,
                 allFeatures: currentFeatures,
                 mapKey: message.mapKey || currentTokensMapKey,
-                mapMeta: (currentSceneView && currentSceneView.mapMeta) || null,
+                mapMeta: (currentSceneView && currentSceneView.mapMeta) || currentMapMeta || null,
               });
             }
           } break;
@@ -502,6 +502,7 @@ wss.on('connection', (ws, req) => {
               client.send(JSON.stringify({ type: 'UPDATE_FEATURES', features: currentFeatures, mapKey: currentTokensMapKey, mapMeta: message.mapMeta || null }));
             }
           }
+          saveState();
           break;
         case 'lock-player': {
           const lpName = String(message.name || '').trim().slice(0, 64);

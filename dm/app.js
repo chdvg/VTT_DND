@@ -274,7 +274,10 @@ function restoreDmState(msg) {
   }
 
   if (msg.features && msg.features.length) {
+    dmMapFeatures = msg.features;
+    dmMapMeta     = sv.mapMeta || null;
     renderFeatureControls(mapKey, msg.features, sv.mapMeta || null);
+    updateDmFeatureOverlay();
   } else {
     var mapBaseName = (sv.image || '').replace(/.*\//, '').replace(/\.[^.]+$/, '');
     if (mapBaseName) {
@@ -283,7 +286,13 @@ function restoreDmState(msg) {
         .then(function (state) {
           var mapFeatures = (state && Array.isArray(state.features)) ? state.features : [];
           var mapMeta = state ? { cols: state.cols, rows: state.rows } : null;
+          dmMapFeatures = mapFeatures;
+          dmMapMeta     = mapMeta;
+          dmTriggeredFeat = {};
+          // Re-push features to server so it has them for broadcasts and auto-trigger
+          wsSend({ action: 'update-features', features: mapFeatures, mapKey: mapKey, mapMeta: mapMeta });
           renderFeatureControls(mapKey, mapFeatures, mapMeta);
+          updateDmFeatureOverlay();
         })
         .catch(function () {});
     }
