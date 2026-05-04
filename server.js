@@ -847,7 +847,6 @@ app.get('/api/map-builder/state', requireDm, (req, res) => {
 
 app.get('/', requireDm, (req, res) => { res.sendFile(path.join(__dirname, 'dm', 'index.html')); });
 app.use('/dm', requireDm);
-app.get('/remote', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'index.html')); });
 app.get('/remote/player', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'player.html')); });
 app.get('/player', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'player.html')); });
 
@@ -873,11 +872,9 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('');
   console.log('D&D Remote Server running!');
   console.log('  DM Panel:    http://localhost:' + PORT);
-  console.log('  Remote:      http://localhost:' + PORT + '/remote');
   console.log('  Player View: http://localhost:' + PORT + '/remote/player.html');
   console.log('');
   console.log('  LAN access (other devices):');
   console.log('  Player View: http://' + lanIp + ':' + PORT + '/remote/player.html');
-  console.log('  Remote:      http://' + lanIp + ':' + PORT + '/remote');
   console.log('');
 });
