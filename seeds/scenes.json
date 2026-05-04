@@ -30,7 +30,8 @@
         "label": "Orchard approach",
         "image": "/assets/maps/orchard_entry.jpg",
         "audio": "/assets/audio/Atmosphere - BirdChirping.wav",
-        "fog": false
+        "fog": false,
+        "audioLoop": false
       },
       {
         "id": "phandalin-orchard-1775350349884-view-1",

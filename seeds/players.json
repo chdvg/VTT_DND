@@ -1,14 +1,26 @@
 [
   {
-    "name": "Ben",
-    "cls": "Rogue"
-  },
-  {
-    "name": "Josh",
+    "name": "Vaeris",
     "cls": "Sorcerer"
   },
   {
-    "name": "Katie",
-    "cls": "Fighter"
+    "name": "Benny Silvertongue",
+    "cls": "Rogue"
+  },
+  {
+    "name": "Arcanus",
+    "cls": "Cleric"
+  },
+  {
+    "name": "Kat of Grey Towers",
+    "cls": ""
+  },
+  {
+    "name": "DragOn",
+    "cls": "Druid"
+  },
+  {
+    "name": "Dobby",
+    "cls": "FatChub"
   }
 ]

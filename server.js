@@ -281,14 +281,27 @@ function sendFullState(ws) {
   }
 }
 
-// Ping all open connections every 25s to keep them alive through NAT/VPN
+// Heartbeat: detect and terminate zombie connections every 30s.
+// isAlive is set to false before each ping; the pong handler sets it back to true.
+// A client that doesn't pong within one interval is terminated, triggering client reconnect.
 setInterval(() => {
   for (const ws of clients) {
-    if (ws.readyState === WebSocket.OPEN) ws.ping();
+    if (ws.readyState !== WebSocket.OPEN) continue;
+    if (!ws.isAlive) {
+      ws.terminate(); // zombie — force-closes without a clean handshake
+      continue;
+    }
+    ws.isAlive = false;
+    ws.ping(); // WS protocol ping (browser auto-responds with pong)
+    // Also send an app-level JSON ping so the client JS onmessage fires
+    // and can reset its own watchdog timer.
+    try { ws.send(JSON.stringify({ type: 'ping' })); } catch (e) {}
   }
-}, 25000);
+}, 30000);
 
 wss.on('connection', (ws, req) => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
   clients.add(ws);
   const dmAuthed = isDmAuthed(req);
   if (dmAuthed) dmClients.add(ws);
@@ -423,6 +436,11 @@ wss.on('connection', (ws, req) => {
             currentFogStates[message.fogKey] = message.fogGrid;
           }
           broadcast({ type: 'UPDATE_FOG', fogGrid: message.fogGrid, fogKey: message.fogKey });
+          saveState();
+          break;
+        case 'set-fog-key':
+          if (currentSceneView) currentSceneView.fogKey = message.fogKey || null;
+          broadcast({ type: 'SET_FOG_KEY', fogKey: message.fogKey || null });
           saveState();
           break;
         case 'set-rings':

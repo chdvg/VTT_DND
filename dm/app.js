@@ -24,6 +24,8 @@ var fogRows       = 20;
 var fogCols       = 20;
 var fogMapUrl     = null;
 var activeFogKey  = null;
+var currentViewFogKey   = null; // raw fogKey for current view, used by runtime fog toggle
+var currentViewImageUrl = null; // image URL for current view
 var lastSceneViewPayload = null; // cached for re-sync when server restarts
 var lastMapPayload       = null; // last actual map/scene (not Send Image)
 var lastSceneWasSentImage = false; // true when Send Image (not a real map) was last sent
@@ -144,6 +146,7 @@ if (clientCountWrap) {
 }
 var blackoutBtn  = document.getElementById('blackout-btn');
 var clearBtn     = document.getElementById('clear-btn');
+var toggleFogBtn = document.getElementById('toggle-fog-btn');
 var resendMapBtn = document.getElementById('resend-map-btn');
 var sendTextBtn  = document.getElementById('send-text-btn');
 var sendImageBtn = document.getElementById('send-image-btn');
@@ -185,6 +188,8 @@ function restoreDmState(msg) {
   lastMapPayload = lastSceneViewPayload;
   lastSceneWasSentImage = false;
   activeFogKey = fogKey || null;
+  currentViewFogKey   = mapKey || fogKey || null;
+  currentViewImageUrl = sv.image || null;
   activeTokenMapKey = mapKey || null;
 
   // Restore fog grid into window.fogStates so renderFogControls picks it up
@@ -283,6 +288,7 @@ function restoreDmState(msg) {
         .catch(function () {});
     }
   }
+  updateFogToggleBtn();
 }
 
 function connectWebSocket() {
@@ -440,6 +446,8 @@ resendMapBtn.addEventListener('click', function () {
   if (activeTokenMapKey) { sendTokenUpdate(activeTokenMapKey); sendDrawUpdate(activeTokenMapKey); }
 });
 
+if (toggleFogBtn) toggleFogBtn.addEventListener('click', toggleMapFog);
+
 document.getElementById('reset-map-btn').addEventListener('click', function () {
   // Wipe server scene state
   fetch('/api/clear-scene', { method: 'POST' });
@@ -448,6 +456,8 @@ document.getElementById('reset-map-btn').addEventListener('click', function () {
   lastMapPayload = null;
   lastSceneWasSentImage = false;
   activeFogKey = null;
+  currentViewFogKey   = null;
+  currentViewImageUrl = null;
   activeTokenMapKey = null;
   activeDrawMapKey = null;
   window.fogStates = {};   // clear all cached fog grids
@@ -466,6 +476,7 @@ document.getElementById('reset-map-btn').addEventListener('click', function () {
   // Clear all rendered sub-panels
   var els = ['fog-controls-container','token-controls-container','token-map-container','draw-controls-container','feature-controls-container'];
   els.forEach(function (id) { var el = document.getElementById(id); if (el) el.innerHTML = ''; });
+  updateFogToggleBtn();
 });
 
 document.getElementById('send-text-popup-btn').addEventListener('click', function () {
@@ -894,10 +905,53 @@ function renderScenesPanel() {
     });
 }
 
+// ── Fog toggle helpers ────────────────────────────────────────────────────────
+function updateFogToggleBtn() {
+  var btn = document.getElementById('toggle-fog-btn');
+  if (!btn) return;
+  btn.style.display = currentViewFogKey ? '' : 'none';
+  var on = !!activeFogKey;
+  btn.textContent    = on ? '🌫 Fog: ON' : '🌫 Fog';
+  btn.style.background  = on ? '#1d4a1d' : '';
+  btn.style.borderColor = on ? '#22c55e' : '';
+  btn.style.color       = on ? '#86efac' : '';
+}
+
+function toggleMapFog() {
+  if (!currentViewFogKey) return;
+  var mapControlGrid = document.getElementById('map-control-grid');
+  var mcgDivider     = document.getElementById('map-control-divider');
+  var fogControlsEl  = document.getElementById('fog-controls-container');
+  if (activeFogKey) {
+    // ── Turn fog OFF ───────────────────────────────────────────
+    wsSend({ action: 'update-fog', fogKey: activeFogKey, fogGrid: null });
+    wsSend({ action: 'set-fog-key', fogKey: null });
+    activeFogKey = null;
+    if (lastSceneViewPayload) lastSceneViewPayload.fogKey = null;
+    if (fogControlsEl) fogControlsEl.innerHTML = '';
+    if (fogControlsEl) fogControlsEl.style.display = 'none';
+    if (mcgDivider)    mcgDivider.style.display    = 'none';
+    if (mapControlGrid) mapControlGrid.style.gridTemplateColumns = '1fr';
+  } else {
+    // ── Turn fog ON ────────────────────────────────────────────
+    activeFogKey = currentViewFogKey;
+    if (lastSceneViewPayload) lastSceneViewPayload.fogKey = activeFogKey;
+    if (fogControlsEl) fogControlsEl.style.display = '';
+    if (mcgDivider)    mcgDivider.style.display    = '';
+    if (mapControlGrid) mapControlGrid.style.gridTemplateColumns = '2fr 1px 3fr';
+    renderFogControls(currentViewImageUrl, activeFogKey);
+    sendFogUpdate(activeFogKey);
+    wsSend({ action: 'set-fog-key', fogKey: activeFogKey });
+  }
+  updateFogToggleBtn();
+}
+
 function showSceneView(sceneIdx, viewIdx) {
   var scene  = sceneData[sceneIdx];
   var view   = scene.views[viewIdx];
   var fogKey = view.id || (sceneIdx + '-' + viewIdx);
+  currentViewFogKey   = fogKey;
+  currentViewImageUrl = view.image;
   var useFog = view.fog === true;
   var newFogKey = useFog ? fogKey : null;
 
@@ -948,6 +1002,7 @@ function showSceneView(sceneIdx, viewIdx) {
     if (fogControlsEl) fogControlsEl.style.display = useFog ? '' : 'none';
   }
   if (mapControlTitle) { mapControlTitle.textContent = view.label || 'Active Map'; }
+  updateFogToggleBtn();
 
   // Feature controls — async fetch map state to get saved features
   var featureContainer = document.getElementById('feature-controls-container');
@@ -2359,6 +2414,106 @@ function renderTokenControls(mapUrl, mapKey) {
         dot.appendChild(atkBadge);
       }
     }
+    // Death overlay — red X on dead tokens
+    if (tok.dead) {
+      var deadX = document.createElement('div');
+      deadX.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;' +
+        'pointer-events:none;z-index:6;font-size:13px;font-weight:bold;color:#ef4444;' +
+        'text-shadow:0 1px 3px rgba(0,0,0,0.9);line-height:1;';
+      deadX.textContent = '✕';
+      dot.appendChild(deadX);
+      dot.style.opacity = '0.5';
+      dot.style.border = '2px solid #ef4444';
+    }
+
+    // Right-click context menu
+    dot.addEventListener('contextmenu', (function (t) {
+      return function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        // Remove any existing context menu
+        var old = document.getElementById('tok-ctx-menu');
+        if (old) old.remove();
+        var menu = document.createElement('div');
+        menu.id = 'tok-ctx-menu';
+        menu.style.cssText = 'position:fixed;z-index:9999;background:#1a1f2e;border:1px solid #30363d;' +
+          'border-radius:6px;padding:0.3rem 0;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,0.7);' +
+          'font-size:0.82rem;';
+        menu.style.left = e.clientX + 'px';
+        menu.style.top  = e.clientY + 'px';
+        // Header
+        var hdr = document.createElement('div');
+        hdr.style.cssText = 'padding:0.3rem 0.75rem 0.25rem;font-size:0.72rem;color:#d4af37;font-weight:bold;' +
+          'border-bottom:1px solid #30363d;margin-bottom:0.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;';
+        hdr.textContent = t.label + ' (' + t.color + ')';
+        menu.appendChild(hdr);
+        function menuItem(label, action) {
+          var item = document.createElement('div');
+          item.style.cssText = 'padding:0.3rem 0.75rem;cursor:pointer;color:#e6e6e6;white-space:nowrap;';
+          item.textContent = label;
+          item.onmouseenter = function () { item.style.background = 'rgba(255,255,255,0.08)'; };
+          item.onmouseleave = function () { item.style.background = ''; };
+          item.onclick = function (ev) {
+            ev.stopPropagation();
+            menu.remove();
+            action();
+          };
+          menu.appendChild(item);
+        }
+        // Visibility toggle
+        menuItem(t.hidden ? '👁️ Reveal (show to players)' : '🙈 Hide (from players)', function () {
+          t.hidden = !t.hidden;
+          sendTokenUpdate(mapKey);
+          renderTokenControls(mapUrl, mapKey);
+        });
+        // Lock/unlock (player tokens only)
+        if (t.type === 'player' && t.label) {
+          var isLk = allPlayersLockedDm || !!playerLockState[t.label];
+          menuItem(isLk ? '🔓 Unlock Movement' : '🔒 Lock Movement', function () {
+            if (allPlayersLockedDm) return;
+            if (isLk) { playerLockState[t.label] = false; wsSend({ action: 'unlock-player', name: t.label }); }
+            else { playerLockState[t.label] = true; wsSend({ action: 'lock-player', name: t.label }); }
+            renderTokenControls(mapUrl, mapKey);
+          });
+        }
+        // Death toggle
+        menuItem(t.dead ? '💚 Revive' : '💀 Mark Dead', function () {
+          t.dead = !t.dead;
+          if (t.dead) {
+            // Remove from initiative
+            initiative = initiative.filter(function (en) { return en.name !== t.label; });
+            if (fogDeferredInit[mapKey]) fogDeferredInit[mapKey] = fogDeferredInit[mapKey].filter(function (d) { return d.label !== t.label; });
+            renderInitiative();
+          }
+          sendTokenUpdate(mapKey);
+          renderTokenControls(mapUrl, mapKey);
+        });
+        // Separator
+        var sep = document.createElement('div');
+        sep.style.cssText = 'border-top:1px solid #30363d;margin:0.2rem 0;';
+        menu.appendChild(sep);
+        // Remove
+        menuItem('✕ Remove Token', function () {
+          initiative = initiative.filter(function (en) { return en.name !== t.label; });
+          if (fogDeferredInit[mapKey]) fogDeferredInit[mapKey] = fogDeferredInit[mapKey].filter(function (d) { return d.label !== t.label; });
+          renderInitiative();
+          tokenState[mapKey] = tokenState[mapKey].filter(function (tk) { return tk.id !== t.id; });
+          sendTokenUpdate(mapKey);
+          renderTokenControls(mapUrl, mapKey);
+        });
+        document.body.appendChild(menu);
+        // Clamp to viewport
+        var mRect = menu.getBoundingClientRect();
+        if (mRect.right  > window.innerWidth)  menu.style.left = (e.clientX - mRect.width  + 4) + 'px';
+        if (mRect.bottom > window.innerHeight) menu.style.top  = (e.clientY - mRect.height + 4) + 'px';
+        // Dismiss on outside click
+        function dismissMenu(ev) {
+          if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('mousedown', dismissMenu); }
+        }
+        setTimeout(function () { document.addEventListener('mousedown', dismissMenu); }, 10);
+      };
+    })(tok));
+
     // Stop map click from firing when clicking a dot; toggle selection in party-move mode
     dot.addEventListener('click', function (e) {
       e.stopPropagation();
@@ -2614,8 +2769,21 @@ function renderTokenControls(mapUrl, mapKey) {
   updateDmFeatureOverlay();
   var tokens = tokenState[mapKey] || [];
   if (tokens.length) {
+    // ── Collapsible token list header ──────────────────────────────────
+    var listToggleBtn = document.createElement('button');
+    var listCollapsed = true; // collapsed by default
+    listToggleBtn.textContent = '▶ Token List (' + tokens.length + ')';
+    listToggleBtn.style.cssText = 'display:block;width:100%;text-align:left;margin-top:0.25rem;' +
+      'padding:0.28rem 0.6rem;font-size:0.75rem;border-radius:4px;cursor:pointer;' +
+      'border:1px solid #30363d;background:#0d1117;color:#999;';
+    listToggleBtn.onclick = function () {
+      listCollapsed = !listCollapsed;
+      listToggleBtn.textContent = (listCollapsed ? '▶' : '▼') + ' Token List (' + tokens.length + ')';
+      listDiv.style.display = listCollapsed ? 'none' : 'block';
+    };
+    mapTarget.appendChild(listToggleBtn);
     var listDiv = document.createElement('div');
-    listDiv.style.cssText = 'margin-top:0.25rem;';
+    listDiv.style.cssText = 'margin-top:0.25rem;display:none;'; // collapsed by default
     tokens.forEach(function (tok, idx) {
       var row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-bottom:0.25rem;';
@@ -2691,6 +2859,28 @@ function renderTokenControls(mapUrl, mapKey) {
           };
         })(tok, mapKey);
         row.appendChild(eyeBtn2);
+
+      // Death toggle button
+      var deathBtn = document.createElement('button');
+      deathBtn.textContent = tok.dead ? '💚' : '💀';
+      deathBtn.title = tok.dead ? 'Revive — remove death marker' : 'Mark Dead — adds X over token, removes from initiative';
+      deathBtn.style.cssText = 'font-size:0.75rem;padding:0.05rem 0.3rem;min-width:0;flex:none;border-radius:3px;cursor:pointer;' +
+        'border:1px solid ' + (tok.dead ? '#16a34a' : '#7f1d1d') + ';' +
+        'background:' + (tok.dead ? 'rgba(22,163,74,0.15)' : 'rgba(127,29,29,0.25)') + ';' +
+        'color:' + (tok.dead ? '#4ade80' : '#f87171') + ';';
+      deathBtn.onclick = (function (t, mk) {
+        return function () {
+          t.dead = !t.dead;
+          if (t.dead) {
+            initiative = initiative.filter(function (e) { return e.name !== t.label; });
+            if (fogDeferredInit[mk]) fogDeferredInit[mk] = fogDeferredInit[mk].filter(function (d) { return d.label !== t.label; });
+            renderInitiative();
+          }
+          sendTokenUpdate(mk);
+          renderTokenControls(mapUrl, mk);
+        };
+      })(tok, mapKey);
+      row.appendChild(deathBtn);
 
       var rmBtn = document.createElement('button');
       rmBtn.textContent = '✕';

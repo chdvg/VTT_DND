@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v3.5 — Web Edition)
+# D&D VTT Control Console (v3.7 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -101,6 +101,7 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
 - DM fog editor shows the map as background with semi-transparent fog cells overlaid — click or drag to reveal or hide cells
 - Reveal All / Hide All shortcuts
 - Fog state is pushed to player screens in real time and saved per-map in `scenes.json`
+- **🌫 Runtime fog toggle** — even maps without fog configured in the Scene Builder can have fog enabled at any time via the **🌫 Fog** button in the Map Control toolbar; click again to disable, which clears the fog overlay on all player screens immediately
 
 ### Audio
 - Categorized library (grouped by `Category - Title.ext` naming convention)
@@ -126,6 +127,8 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
 - **Overlay popups** — dice rolls, initiative order, sent text, and sent images appear as a timed semi-transparent parchment panel anchored to the **top-center** of the screen so attack animations and tokens remain visible beneath it
 - Auto-dismiss timers: Dice 8 s · Initiative 12 s · Text 15 s · Image 20 s
 - **Fullscreen button** — ⛶ in the corner; useful for projector displays to hide browser chrome
+- **🔄 Sync button** — a resync button appears in the top-right corner (below fullscreen); clicking it sends a full state sync request without logging out, or force-reconnects the WebSocket if the connection is down; the button spins green briefly to confirm; particularly useful for the central projector screen that no one is actively watching
+- **Projector resilience** — the guest (non-logged-in) projector screen has hardened connection logic: max reconnect backoff is 3 s, a 35 s watchdog detects zombie sockets, the tab restores sync instantly on wake from sleep (`visibilitychange`), reconnects immediately on network restore (`online` event), and the tap-to-begin overlay is automatically dismissed on page refresh so the projector never needs a physical walk-over just to re-tap
 - **Player Dice Roller** — after logging in, a compact HUD bar appears at the bottom-left of the player screen next to the Log Off button:
   - Buttons for d4, d6, d8, d10, d12, d20, and d% (d100)
   - Rolling triggers the full 3D dice animation on the rolling player's screen
@@ -135,6 +138,7 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
 ### Map Control Panel
 - **⬛ BLACKOUT** — toggles a solid black overlay that covers the *entire* player screen including any popups. Click again to reveal. Audio stops on blackout.
 - **🧹 CLEAR** — dismisses any open popup (initiative, text, image overlay) without disturbing the current scene image or audio.
+- **🌫 Fog** — runtime fog toggle button; appears whenever a map is loaded; enables or disables fog of war for any map regardless of Scene Builder settings; fog state is broadcast to all player screens instantly.
 - Fog of war controls and token/draw overlay tools are embedded directly in this panel when a map is active.
 
 ### Initiative Tracker
@@ -233,6 +237,10 @@ The Reference panel is a tabbed quick-reference hub for DMs, with live API looku
   - 👁️ = visible to players (default)
   - 🙈 = hidden from players — DM sees a faded token with purple border; player screens skip it entirely
   - Also accessible in the collapsible "Tokens on Map" section in the right sidebar
+- **💀 Death / KO state** — each token row in the TOKEN PLACEMENT list has a 💀/💚 button to toggle the token's death state:
+  - 💀 = defeated/KO — a red ✕ overlay is drawn over the token on the DM map and all player screens
+  - 💚 = alive (default)
+- **Right-click context menu** — right-clicking a token dot directly on the DM map opens a context menu with quick actions: toggle visibility (👁️/🙈), toggle death (💀/💚), remove token (✕), and jump to that token's initiative entry
 - **Condition rings** — when a combatant in the initiative tracker has active buffs or debuffs, their map token displays colored rings: 🟢 green for buffs, 🔴 red for debuffs; multiple conditions stack as concentric rings outward
   - Rings update instantly when conditions are added, removed, or expire on turn advance
   - Token list below the map shows condition badges with icon, name, and rounds remaining
@@ -462,6 +470,7 @@ Scenes are stored in `seeds/scenes.json`. Structure:
 | `LOGGED_IN_PLAYERS` | server → DM | `{ players: [...names] }` |
 | `SET_TARGET` | server → all | `{ player, target }` — combat target assignment (player name → mob label) |
 | `ATTACK_ANIMATION` | server → player | `{ attacker, targets[] }` — triggers sword/spell animation on target tokens |
+| `SET_FOG_KEY` | server → player | `{ fogKey }` — activates or clears fog overlay on player screens at runtime |
 
 **DM → Server additional actions:**
 
