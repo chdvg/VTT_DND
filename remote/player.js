@@ -264,8 +264,19 @@ function renderObjectLayer(objects, objStates, imgEl) {
   var cellW = rendW / cols;
   var cellH = rendH / rows;
   var SPEED = { slow: '4s', normal: '2.5s', fast: '1.2s' };
+  var fogGrid = (currentFogKey && fogStates[currentFogKey]) ? fogStates[currentFogKey] : null;
+  var fogRows = fogGrid ? fogGrid.length : 0;
+  var fogCols = fogGrid && fogGrid[0] ? fogGrid[0].length : 0;
   objects.forEach(function (obj) {
     var st = (objStates && objStates[obj.id]) || { activated: false, currentCol: obj.col, currentRow: obj.row, currentRotation: 0 };
+    // Hide objects that fall in a fogged (unrevealed) cell
+    if (fogGrid && fogRows && fogCols) {
+      var fx = (st.currentCol + 0.5) / cols;
+      var fy = (st.currentRow + 0.5) / rows;
+      var gridC = Math.min(fogCols - 1, Math.max(0, Math.floor(fx * fogCols)));
+      var gridR = Math.min(fogRows - 1, Math.max(0, Math.floor(fy * fogRows)));
+      if (!fogGrid[gridR][gridC]) return;
+    }
     var size = (parseFloat(obj.size) || 1.0);
     var w = cellW * size;
     var h = cellH * size;
@@ -1242,6 +1253,7 @@ function handleMessage(msg) {
         if (msg.fogKey === currentFogKey) {
           renderFogOverlay(msg.fogGrid, sceneEl.querySelector('img'));
           renderTokenOverlay(currentTokens); // re-check which tokens are in fogged cells
+          renderObjectLayer(currentObjects, currentObjectStates, sceneEl.querySelector('img'));
         }
       }
       break;
@@ -1249,6 +1261,7 @@ function handleMessage(msg) {
       currentFogKey = msg.fogKey || null;
       renderFogOverlay(currentFogKey ? (fogStates[currentFogKey] || null) : null, sceneEl.querySelector('img'));
       renderTokenOverlay(currentTokens);
+      renderObjectLayer(currentObjects, currentObjectStates, sceneEl.querySelector('img'));
       break;
     case 'PLAY_AUDIO':
       if (msg.url) playAudio(msg.url, msg.loop === true);
