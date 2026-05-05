@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v3.7 — Web Edition)
+# D&D VTT Control Console (v3.9 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -41,6 +41,8 @@ A full tile-based map editor accessible at `/map-builder` from the DM machine (l
 | 🪙 Token | Place player or NPC/enemy tokens |
 | 🔤 Label | Add text labels anywhere on the map |
 | 🖼 Image | Place a background image behind the tile grid |
+| 🎯 Feature | Define named trigger regions (pit/trap/puzzle/reveal/effect) |
+| 🔧 Object | Place moveable / interactive objects with auto-animations |
 
 **Token tool:**
 - **Player tab** — pick a player from your saved roster; their class icon and color are applied automatically
@@ -88,13 +90,38 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
 - **🗂 Builder Maps** — maps saved from the builder (have an editable `.map.json`); restores tiles, tokens, labels, fog, and features exactly.
 - **🖼 Any Image** — every image in `public/assets/maps/`; opens it as a background on a blank grid so you can add tiles, features, fog, and overlays on top, then save as a new builder map.
 
-**Map Features (traps, puzzles, reveals):**
+**Map Features (traps, puzzles, reveals, effects):**
 - Switch to the **🎯 Feature** tool to define named overlay regions on the map.
 - Paint cells onto the map, then click **+ Add Feature from Selection** to open the feature editor.
-- Each feature has a **name**, **type** (Pit, Trap, Puzzle, Reveal, Effect), **animation** (Shake & Reveal, Red Flash, Gold Pulse, Fade In, White Flash), **color**, and optional description.
+- Each feature has a **name**, **type**, **color**, and optional description. The type drives the animation automatically:
+
+| Type | Player Animation | Notes |
+|------|-----------------|-------|
+| **Pit** | Cells stagger open with a spreading darkness animation | Permanent reveal |
+| **Trap** | Snap/spring flash on cells + screen shake | One-shot style |
+| **Puzzle** | Continuous pulsing blue glow on cells | Click glowing cells to open a sub-map lightbox (if a linked map image is configured) |
+| **Reveal** | Dark overlay drops away, cells fade into view | Area reveal |
+| **Effect** | Sub-type picker: 🔥 Fire / ✨ Sparks / 💥 Explosion / 🌀 Aura — each with a unique looping animation | Environmental effects |
+
 - Features are saved inside the `.map.json` and are invisible on the player screen until triggered.
-- In the DM Map Control panel, a **🎯 Map Features** section appears with **⚡ Trigger** and **↩ Reset** buttons per feature.
-- Triggering a feature plays its animation and reveals the colored overlay on the player screen; resetting hides it again.
+- In the DM Map Control panel, a **🎯 Map Features** section appears with **⚡ Trigger** and **↩ Reset** buttons per feature. Puzzle features with a linked sub-map also show a **🗺 Sub-map** button that opens the image in a fullscreen DM lightbox.
+- Triggered feature cells are highlighted on the DM's fog map and token map overlays with type-specific animations so the DM can see exactly what players see.
+
+**Moveable Objects:**
+- Switch to the **🔧 Object** tool to place interactive or decorative objects on the map.
+- Click any cell to open the object editor. Objects are saved inside the `.map.json`.
+- **Icon options:** choose an emoji (e.g. 🪨 🚪 🪵) or a tile ID from the builder tile library.
+- **Size:** 0.5× / 0.75× / 1.0× / 1.3× relative to a grid cell.
+- **Auto-animation:** Spin / Sway (horizontal or vertical) / Float — plays continuously at Slow / Normal / Fast speed. Great for flames, floating platforms, spinning traps.
+- **Interactive objects** — check *Interactive* to allow click-to-interact:
+  - **Interact by:** Players / DM only / Both
+  - **Click action:**
+    - *Rotate* — object rotates by 90°/180°/270° on click
+    - *Slide* — object moves from its placed cell (A-state) to a destination cell (B-state) defined in the builder via **Pick on Map**
+  - **Can Reset:** toggle A↔B on each click (default) or one-way (stays in B-state after first interaction)
+  - **Blocks movement:** flag for future pathfinding integration
+- Click an existing object dot to re-open its editor. Objects are listed in the **Objects** sidebar section while the Object tool is active.
+- At runtime, object positions and rotation states are tracked server-side and replayed to reconnecting clients. The DM can drag any object to a new cell directly on the DM map.
 
 ---
 
@@ -473,6 +500,8 @@ Scenes are stored in `seeds/scenes.json`. Structure:
 | `SET_TARGET` | server → all | `{ player, target }` — combat target assignment (player name → mob label) |
 | `ATTACK_ANIMATION` | server → player | `{ attacker, targets[] }` — triggers sword/spell animation on target tokens |
 | `SET_FOG_KEY` | server → player | `{ fogKey }` — activates or clears fog overlay on player screens at runtime |
+| `UPDATE_OBJECTS` | server → all | `{ objects[], objectStates{} }` — full object definitions + current states |
+| `OBJECT_STATE_CHANGE` | server → all | `{ objId, state }` — single object state update after an interaction or DM drag |
 
 **DM → Server additional actions:**
 
@@ -481,6 +510,9 @@ Scenes are stored in `seeds/scenes.json`. Structure:
 | `set-target` | `{ target }` | Player sets their own attack target |
 | `dm-set-target` | `{ player, target }` | DM assigns a target on behalf of any combatant (stored server-side) |
 | `trigger-attack` | `{ attacker, targets[] }` | DM broadcasts attack animation to all player screens |
+| `update-objects` | `{ objects[] }` | DM pushes object definitions for the current map |
+| `interact-object` | `{ objId }` | Player or DM clicks an interactive object (toggle A↔B) |
+| `move-object` | `{ objId, col, row }` | DM drags an object to a new cell |
 
 ---
 

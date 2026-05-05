@@ -442,6 +442,125 @@
     }
     .feature-cell.feat-pulse-anim { animation: feat-pulse 1.4s ease-in-out infinite; }
 
+    /* ── Pit: dark floor crumbles open with stagger ── */
+    @keyframes feat-pit-spread {
+      0%   { opacity: 0; transform: scale(0.5); filter: brightness(3); }
+      30%  { opacity: 0.9; transform: scale(1.08); filter: brightness(1.2); }
+      70%  { transform: scale(0.98); }
+      100% { opacity: 1; transform: scale(1); filter: brightness(1); }
+    }
+    .feature-cell.feat-pit-anim { animation: feat-pit-spread 0.7s ease forwards; }
+
+    /* ── Trap: jaw-snap + linger ── */
+    @keyframes feat-trap-snap {
+      0%   { opacity: 0; transform: scaleY(0.05); }
+      25%  { opacity: 1; transform: scaleY(1.35); }
+      50%  { transform: scaleY(0.85); }
+      70%  { transform: scaleY(1.1); }
+      100% { opacity: 1; transform: scaleY(1); }
+    }
+    .feature-cell.feat-trap-anim { animation: feat-trap-snap 0.45s cubic-bezier(0.36,0.07,0.19,0.97) forwards; }
+
+    /* ── Puzzle: arcane blue pulse (continuous) ── */
+    @keyframes feat-puzzle-glow {
+      0%,100% { opacity: 0.55; box-shadow: inset 0 0 8px rgba(99,179,237,0.5); }
+      50%     { opacity: 0.9;  box-shadow: inset 0 0 20px rgba(147,210,255,1); }
+    }
+    .feature-cell.feat-puzzle-anim {
+      animation: feat-puzzle-glow 2.2s ease-in-out infinite;
+      cursor: pointer;
+    }
+
+    /* ── Reveal: overlay fades + drops away ── */
+    @keyframes feat-reveal-drop {
+      0%   { opacity: 1; transform: translateY(0) scaleY(1); }
+      55%  { opacity: 0.6; transform: translateY(20%) scaleY(0.6); }
+      100% { opacity: 0; transform: translateY(60%) scaleY(0.1); }
+    }
+    .feature-cell.feat-reveal-anim { animation: feat-reveal-drop 0.9s ease-in forwards; }
+
+    /* ── Effect — Fire: orange/red flicker ── */
+    @keyframes feat-fire {
+      0%   { opacity: 0.7; filter: hue-rotate(0deg) brightness(1); }
+      20%  { opacity: 1;   filter: hue-rotate(-15deg) brightness(1.4); }
+      45%  { opacity: 0.75; filter: hue-rotate(10deg) brightness(0.9); }
+      70%  { opacity: 1;   filter: hue-rotate(-8deg) brightness(1.3); }
+      100% { opacity: 0.7; filter: hue-rotate(0deg) brightness(1); }
+    }
+    .feature-cell.feat-fire-anim { animation: feat-fire 0.55s ease-in-out infinite; }
+
+    /* ── Effect — Sparks: rapid yellow flashes ── */
+    @keyframes feat-sparks {
+      0%,100% { opacity: 0.2; filter: brightness(0.8); }
+      15%     { opacity: 1;   filter: brightness(2.5); }
+      30%     { opacity: 0.3; filter: brightness(1); }
+      55%     { opacity: 1;   filter: brightness(2.2); }
+      75%     { opacity: 0.4; filter: brightness(1.1); }
+    }
+    .feature-cell.feat-sparks-anim { animation: feat-sparks 0.38s linear infinite; }
+
+    /* ── Effect — Explosion: radial burst then fade ── */
+    @keyframes feat-explosion {
+      0%   { opacity: 0; transform: scale(0.15); filter: brightness(3); }
+      18%  { opacity: 1; transform: scale(1.6); filter: brightness(2); }
+      45%  { opacity: 0.85; transform: scale(1.1); filter: brightness(1.3); }
+      80%  { opacity: 0.4; transform: scale(1.05); }
+      100% { opacity: 0; transform: scale(1); }
+    }
+    .feature-cell.feat-explosion-anim { animation: feat-explosion 1.1s ease-out forwards; }
+
+    /* ── Effect — Aura: slow color breathe ── */
+    @keyframes feat-aura {
+      0%,100% { opacity: 0.35; filter: blur(1px) brightness(0.9); }
+      50%     { opacity: 0.85; filter: blur(0px) brightness(1.5); }
+    }
+    .feature-cell.feat-aura-anim { animation: feat-aura 2.8s ease-in-out infinite; }
+
+    /* ── Moveable Object layer ── */
+    #object-layer { position: absolute; inset: 0; pointer-events: none; z-index: 40; }
+    .obj-cell {
+      position: absolute;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4em; line-height: 1;
+      border-radius: 4px;
+      transition: transform 0.5s ease, left 0.5s ease, top 0.5s ease;
+      user-select: none;
+    }
+    .obj-cell.interactive { pointer-events: auto; cursor: pointer; }
+    .obj-cell.interactive:hover { filter: brightness(1.4); }
+    .obj-cell.obj-activated { filter: brightness(1.3) drop-shadow(0 0 6px rgba(255,220,100,0.9)); }
+
+    /* Object auto-animations */
+    @keyframes obj-spin    { 100% { transform: rotate(360deg); } }
+    @keyframes obj-sway-h  { 0%,100% { transform: translateX(0); } 50% { transform: translateX(30%); } }
+    @keyframes obj-sway-v  { 0%,100% { transform: translateY(0); } 50% { transform: translateY(30%); } }
+    @keyframes obj-float   { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-15%) scale(1.05); } }
+
+    .obj-cell.anim-spin   { animation: obj-spin   var(--obj-dur,3s)  linear infinite; }
+    .obj-cell.anim-sway-h { animation: obj-sway-h var(--obj-dur,2s)  ease-in-out infinite; }
+    .obj-cell.anim-sway-v { animation: obj-sway-v var(--obj-dur,2s)  ease-in-out infinite; }
+    .obj-cell.anim-float  { animation: obj-float  var(--obj-dur,2.5s) ease-in-out infinite; }
+
+    /* Puzzle lightbox */
+    #puzzle-lightbox {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.92);
+      z-index: 9900; display: none;
+      align-items: center; justify-content: center;
+    }
+    #puzzle-lightbox.open { display: flex; }
+    #puzzle-lightbox img { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 6px;
+      box-shadow: 0 0 40px rgba(99,179,237,0.6); }
+    #puzzle-lightbox-close {
+      position: fixed; top: 1rem; right: 1.5rem;
+      color: #9ca3af; font-size: 1.1rem; cursor: pointer; font-weight: bold;
+      background: rgba(0,0,0,0.6); padding: 0.3rem 0.7rem; border-radius: 4px;
+    }
+    #puzzle-lightbox-title {
+      position: fixed; top: 1rem; left: 50%; transform: translateX(-50%);
+      color: #e6e6e6; font-size: 1rem; font-weight: bold;
+      background: rgba(0,0,0,0.6); padding: 0.3rem 0.9rem; border-radius: 4px;
+    }
+
     /* ── Combat Targeting & Attack Animations ──────────────── */
     @keyframes target-pulse {
       0%,100% { box-shadow: 0 0 0 3px rgba(239,68,68,0.9), 0 0 0 6px rgba(239,68,68,0.3); }
@@ -513,6 +632,13 @@
     </div>
   </div>
   <div id="scene"></div>
+  <div id="object-layer"></div>
+  <!-- Puzzle sub-map lightbox -->
+  <div id="puzzle-lightbox">
+    <div id="puzzle-lightbox-title"></div>
+    <img id="puzzle-lightbox-img" src="" alt="" />
+    <div id="puzzle-lightbox-close">✕ Close</div>
+  </div>
   <div id="popup-overlay"></div>
   <div id="dice-overlay">
     <div id="dice-scene">

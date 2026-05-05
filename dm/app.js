@@ -56,6 +56,11 @@ var dmMapFeatures   = [];   // feature definitions for current map
 var dmMapMeta       = null; // { cols, rows } for current map
 var dmTriggeredFeat = {};   // { featureId: true } — which features are triggered
 
+// Moveable objects (DM-side)
+var dmObjects      = [];   // object definitions for current map
+var dmObjStates    = {};   // objId -> { activated, currentCol, currentRow, currentRotation }
+var _dmObjDragging = null; // { objId, startX, startY, startCol, startRow } during drag
+
 // Combat targeting state (DM-side)
 var dmTargets = {};  // playerName -> targetLabel
 var gridEnabled = false; // DM-toggled grid overlay
@@ -285,14 +290,19 @@ function restoreDmState(msg) {
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (state) {
           var mapFeatures = (state && Array.isArray(state.features)) ? state.features : [];
+          var mapObjects_ = (state && Array.isArray(state.objects)) ? state.objects : [];
           var mapMeta = state ? { cols: state.cols, rows: state.rows } : null;
           dmMapFeatures = mapFeatures;
           dmMapMeta     = mapMeta;
           dmTriggeredFeat = {};
-          // Re-push features to server so it has them for broadcasts and auto-trigger
+          dmObjects = mapObjects_;
+          dmObjStates = {};
+          // Re-push features + objects to server so it has them for broadcasts
           wsSend({ action: 'update-features', features: mapFeatures, mapKey: mapKey, mapMeta: mapMeta });
+          wsSend({ action: 'update-objects', objects: mapObjects_ });
           renderFeatureControls(mapKey, mapFeatures, mapMeta);
           updateDmFeatureOverlay();
+          renderDmObjectLayer();
         })
         .catch(function () {});
     }
@@ -415,6 +425,19 @@ function connectWebSocket() {
       }
       return;
     }
+    if (msg.type === 'UPDATE_OBJECTS') {
+      dmObjects    = Array.isArray(msg.objects) ? msg.objects : [];
+      dmObjStates  = (msg.objectStates && typeof msg.objectStates === 'object') ? msg.objectStates : {};
+      renderDmObjectLayer();
+      return;
+    }
+    if (msg.type === 'OBJECT_STATE_CHANGE') {
+      if (msg.objId && msg.state) {
+        dmObjStates[msg.objId] = msg.state;
+        renderDmObjectLayer();
+      }
+      return;
+    }
   };
   ws.onclose = function () {
     statusDot.classList.remove('on');
@@ -477,6 +500,8 @@ document.getElementById('reset-map-btn').addEventListener('click', function () {
   dmMapFeatures   = [];    // clear feature overlay state
   dmMapMeta       = null;
   dmTriggeredFeat = {};
+  dmObjects       = [];
+  dmObjStates     = {};
   // Collapse the map control panel
   var mapControlGrid  = document.getElementById('map-control-grid');
   var mapControlTitle = document.getElementById('map-control-title');
@@ -1022,16 +1047,20 @@ function showSceneView(sceneIdx, viewIdx) {
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (state) {
         var mapFeatures = (state && Array.isArray(state.features)) ? state.features : [];
+        var mapObjs_  = (state && Array.isArray(state.objects)) ? state.objects : [];
         var mapMeta = state ? { cols: state.cols, rows: state.rows } : null;
         // Store on DM side so feature overlay can show cell positions
         dmMapFeatures   = mapFeatures;
         dmMapMeta       = mapMeta;
         dmTriggeredFeat = {};
-        // Push feature definitions to server so reconnecting players receive them
-        // Always send even if empty so server gets mapMeta for auto-trigger coord conversion
+        dmObjects   = mapObjs_;
+        dmObjStates = {};
+        // Push feature definitions + objects to server so reconnecting players receive them
         wsSend({ action: 'update-features', features: mapFeatures, mapKey: fogKey, mapMeta: mapMeta });
+        wsSend({ action: 'update-objects', objects: mapObjs_ });
         renderFeatureControls(fogKey, mapFeatures, mapMeta);
         updateDmFeatureOverlay();
+        renderDmObjectLayer();
       })
       .catch(function () { /* no state file — map may not be from builder */ });
   }
@@ -1359,7 +1388,15 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
 
     var animEl = document.createElement('div');
     animEl.style.cssText = 'font-size:0.72rem;color:#6b7280;margin-bottom:0.35rem;';
-    animEl.textContent = (ANIM_LABELS[feat.animation] || feat.animation) + ' • ' + (feat.cells || []).length + ' cells';
+    // Show type-specific info instead of raw animation key
+    var typeInfoMap = {
+      pit: '⬛ Pit opens', trap: '💥 Trap springs', puzzle: '🧩 Puzzle',
+      reveal: '👁 Area revealed', effect: '✨ Effect'
+    };
+    var typeInfo = typeInfoMap[feat.type] || feat.type || '';
+    if (feat.type === 'effect' && feat.effectSubtype) typeInfo += ' — ' + feat.effectSubtype;
+    if (feat.type === 'puzzle' && feat.linkedMap) typeInfo += ' — has sub-map';
+    animEl.textContent = typeInfo + ' • ' + (feat.cells || []).length + ' cells';
     card.appendChild(animEl);
 
     if (feat.autoTrigger) {
@@ -1413,6 +1450,19 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
       updateDmFeatureOverlay();
     };
     btnRow.appendChild(resetBtn);
+
+    // Puzzle: open sub-map lightbox
+    if (feat.type === 'puzzle' && feat.linkedMap) {
+      var subMapBtn = document.createElement('button');
+      subMapBtn.className = 'btn btn-small btn-secondary';
+      subMapBtn.textContent = '\ud83d\uddfa Sub-map';
+      subMapBtn.style.cssText = 'flex:none;font-size:0.75rem;white-space:nowrap;';
+      (function (f) {
+        subMapBtn.onclick = function () { openDmSubMapLightbox(f); };
+      }(feat));
+      btnRow.appendChild(subMapBtn);
+    }
+
     card.appendChild(btnRow);
     grid.appendChild(card);
   });
@@ -1586,9 +1636,16 @@ function renderFogControls(mapUrl, fogKey) {
   fogFeatOverlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:4;';
   mapWrap.appendChild(fogFeatOverlay);
 
+  // Object layer on fog map
+  var fogObjLayer = document.createElement('div');
+  fogObjLayer.className = 'dm-obj-layer';
+  fogObjLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:6;';
+  mapWrap.appendChild(fogObjLayer);
+
   container.appendChild(mapWrap);
   updateFogTokenOverlay();
   updateDmFeatureOverlay();
+  renderDmObjectLayer();
 }
 
 function sendFogUpdate(fogKey) {
@@ -1670,27 +1727,140 @@ function makeConditionShadow(tok) {
 // Refresh all .dm-feat-overlay divs (on fog map and token map) to show
 // feature cell outlines and triggered fills for the DM.
 function updateDmFeatureOverlay() {
+  var TYPE_COLORS = { pit: '#1a0a00', trap: '#7f1d1d', puzzle: '#1e3a5f', reveal: '#14532d', effect: '#7c2d12' };
+  var TYPE_ANIM   = { pit: 'dm-feat-pit', trap: 'dm-feat-trap', puzzle: 'dm-feat-puzzle', effect: 'dm-feat-effect' };
   document.querySelectorAll('.dm-feat-overlay').forEach(function (overlay) {
     overlay.innerHTML = '';
     if (!dmMapFeatures.length || !dmMapMeta) return;
     var cols = dmMapMeta.cols, rows = dmMapMeta.rows;
     if (!cols || !rows) return;
     dmMapFeatures.forEach(function (feat) {
+      var defaultColor = TYPE_COLORS[feat.type] || '#7f1d1d';
+      var isTriggered  = !!dmTriggeredFeat[feat.id];
       (feat.cells || []).forEach(function (cell) {
         var r = cell[0], c = cell[1];
-        var isTriggered = !!dmTriggeredFeat[feat.id];
         var cd = document.createElement('div');
         cd.dataset.featId = feat.id;
+        if (isTriggered && TYPE_ANIM[feat.type]) cd.classList.add(TYPE_ANIM[feat.type] + '-triggered');
         cd.style.cssText = 'position:absolute;box-sizing:border-box;pointer-events:none;' +
           'left:' + (c / cols * 100) + '%;top:' + (r / rows * 100) + '%;' +
           'width:' + (100 / cols) + '%;height:' + (100 / rows) + '%;' +
-          'background:' + (isTriggered ? (feat.color || '#7f1d1d') : 'transparent') + ';' +
-          'border:1px dashed ' + (feat.color || '#7f1d1d') + ';' +
-          'opacity:' + (isTriggered ? '0.7' : '0.4') + ';' +
+          'background:' + (isTriggered ? (feat.color || defaultColor) : 'transparent') + ';' +
+          'border:1px dashed ' + (feat.color || defaultColor) + ';' +
+          'opacity:' + (isTriggered ? '0.75' : '0.4') + ';' +
           'transition:background 0.3s,opacity 0.3s;';
         overlay.appendChild(cd);
       });
     });
+  });
+}
+
+// ── DM puzzle sub-map lightbox ────────────────────────────────
+function openDmSubMapLightbox(feat) {
+  var lb = document.getElementById('dm-submap-lightbox');
+  if (!lb) {
+    lb = document.createElement('div');
+    lb.id = 'dm-submap-lightbox';
+    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.93);z-index:9999;' +
+      'display:flex;align-items:center;justify-content:center;flex-direction:column;gap:0.75rem;';
+    document.body.appendChild(lb);
+  }
+  lb.innerHTML = '';
+  lb.style.display = 'flex';
+  var title = document.createElement('div');
+  title.textContent = '\ud83d\uddfa\ufe0f ' + escHtml(feat.name || 'Sub-map');
+  title.style.cssText = 'color:#e6e6e6;font-size:1.1rem;font-weight:bold;';
+  lb.appendChild(title);
+  var img = document.createElement('img');
+  img.src = feat.linkedMap;
+  img.style.cssText = 'max-width:85vw;max-height:78vh;object-fit:contain;border-radius:4px;' +
+    'box-shadow:0 0 30px rgba(99,179,237,0.4);';
+  lb.appendChild(img);
+  var closeBtn = document.createElement('button');
+  closeBtn.className = 'btn btn-secondary';
+  closeBtn.textContent = '\u2715 Close';
+  closeBtn.onclick = function () { lb.style.display = 'none'; };
+  lb.appendChild(closeBtn);
+}
+
+// ── DM Moveable Object Layer ──────────────────────────────────
+function renderDmObjectLayer() {
+  document.querySelectorAll('.dm-obj-layer').forEach(function (layer) {
+    layer.innerHTML = '';
+    if (!dmObjects.length || !dmMapMeta) return;
+    var cols = dmMapMeta.cols, rows = dmMapMeta.rows;
+    if (!cols || !rows) return;
+    var SPEED = { slow: '4s', normal: '2.5s', fast: '1.2s' };
+    var isFogLayer = layer.parentElement && layer.parentElement.id && layer.parentElement.id.indexOf('fog') >= 0;
+    dmObjects.forEach(function (obj) {
+      var st = dmObjStates[obj.id] || { activated: false, currentCol: obj.col, currentRow: obj.row, currentRotation: 0 };
+      var size = parseFloat(obj.size) || 1.0;
+      var el = document.createElement('div');
+      el.className = 'dm-obj-cell' + (obj.interactive ? ' dm-obj-interactive' : '') + (st.activated ? ' dm-obj-activated' : '');
+      el.dataset.objId = obj.id;
+      el.style.cssText =
+        'left:' + ((st.currentCol + (1 - size) / 2) / cols * 100) + '%;' +
+        'top:' + ((st.currentRow + (1 - size) / 2) / rows * 100) + '%;' +
+        'width:' + (size / cols * 100) + '%;' +
+        'height:' + (size / rows * 100) + '%;' +
+        'transform:rotate(' + (st.currentRotation || 0) + 'deg);' +
+        'border-color:' + (obj.color || '#fbbf24') + ';';
+      // Drag indicator
+      var drag = document.createElement('span');
+      drag.className = 'dm-obj-drag';
+      drag.textContent = '⠿';
+      el.appendChild(drag);
+      // Icon
+      var iconEl = document.createElement('div');
+      iconEl.className = 'obj-icon' + (obj.autoAnim && obj.autoAnim !== 'none' ? ' anim-' + obj.autoAnim : '');
+      if (obj.autoAnim && obj.autoAnim !== 'none') {
+        iconEl.style.setProperty('--obj-dur', SPEED[obj.animSpeed] || '2.5s');
+      }
+      if (obj.iconType === 'tile' && obj.tileId) {
+        iconEl.style.cssText = 'width:80%;height:80%;background-size:cover;background-position:center;' +
+          'background-image:url(/assets/Tiles/' + encodeURIComponent(obj.tileId) + ');';
+      } else {
+        iconEl.style.cssText = 'font-size:1.1em;line-height:1;';
+        iconEl.textContent = obj.emoji || '\uD83D\uDD27';
+      }
+      el.appendChild(iconEl);
+      // Click to interact (token map layer only, not fog layer — pointer-events:auto on token layer)
+      if (!isFogLayer) {
+        layer.style.pointerEvents = 'auto';
+        (function (oId) {
+          el.onclick = function (e) {
+            e.stopPropagation();
+            wsSend({ action: 'interact-object', objId: oId });
+          };
+          // Drag to move
+          el.addEventListener('mousedown', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            _dmObjDragging = { objId: oId, lastCol: st.currentCol, lastRow: st.currentRow };
+          });
+        }(obj.id));
+      }
+      layer.appendChild(el);
+    });
+    // Global mousemove/up for drag on this layer
+    if (!isFogLayer && !layer._dragBound) {
+      layer._dragBound = true;
+      layer.addEventListener('mousemove', function (e) {
+        if (!_dmObjDragging) return;
+        var rect = layer.getBoundingClientRect();
+        var px = (e.clientX - rect.left) / rect.width;
+        var py = (e.clientY - rect.top) / rect.height;
+        var c = Math.max(0, Math.min(cols - 1, Math.floor(px * cols)));
+        var r = Math.max(0, Math.min(rows - 1, Math.floor(py * rows)));
+        if (c !== _dmObjDragging.lastCol || r !== _dmObjDragging.lastRow) {
+          _dmObjDragging.lastCol = c;
+          _dmObjDragging.lastRow = r;
+          wsSend({ action: 'move-object', objId: _dmObjDragging.objId, col: c, row: r });
+        }
+      });
+      layer.addEventListener('mouseup', function () { _dmObjDragging = null; });
+      layer.addEventListener('mouseleave', function () { _dmObjDragging = null; });
+    }
   });
 }
 
@@ -2775,7 +2945,15 @@ function renderTokenControls(mapUrl, mapKey) {
   tokFeatOverlay.className = 'dm-feat-overlay';
   tokFeatOverlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:4;';
   mapWrap.appendChild(tokFeatOverlay);
+
+  // Object layer on token map
+  var tokObjLayer = document.createElement('div');
+  tokObjLayer.className = 'dm-obj-layer';
+  tokObjLayer.style.cssText = 'position:absolute;inset:0;z-index:6;';
+  mapWrap.appendChild(tokObjLayer);
+
   updateDmFeatureOverlay();
+  renderDmObjectLayer();
   var tokens = tokenState[mapKey] || [];
   if (tokens.length) {
     // ── Collapsible token list header ──────────────────────────────────

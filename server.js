@@ -32,6 +32,8 @@ function saveState() {
       allPlayersLocked,
       blackout: currentState.blackout,
       allTokenStates,
+      currentObjectDefs,
+      currentObjectStates,
     };
     fs.writeFileSync(STATE_FILE, JSON.stringify(snapshot));
   } catch (e) {
@@ -58,6 +60,8 @@ function loadState() {
     if (typeof saved.allPlayersLocked === 'boolean') allPlayersLocked = saved.allPlayersLocked;
     if (typeof saved.blackout === 'boolean') currentState.blackout = saved.blackout;
     if (saved.allTokenStates && typeof saved.allTokenStates === 'object') allTokenStates = saved.allTokenStates;
+    if (Array.isArray(saved.currentObjectDefs)) currentObjectDefs = saved.currentObjectDefs;
+    if (saved.currentObjectStates && typeof saved.currentObjectStates === 'object') currentObjectStates = saved.currentObjectStates;
     console.log('State restored from disk.');
   } catch (e) {
     console.error('loadState error:', e.message);
@@ -193,6 +197,8 @@ let currentDrawingMapKey = null;
 let currentFeatures      = [];  // feature defs for the active map
 let currentFeatureStates = {};  // { featureId: 'triggered' }
 let currentMapMeta       = null; // { cols, rows } for active map grid
+let currentObjectDefs    = [];   // object defs from map (moveable objects)
+let currentObjectStates  = {};   // objId -> { activated, currentCol, currentRow, currentRotation }
 const lockedPlayers    = new Set();  // names of individually-locked players
 let allPlayersLocked   = false;      // DM has locked all player movement
 const loggedInPlayers  = new Map();  // playerName -> ws
@@ -274,6 +280,10 @@ function sendFullState(ws) {
   // Targeting state
   for (const [player, target] of Object.entries(currentTargets)) {
     if (target) ws.send(JSON.stringify({ type: 'SET_TARGET', player, target }));
+  }
+  // Moveable objects
+  if (currentObjectDefs.length) {
+    ws.send(JSON.stringify({ type: 'UPDATE_OBJECTS', objects: currentObjectDefs, objectStates: currentObjectStates }));
   }
   // Grid overlay state
   if (gridEnabled) {
@@ -381,6 +391,8 @@ wss.on('connection', (ws, req) => {
           currentFeatures = Array.isArray(message.features) ? message.features : [];
           currentFeatureStates = {};
           currentTargets = {};
+          currentObjectDefs    = Array.isArray(message.objects) ? message.objects : [];
+          currentObjectStates  = {};
           const sceneViewMsg = { type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain', mapKey: message.mapKey || null, features: currentFeatures, mapMeta: message.mapMeta || null, label: message.label || '' };
           currentSceneView = sceneViewMsg;
           currentAudio = message.audio ? { url: message.audio, loop: message.audioLoop !== false } : null;
@@ -504,6 +516,55 @@ wss.on('connection', (ws, req) => {
           }
           saveState();
           break;
+        case 'update-objects':
+          // DM is supplying object definitions for the current map
+          currentObjectDefs   = Array.isArray(message.objects) ? message.objects : [];
+          currentObjectStates = {}; // reset states when defs change
+          broadcast({ type: 'UPDATE_OBJECTS', objects: currentObjectDefs, objectStates: currentObjectStates });
+          saveState();
+          break;
+        case 'interact-object': {
+          // Player or DM clicked an interactive object (toggle A↔B or one-way)
+          const ioId  = String(message.objId || '');
+          const ioDef = currentObjectDefs.find(o => o.id === ioId);
+          if (!ioId || !ioDef) break;
+          const st = currentObjectStates[ioId] || { activated: false, currentCol: ioDef.col, currentRow: ioDef.row, currentRotation: 0 };
+          if (ioDef.clickAction === 'rotate') {
+            const deg = Number(ioDef.rotateDeg) || 90;
+            if (!ioDef.canReset && st.activated) break; // one-way: already rotated
+            st.currentRotation = st.activated ? 0 : (st.currentRotation + deg) % 360;
+            st.activated = ioDef.canReset ? !st.activated : true;
+          } else {
+            // slide
+            if (!ioDef.canReset && st.activated) break; // one-way: already slid
+            if (st.activated) {
+              st.currentCol = ioDef.col; st.currentRow = ioDef.row;
+            } else {
+              st.currentCol = ioDef.targetCol ?? ioDef.col;
+              st.currentRow = ioDef.targetRow ?? ioDef.row;
+            }
+            st.activated = ioDef.canReset ? !st.activated : true;
+          }
+          currentObjectStates[ioId] = st;
+          broadcast({ type: 'OBJECT_STATE_CHANGE', objId: ioId, state: st });
+          saveState();
+          break;
+        }
+        case 'move-object': {
+          // DM dragged an object to a new cell (overrides position directly)
+          if (!isDm) break;
+          const moId = String(message.objId || '');
+          if (!moId) break;
+          const moDef = currentObjectDefs.find(o => o.id === moId);
+          if (!moDef) break;
+          const mos = currentObjectStates[moId] || { activated: false, currentCol: moDef.col, currentRow: moDef.row, currentRotation: 0 };
+          mos.currentCol = Number(message.col) || mos.currentCol;
+          mos.currentRow = Number(message.row) || mos.currentRow;
+          currentObjectStates[moId] = mos;
+          broadcast({ type: 'OBJECT_STATE_CHANGE', objId: moId, state: mos });
+          saveState();
+          break;
+        }
         case 'lock-player': {
           const lpName = String(message.name || '').trim().slice(0, 64);
           if (!lpName) break;
