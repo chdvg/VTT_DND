@@ -1027,34 +1027,32 @@ function hideFeatureCells(featureId) {
 }
 
 // ── Puzzle sub-map lightbox ───────────────────────────────────
-function renderLightboxObjects() {
+function renderLightboxObjects(objects, mapCols, mapRows) {
   var layer = document.getElementById('puzzle-lightbox-obj-layer');
   var img   = document.getElementById('puzzle-lightbox-img');
   if (!layer || !img) return;
   layer.innerHTML = '';
-  if (!currentObjects || !currentObjects.length) return;
+  if (!objects || !objects.length) return;
   var cW = img.offsetWidth;
   var cH = img.offsetHeight;
   if (!cW || !cH) return;
-  var cols = (currentMapMeta && currentMapMeta.cols) || 20;
-  var rows = (currentMapMeta && currentMapMeta.rows) || 20;
+  var cols = mapCols || 20;
+  var rows = mapRows || 20;
   var cellW = cW / cols;
   var cellH = cH / rows;
   var SPEED = { slow: '4s', normal: '2.5s', fast: '1.2s' };
-  currentObjects.forEach(function (obj) {
-    var st = (currentObjectStates && currentObjectStates[obj.id]) || { activated: false, currentCol: obj.col, currentRow: obj.row, currentRotation: 0 };
+  objects.forEach(function (obj) {
     var size = parseFloat(obj.size) || 1.0;
     var w = cellW * size;
     var h = cellH * size;
-    var cx = (st.currentCol + 0.5) * cellW;
-    var cy = (st.currentRow + 0.5) * cellH;
+    var cx = (obj.col + 0.5) * cellW;
+    var cy = (obj.row + 0.5) * cellH;
     var div = document.createElement('div');
     div.style.cssText = 'position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;' +
       'width:' + w + 'px;height:' + h + 'px;' +
       'left:' + (cx - w / 2) + 'px;top:' + (cy - h / 2) + 'px;' +
       'border-radius:4px;border:2px solid ' + (obj.color || '#fbbf24') + ';' +
-      'background:rgba(0,0,0,0.15);' +
-      'transform:rotate(' + (st.currentRotation || 0) + 'deg);';
+      'background:rgba(0,0,0,0.15);';
     var iconEl = document.createElement('div');
     iconEl.className = 'obj-icon' + (obj.autoAnim && obj.autoAnim !== 'none' ? ' anim-' + obj.autoAnim : '');
     if (obj.autoAnim && obj.autoAnim !== 'none') {
@@ -1080,11 +1078,23 @@ function openPuzzleLightbox(feat) {
   title.textContent = feat.name || '';
   lb.classList.add('open');
   var newSrc = feat.linkedMap || '';
+  // Derive the .map.json path from the image URL to get the sub-map's own objects
+  var jsonUrl = newSrc.replace(/\.[^/.]+$/, '') + '.map.json';
+  function loadAndRender() {
+    fetch(jsonUrl)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (mapData) {
+        var objects = (mapData && mapData.objects) || [];
+        var cols    = (mapData && mapData.cols) || 20;
+        var rows    = (mapData && mapData.rows) || 20;
+        renderLightboxObjects(objects, cols, rows);
+      })
+      .catch(function () { /* .map.json not found — image-only lightbox */ });
+  }
   if (img.src.endsWith(newSrc) && img.naturalWidth) {
-    // Image already loaded — render objects immediately
-    renderLightboxObjects();
+    loadAndRender();
   } else {
-    img.onload = renderLightboxObjects;
+    img.onload = loadAndRender;
     img.src = newSrc;
   }
 }
