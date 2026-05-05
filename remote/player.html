@@ -536,10 +536,10 @@
     @keyframes obj-sway-v  { 0%,100% { transform: translateY(0); } 50% { transform: translateY(30%); } }
     @keyframes obj-float   { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-15%) scale(1.05); } }
 
-    .obj-cell.anim-spin   { animation: obj-spin   var(--obj-dur,3s)  linear infinite; }
-    .obj-cell.anim-sway-h { animation: obj-sway-h var(--obj-dur,2s)  ease-in-out infinite; }
-    .obj-cell.anim-sway-v { animation: obj-sway-v var(--obj-dur,2s)  ease-in-out infinite; }
-    .obj-cell.anim-float  { animation: obj-float  var(--obj-dur,2.5s) ease-in-out infinite; }
+    .obj-cell .obj-icon.anim-spin   { animation: obj-spin   var(--obj-dur,3s)  linear infinite; }
+    .obj-cell .obj-icon.anim-sway-h { animation: obj-sway-h var(--obj-dur,2s)  ease-in-out infinite; }
+    .obj-cell .obj-icon.anim-sway-v { animation: obj-sway-v var(--obj-dur,2s)  ease-in-out infinite; }
+    .obj-cell .obj-icon.anim-float  { animation: obj-float  var(--obj-dur,2.5s) ease-in-out infinite; }
 
     /* Puzzle lightbox */
     #puzzle-lightbox {
