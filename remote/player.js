@@ -31,6 +31,14 @@ var myTarget     = null;       // label of my current combat target
 var allTargets   = {};         // playerName -> targetLabel (all players' targets)
 var gridEnabled  = false;      // DM-toggled grid overlay
 
+// Login timeout — reset the login button if the server never responds
+var _loginTimeout = null;
+function resetLoginBtn() {
+  var subBtn = document.getElementById('login-submit-btn');
+  if (subBtn) { subBtn.textContent = 'Enter Session'; subBtn.disabled = false; }
+  if (_loginTimeout) { clearTimeout(_loginTimeout); _loginTimeout = null; }
+}
+
 // Unlock audio on any click (but don't auto-dismiss overlay)
 document.addEventListener('click', function () {
   if (!audioUnlocked) {
@@ -127,6 +135,13 @@ function dismissTapOverlay() {
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ action: 'player-login', name: player.name, cls: player.cls }));
       if (submitBtn) { submitBtn.textContent = 'Entering...'; submitBtn.disabled = true; }
+      // Safety net: if no login response arrives within 6s, re-enable the button
+      if (_loginTimeout) clearTimeout(_loginTimeout);
+      _loginTimeout = setTimeout(function () {
+        _loginTimeout = null;
+        resetLoginBtn();
+        errEl.textContent = 'No response — check connection and try again.';
+      }, 6000);
     } else {
       errEl.textContent = 'Not connected — try again in a moment.';
     }
@@ -1389,6 +1404,7 @@ function handleMessage(msg) {
       sessionStorage.setItem('dnd_player_cls',  myPlayerCls);
       // Restore any target this player had (may have been received before login from sendFullState)
       if (allTargets[myPlayerName]) myTarget = allTargets[myPlayerName];
+      resetLoginBtn(); // clear any pending timeout
       dismissTapOverlay();
       var hudEl = document.getElementById('player-hud');
       if (hudEl) hudEl.style.display = 'flex';
@@ -1530,6 +1546,8 @@ function connect() {
 
   ws.onclose = function () {
     statusEl.textContent = 'reconnecting...';
+    // If the login was in-flight when the socket dropped, re-enable the button
+    resetLoginBtn();
     scheduleReconnect();
   };
 
