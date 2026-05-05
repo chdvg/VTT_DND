@@ -1824,44 +1824,49 @@ function renderDmObjectLayer() {
         iconEl.textContent = obj.emoji || '\uD83D\uDD27';
       }
       el.appendChild(iconEl);
-      // Click to interact (token map layer only, not fog layer — pointer-events:auto on token layer)
+      // Click to interact (token map layer only, not fog layer)
+      // Keep layer pointer-events:none so fog/token clicks pass through empty cells;
+      // individual object elements opt-in with pointer-events:auto.
       if (!isFogLayer) {
-        layer.style.pointerEvents = 'auto';
-        (function (oId) {
+        el.style.pointerEvents = 'auto';
+        (function (oId, stSnap) {
           el.onclick = function (e) {
             e.stopPropagation();
             wsSend({ action: 'interact-object', objId: oId });
           };
-          // Drag to move
+          // Drag to move — track on document so pointer-events:none layer doesn't block
           el.addEventListener('mousedown', function (e) {
             e.preventDefault();
             e.stopPropagation();
-            _dmObjDragging = { objId: oId, lastCol: st.currentCol, lastRow: st.currentRow };
+            _dmObjDragging = { objId: oId, lastCol: stSnap.currentCol, lastRow: stSnap.currentRow, layer: layer, cols: cols, rows: rows };
           });
-        }(obj.id));
+        }(obj.id, st));
       }
       layer.appendChild(el);
     });
-    // Global mousemove/up for drag on this layer
-    if (!isFogLayer && !layer._dragBound) {
-      layer._dragBound = true;
-      layer.addEventListener('mousemove', function (e) {
-        if (!_dmObjDragging) return;
-        var rect = layer.getBoundingClientRect();
-        var px = (e.clientX - rect.left) / rect.width;
-        var py = (e.clientY - rect.top) / rect.height;
-        var c = Math.max(0, Math.min(cols - 1, Math.floor(px * cols)));
-        var r = Math.max(0, Math.min(rows - 1, Math.floor(py * rows)));
-        if (c !== _dmObjDragging.lastCol || r !== _dmObjDragging.lastRow) {
-          _dmObjDragging.lastCol = c;
-          _dmObjDragging.lastRow = r;
-          wsSend({ action: 'move-object', objId: _dmObjDragging.objId, col: c, row: r });
-        }
-      });
-      layer.addEventListener('mouseup', function () { _dmObjDragging = null; });
-      layer.addEventListener('mouseleave', function () { _dmObjDragging = null; });
-    }
+    // Ensure layer itself never swallows events (only individual elements do)
+    layer.style.pointerEvents = 'none';
   });
+
+  // Document-level drag handlers (attached once, guard with _dmObjDragging)
+  if (!renderDmObjectLayer._docDragBound) {
+    renderDmObjectLayer._docDragBound = true;
+    document.addEventListener('mousemove', function (e) {
+      if (!_dmObjDragging) return;
+      var lay = _dmObjDragging.layer;
+      var rect = lay.getBoundingClientRect();
+      var px = (e.clientX - rect.left) / rect.width;
+      var py = (e.clientY - rect.top) / rect.height;
+      var c = Math.max(0, Math.min(_dmObjDragging.cols - 1, Math.floor(px * _dmObjDragging.cols)));
+      var r = Math.max(0, Math.min(_dmObjDragging.rows - 1, Math.floor(py * _dmObjDragging.rows)));
+      if (c !== _dmObjDragging.lastCol || r !== _dmObjDragging.lastRow) {
+        _dmObjDragging.lastCol = c;
+        _dmObjDragging.lastRow = r;
+        wsSend({ action: 'move-object', objId: _dmObjDragging.objId, col: c, row: r });
+      }
+    });
+    document.addEventListener('mouseup', function () { _dmObjDragging = null; });
+  }
 }
 
 // ── Token condition picker popup ──────────────────────────────
@@ -2949,7 +2954,7 @@ function renderTokenControls(mapUrl, mapKey) {
   // Object layer on token map
   var tokObjLayer = document.createElement('div');
   tokObjLayer.className = 'dm-obj-layer';
-  tokObjLayer.style.cssText = 'position:absolute;inset:0;z-index:6;';
+  tokObjLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:6;';
   mapWrap.appendChild(tokObjLayer);
 
   updateDmFeatureOverlay();
