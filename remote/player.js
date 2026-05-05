@@ -1027,14 +1027,66 @@ function hideFeatureCells(featureId) {
 }
 
 // ── Puzzle sub-map lightbox ───────────────────────────────────
+function renderLightboxObjects() {
+  var layer = document.getElementById('puzzle-lightbox-obj-layer');
+  var img   = document.getElementById('puzzle-lightbox-img');
+  if (!layer || !img) return;
+  layer.innerHTML = '';
+  if (!currentObjects || !currentObjects.length) return;
+  var cW = img.offsetWidth;
+  var cH = img.offsetHeight;
+  if (!cW || !cH) return;
+  var cols = (currentMapMeta && currentMapMeta.cols) || 20;
+  var rows = (currentMapMeta && currentMapMeta.rows) || 20;
+  var cellW = cW / cols;
+  var cellH = cH / rows;
+  var SPEED = { slow: '4s', normal: '2.5s', fast: '1.2s' };
+  currentObjects.forEach(function (obj) {
+    var st = (currentObjectStates && currentObjectStates[obj.id]) || { activated: false, currentCol: obj.col, currentRow: obj.row, currentRotation: 0 };
+    var size = parseFloat(obj.size) || 1.0;
+    var w = cellW * size;
+    var h = cellH * size;
+    var cx = (st.currentCol + 0.5) * cellW;
+    var cy = (st.currentRow + 0.5) * cellH;
+    var div = document.createElement('div');
+    div.style.cssText = 'position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;' +
+      'width:' + w + 'px;height:' + h + 'px;' +
+      'left:' + (cx - w / 2) + 'px;top:' + (cy - h / 2) + 'px;' +
+      'border-radius:4px;border:2px solid ' + (obj.color || '#fbbf24') + ';' +
+      'background:rgba(0,0,0,0.15);' +
+      'transform:rotate(' + (st.currentRotation || 0) + 'deg);';
+    var iconEl = document.createElement('div');
+    iconEl.className = 'obj-icon' + (obj.autoAnim && obj.autoAnim !== 'none' ? ' anim-' + obj.autoAnim : '');
+    if (obj.autoAnim && obj.autoAnim !== 'none') {
+      iconEl.style.setProperty('--obj-dur', SPEED[obj.animSpeed] || '2.5s');
+    }
+    if (obj.iconType === 'tile' && obj.tileId) {
+      iconEl.style.cssText = 'width:90%;height:90%;background-size:cover;background-position:center;' +
+        'background-image:url(/assets/Tiles/' + encodeURIComponent(obj.tileId) + ');';
+    } else {
+      iconEl.style.cssText = 'font-size:' + Math.min(w, h) * 0.62 + 'px;line-height:1;';
+      iconEl.textContent = obj.emoji || '\uD83D\uDD27';
+    }
+    div.appendChild(iconEl);
+    layer.appendChild(div);
+  });
+}
+
 function openPuzzleLightbox(feat) {
   var lb    = document.getElementById('puzzle-lightbox');
   var img   = document.getElementById('puzzle-lightbox-img');
   var title = document.getElementById('puzzle-lightbox-title');
   if (!lb) return;
-  img.src        = feat.linkedMap || '';
   title.textContent = feat.name || '';
   lb.classList.add('open');
+  var newSrc = feat.linkedMap || '';
+  if (img.src.endsWith(newSrc) && img.naturalWidth) {
+    // Image already loaded — render objects immediately
+    renderLightboxObjects();
+  } else {
+    img.onload = renderLightboxObjects;
+    img.src = newSrc;
+  }
 }
 (function () {
   var lb    = document.getElementById('puzzle-lightbox');

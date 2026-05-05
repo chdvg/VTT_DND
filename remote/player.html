@@ -548,8 +548,8 @@
       align-items: center; justify-content: center;
     }
     #puzzle-lightbox.open { display: flex; }
-    #puzzle-lightbox img { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 6px;
-      box-shadow: 0 0 40px rgba(99,179,237,0.6); }
+    #puzzle-lightbox-scene img { max-width: 90vw; max-height: 85vh; width: auto; height: auto;
+      border-radius: 6px; box-shadow: 0 0 40px rgba(99,179,237,0.6); display: block; }
     #puzzle-lightbox-close {
       position: fixed; top: 1rem; right: 1.5rem;
       color: #9ca3af; font-size: 1.1rem; cursor: pointer; font-weight: bold;
@@ -636,7 +636,10 @@
   <!-- Puzzle sub-map lightbox -->
   <div id="puzzle-lightbox">
     <div id="puzzle-lightbox-title"></div>
-    <img id="puzzle-lightbox-img" src="" alt="" />
+    <div id="puzzle-lightbox-scene" style="position:relative;display:inline-flex;">
+      <img id="puzzle-lightbox-img" src="" alt="" />
+      <div id="puzzle-lightbox-obj-layer" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
+    </div>
     <div id="puzzle-lightbox-close">✕ Close</div>
   </div>
   <div id="popup-overlay"></div>
