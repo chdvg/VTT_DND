@@ -5029,26 +5029,297 @@ document.getElementById('audio-search').addEventListener('input', function () {
 });
 
 // ============================================================
-// Monster Lookup  (Open5e API)
+// Monster Lookup  (5etools + Open5e)
 // ============================================================
-var _monsterCache = {};
+var _monsterCache     = {};          // key: source:slug → normalised monster obj
+var _monsterSource    = '5etools';   // '5etools' | 'open5e'
+var _5etoolsIndex     = null;        // loaded lazily: array of { name, source, page }
+var _5etoolsIndexLoading = false;
+var _5etoolsIndexCallbacks = [];
 
 function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
-
 function modStr(score) {
   var m = Math.floor((score - 10) / 2);
   return (m >= 0 ? '+' : '') + m;
 }
 
+// ── 5etools helpers ───────────────────────────────────────────
+var _5ET_BASE = 'https://5e.tools/data/bestiary/';
+
+function load5etoolsIndex(cb) {
+  if (_5etoolsIndex) { cb(_5etoolsIndex); return; }
+  _5etoolsIndexCallbacks.push(cb);
+  if (_5etoolsIndexLoading) return;
+  _5etoolsIndexLoading = true;
+  fetch('https://5e.tools/data/bestiary/index.json')
+    .then(function (r) { return r.json(); })
+    .then(function (idx) {
+      // idx is { "MM": "bestiary-mm.json", ... }
+      // Build a flat searchable list by fetching each file's monster list headers
+      // 5etools also exposes a flattened meta list per source file; we only need names
+      // for search — full data fetched on demand
+      var sources = Object.keys(idx);
+      var entries = [];
+      var pending = sources.length;
+      if (!pending) { _5etoolsIndex = []; _5etoolsIndexLoading = false; _5etoolsIndexCallbacks.forEach(function(f){f([]);});  _5etoolsIndexCallbacks=[]; return; }
+      sources.forEach(function (src) {
+        fetch(_5ET_BASE + idx[src])
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            (data.monster || []).forEach(function (m) {
+              entries.push({ name: m.name, source: src, file: idx[src] });
+            });
+          })
+          .catch(function () {})
+          .finally(function () {
+            pending--;
+            if (pending === 0) {
+              _5etoolsIndex = entries;
+              _5etoolsIndexLoading = false;
+              _5etoolsIndexCallbacks.forEach(function (f) { f(_5etoolsIndex); });
+              _5etoolsIndexCallbacks = [];
+            }
+          });
+      });
+    })
+    .catch(function () {
+      _5etoolsIndex = [];
+      _5etoolsIndexLoading = false;
+      _5etoolsIndexCallbacks.forEach(function (f) { f([]); });
+      _5etoolsIndexCallbacks = [];
+    });
+}
+
+// Fetch and normalise a single monster from 5etools JSON
+function fetch5etoolsMonster(entry, cb) {
+  var cacheKey = '5etools:' + entry.source + ':' + slugify(entry.name);
+  if (_monsterCache[cacheKey]) { cb(_monsterCache[cacheKey]); return; }
+  fetch(_5ET_BASE + entry.file)
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      var raw = (data.monster || []).find(function (m) {
+        return m.name === entry.name && m.source === entry.source;
+      });
+      if (!raw) { cb(null); return; }
+      var norm = normalise5etools(raw);
+      _monsterCache[cacheKey] = norm;
+      cb(norm);
+    })
+    .catch(function () { cb(null); });
+}
+
+function crToNum(cr) {
+  if (!cr) return '—';
+  if (typeof cr === 'object') cr = cr.cr || '—';
+  return String(cr);
+}
+
+function speedStr5e(speed) {
+  if (!speed) return '';
+  var parts = [];
+  if (speed.walk) parts.push(speed.walk + ' ft.');
+  if (speed.fly)  parts.push('fly ' + speed.fly + ' ft.' + (speed.canHover ? ' (hover)' : ''));
+  if (speed.swim) parts.push('swim ' + speed.swim + ' ft.');
+  if (speed.climb) parts.push('climb ' + speed.climb + ' ft.');
+  if (speed.burrow) parts.push('burrow ' + speed.burrow + ' ft.');
+  return parts.join(', ');
+}
+
+function entryToText(entry) {
+  if (!entry) return '';
+  if (typeof entry === 'string') return entry;
+  if (entry.type === 'entries' || entry.type === 'section') {
+    var sub = (entry.entries || []).map(entryToText).join(' ');
+    return (entry.name ? entry.name + '. ' : '') + sub;
+  }
+  if (entry.type === 'list') return (entry.items || []).map(entryToText).join('; ');
+  if (entry.type === 'table') return '[table]';
+  if (entry.type === 'inlineBlock' || entry.type === 'inline') {
+    return (entry.entries || []).map(entryToText).join('');
+  }
+  return entry.entries ? (entry.entries || []).map(entryToText).join(' ') : '';
+}
+
+// Strip 5etools markup tags: {@condition Stunned}, {@dice 2d6}, {@atk mw}, etc.
+function clean5e(str) {
+  if (!str) return '';
+  return str
+    .replace(/\{@(?:condition|status|skill|sense|action|creature|item|spell|feat|class|subclass|background|race|table|filter|quickref|variantrule|optfeature|legroup|classFeature|subclassFeature|note|comic|scaledice|scaledamage|chance|d20|hit|damage|atk|dc|recharge|dice|coinflip|homebrew|5etools|link|loader|area|book|deity)([^|}]*)\|?([^}]*)}/gi, function (_, p1, p2) { return p2 || p1.trim(); })
+    .replace(/\{@b ([^}]+)\}/gi, '$1')
+    .replace(/\{@i ([^}]+)\}/gi, '$1')
+    .replace(/\{@([^}]+)\}/g, '$1');
+}
+
+function normalise5etools(raw) {
+  // Ability scores
+  var abilityKeys = ['str','dex','con','int','wis','cha'];
+  var fullKeys = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
+
+  // Saving throws
+  var saves = {};
+  if (raw.save) {
+    Object.entries(raw.save).forEach(function (e) {
+      saves[e[0] + '_save'] = parseInt(e[1]);
+    });
+  }
+
+  // Skills
+  var skills = {};
+  if (raw.skill) {
+    Object.entries(raw.skill).forEach(function (e) {
+      skills[e[0]] = parseInt(e[1]) || e[1];
+    });
+  }
+
+  // AC
+  var acVal = raw.ac && raw.ac[0];
+  var acNum = typeof acVal === 'object' ? acVal.ac : acVal;
+  var acDesc = typeof acVal === 'object' ? (Array.isArray(acVal.from) ? acVal.from.join(', ') : '') : '';
+
+  // HP
+  var hpVal  = raw.hp || {};
+  var hpNum  = hpVal.average || '—';
+  var hpDice = hpVal.formula || '';
+
+  // CR
+  var cr = crToNum(raw.cr);
+  var xpMap = {'0':10,'1/8':25,'1/4':50,'1/2':100,'1':200,'2':450,'3':700,'4':1100,'5':1800,
+    '6':2300,'7':2900,'8':3900,'9':5000,'10':5900,'11':7200,'12':8400,'13':10000,'14':11500,
+    '15':13000,'16':15000,'17':18000,'18':20000,'19':22000,'20':25000,'21':33000,'22':41000,
+    '23':50000,'24':62000,'25':75000,'26':90000,'27':105000,'28':120000,'29':135000,'30':155000};
+  var xp = xpMap[cr];
+
+  // Senses
+  var senses = [];
+  if (raw.senses) (Array.isArray(raw.senses) ? raw.senses : [raw.senses]).forEach(function(s){ senses.push(clean5e(s)); });
+  if (raw.passive !== undefined) senses.push('passive Perception ' + raw.passive);
+
+  // Resistances / immunities
+  function dmgList(arr) {
+    if (!arr) return '';
+    return arr.map(function (e) {
+      if (typeof e === 'string') return e;
+      if (e.special) return e.special;
+      var base = (e.immune || e.resist || e.vulnerable || []).join(', ');
+      var note = e.note ? ' (' + e.note + ')' : '';
+      return base + note;
+    }).join('; ');
+  }
+
+  // Actions / reactions / bonus actions / legendary actions / special traits
+  function parseActions(arr) {
+    if (!arr) return [];
+    return arr.map(function (a) {
+      var text = '';
+      if (Array.isArray(a.entries)) {
+        text = a.entries.map(entryToText).join(' ');
+      } else if (a.entry) { text = entryToText(a.entry); }
+      return { name: a.name || '', desc: clean5e(text) };
+    });
+  }
+
+  var result = { _source: '5etools', name: raw.name };
+  abilityKeys.forEach(function (k, i) { result[fullKeys[i]] = raw[k]; });
+  Object.assign(result, saves);
+  result.skills = Object.keys(skills).length ? skills : null;
+  result.armor_class = acNum;
+  result.armor_desc  = acDesc;
+  result.hit_points  = hpNum;
+  result.hit_dice    = hpDice;
+  result.speed       = raw.speed;  // pass raw for speedStr5e
+  result.challenge_rating = cr;
+  result.xp          = xp;
+  result.size        = Array.isArray(raw.size) ? raw.size.map(function(s){
+    return {T:'Tiny',S:'Small',M:'Medium',L:'Large',H:'Huge',G:'Gargantuan'}[s]||s;
+  }).join('/') : ({T:'Tiny',S:'Small',M:'Medium',L:'Large',H:'Huge',G:'Gargantuan'}[raw.size]||raw.size||'');
+  result.type = typeof raw.type === 'object' ? (raw.type.type || '') + (raw.type.tags ? ' (' + raw.type.tags.join(', ') + ')' : '') : (raw.type || '');
+  result.subtype     = null;  // folded into type above
+  result.alignment   = Array.isArray(raw.alignment)
+    ? raw.alignment.map(function(a){ return ({L:'lawful',N:'neutral',C:'chaotic',G:'good',E:'evil',U:'unaligned',A:'any'}[a]||a); }).join(' ')
+    : (raw.alignment || '');
+  result.senses      = senses.join(', ');
+  result.languages   = Array.isArray(raw.languages) ? raw.languages.join(', ') : (raw.languages || '');
+  result.damage_immunities     = dmgList(raw.immune);
+  result.damage_resistances    = dmgList(raw.resist);
+  result.damage_vulnerabilities= dmgList(raw.vulnerable);
+  result.condition_immunities  = raw.conditionImmune ? (Array.isArray(raw.conditionImmune) ? raw.conditionImmune.map(function(c){ return typeof c === 'string' ? c : (c.conditionImmune||[]).join(', '); }).join(', ') : raw.conditionImmune) : '';
+  result.special_abilities = parseActions(raw.trait);
+  result.actions           = parseActions(raw.action);
+  result.bonus_actions     = parseActions(raw.bonus);
+  result.reactions         = parseActions(raw.reaction);
+  result.legendary_actions = parseActions(raw.legendary);
+  return result;
+}
+
+// ── Main fetch dispatcher ─────────────────────────────────────
 function fetchMonsterByName(name) {
-  var slug = slugify(name);
-  if (_monsterCache[slug]) { renderMonsterStatBlock(_monsterCache[slug]); return; }
+  var statEl  = document.getElementById('monster-stat-block');
+  var listEl  = document.getElementById('monster-results-list');
+  statEl.className = 'msb-loading';
+  statEl.textContent = 'Searching for "' + name + '"…';
+  listEl.innerHTML = '';
+
+  if (_monsterSource === 'open5e') {
+    fetchMonsterOpen5e(name);
+  } else {
+    fetchMonster5etools(name);
+  }
+}
+
+function fetchMonster5etools(name) {
   var statEl = document.getElementById('monster-stat-block');
+  var listEl = document.getElementById('monster-results-list');
+  var q      = name.toLowerCase();
+
+  load5etoolsIndex(function (index) {
+    if (!index.length) {
+      statEl.className = 'msb-loading';
+      statEl.textContent = 'Could not load 5etools bestiary index. Check network access to 5e.tools.';
+      return;
+    }
+    var matches = index.filter(function (e) { return e.name.toLowerCase().includes(q); });
+    if (!matches.length) {
+      statEl.className = 'msb-loading';
+      statEl.textContent = 'No results for "' + name + '" in 5etools.';
+      return;
+    }
+    if (matches.length === 1) {
+      statEl.textContent = 'Loading ' + matches[0].name + '…';
+      fetch5etoolsMonster(matches[0], function (m) {
+        if (m) renderMonsterStatBlock(m);
+        else { statEl.className = 'msb-loading'; statEl.textContent = 'Failed to load monster data.'; }
+      });
+      return;
+    }
+    statEl.className = 'hidden';
+    statEl.textContent = '';
+    matches.forEach(function (entry) {
+      var btn = document.createElement('button');
+      btn.className = 'monster-result-btn';
+      btn.textContent = entry.name + ' [' + entry.source + ']';
+      btn.onclick = function () {
+        statEl.className = 'msb-loading';
+        statEl.textContent = 'Loading ' + entry.name + '…';
+        listEl.querySelectorAll('.monster-result-btn').forEach(function (b) { b.classList.toggle('monster-result-active', b === btn); });
+        fetch5etoolsMonster(entry, function (m) {
+          if (m) renderMonsterStatBlock(m);
+          else { statEl.className = 'msb-loading'; statEl.textContent = 'Failed to load monster data.'; }
+        });
+      };
+      listEl.appendChild(btn);
+    });
+  });
+}
+
+function fetchMonsterOpen5e(name) {
+  var slug   = 'open5e:' + slugify(name);
+  var statEl = document.getElementById('monster-stat-block');
+  var listEl = document.getElementById('monster-results-list');
+  if (_monsterCache[slug]) { renderMonsterStatBlock(_monsterCache[slug]); return; }
   statEl.className = 'msb-loading';
   statEl.textContent = 'Loading ' + name + '…';
-  document.getElementById('monster-results-list').innerHTML = '';
   fetch('https://api.open5e.com/v1/monsters/?name__icontains=' + encodeURIComponent(name) + '&limit=20')
     .then(function (r) { return r.json(); })
     .then(function (data) {
@@ -5058,19 +5329,17 @@ function fetchMonsterByName(name) {
         return;
       }
       if (data.results.length === 1) {
-        _monsterCache[slug] = data.results[0];
+        _monsterCache['open5e:' + slugify(data.results[0].name)] = data.results[0];
         renderMonsterStatBlock(data.results[0]);
       } else {
         statEl.className = 'hidden';
         statEl.textContent = '';
-        var listEl = document.getElementById('monster-results-list');
-        listEl.innerHTML = '';
         data.results.forEach(function (m) {
           var btn = document.createElement('button');
           btn.className = 'monster-result-btn';
           btn.textContent = m.name;
           btn.onclick = function () {
-            _monsterCache[slugify(m.name)] = m;
+            _monsterCache['open5e:' + slugify(m.name)] = m;
             renderMonsterStatBlock(m);
             listEl.querySelectorAll('.monster-result-btn').forEach(function (b) {
               b.classList.toggle('monster-result-active', b === btn);
@@ -5103,19 +5372,18 @@ function renderMonsterStatBlock(m) {
       '<div class="msb-score-mod">' + (s[1] ? modStr(s[1]) : '') + '</div></div>';
   }).join('');
 
-  var actionsHtml = '';
   function renderActionGroup(label, arr) {
     if (!arr || !arr.length) return '';
     var rows = arr.map(function (a) {
-      return '<div class="msb-action"><span class="msb-action-name">' + a.name + '.</span> ' +
-        (a.desc || '') + '</div>';
+      return '<div class="msb-action"><span class="msb-action-name">' + escHtml(a.name) + '.</span> ' +
+        escHtml(a.desc || '') + '</div>';
     }).join('');
     return '<div class="msb-actions-hdr">' + label + '</div>' + rows;
   }
-  actionsHtml += renderActionGroup('Actions', m.actions);
-  actionsHtml += renderActionGroup('Bonus Actions', m.bonus_actions);
-  actionsHtml += renderActionGroup('Reactions', m.reactions);
-  actionsHtml += renderActionGroup('Legendary Actions', m.legendary_actions);
+  var actionsHtml = renderActionGroup('Actions', m.actions)
+    + renderActionGroup('Bonus Actions', m.bonus_actions)
+    + renderActionGroup('Reactions', m.reactions)
+    + renderActionGroup('Legendary Actions', m.legendary_actions);
 
   var saves = [];
   ['strength_save','dexterity_save','constitution_save','intelligence_save','wisdom_save','charisma_save']
@@ -5125,48 +5393,52 @@ function renderMonsterStatBlock(m) {
       }
     });
 
+  var speedDisplay = m._source === '5etools'
+    ? speedStr5e(m.speed)
+    : (m.speed ? Object.entries(m.speed).filter(function(e){return e[1];}).map(function(e){return e[0]+' '+e[1];}).join(', ') : '');
+
+  var srcBadge = m._source === '5etools'
+    ? '<span style="font-size:0.65rem;color:#888;margin-left:0.5rem;">5etools</span>'
+    : '<span style="font-size:0.65rem;color:#888;margin-left:0.5rem;">Open5e</span>';
+
   el.innerHTML =
-    '<div class="msb-name">' + m.name + '</div>' +
-    '<div class="msb-meta">' + (m.size||'') + ' ' + (m.type||'') + (m.subtype ? ' (' + m.subtype + ')' : '') +
-      ', ' + (m.alignment||'') + '</div>' +
+    '<div class="msb-name">' + escHtml(m.name) + srcBadge + '</div>' +
+    '<div class="msb-meta">' + escHtml((m.size||'') + ' ' + (m.type||'') + (m.subtype ? ' (' + m.subtype + ')' : '') + ', ' + (m.alignment||'')) + '</div>' +
     '<hr class="msb-divider">' +
-    prop('Armor Class', m.armor_class + (m.armor_desc ? ' (' + m.armor_desc + ')' : '')) +
-    prop('Hit Points', m.hit_points + ' (' + (m.hit_dice||'') + ')') +
-    prop('Speed', m.speed ? Object.entries(m.speed).filter(function(e){return e[1];}).map(function(e){return e[0]+' '+e[1];}).join(', ') : '') +
-    prop('Challenge', m.challenge_rating + (m.cr ? '' : '') + (m.xp ? ' (' + m.xp.toLocaleString() + ' XP)' : '')) +
+    prop('Armor Class', escHtml(String(m.armor_class||'—')) + (m.armor_desc ? ' (' + escHtml(m.armor_desc) + ')' : '')) +
+    prop('Hit Points', escHtml(String(m.hit_points||'—')) + (m.hit_dice ? ' (' + escHtml(m.hit_dice) + ')' : '')) +
+    prop('Speed', escHtml(speedDisplay)) +
+    prop('Challenge', escHtml(String(m.challenge_rating||'—')) + (m.xp ? ' (' + m.xp.toLocaleString() + ' XP)' : '')) +
     '<hr class="msb-divider">' +
     '<div class="msb-scores">' + scoresHtml + '</div>' +
     '<hr class="msb-divider">' +
     (saves.length ? prop('Saving Throws', saves.join(', ')) : '') +
     prop('Skills', m.skills ? Object.entries(m.skills).map(function(e){return e[0]+' +'+e[1];}).join(', ') : '') +
-    prop('Damage Immunities', m.damage_immunities) +
-    prop('Damage Resistances', m.damage_resistances) +
-    prop('Damage Vulnerabilities', m.damage_vulnerabilities) +
-    prop('Condition Immunities', m.condition_immunities) +
-    prop('Senses', m.senses) +
-    prop('Languages', m.languages) +
+    prop('Damage Immunities', escHtml(m.damage_immunities||'')) +
+    prop('Damage Resistances', escHtml(m.damage_resistances||'')) +
+    prop('Damage Vulnerabilities', escHtml(m.damage_vulnerabilities||'')) +
+    prop('Condition Immunities', escHtml(m.condition_immunities||'')) +
+    prop('Senses', escHtml(m.senses||'')) +
+    prop('Languages', escHtml(m.languages||'')) +
     (m.special_abilities && m.special_abilities.length ?
       '<hr class="msb-divider"><div class="msb-actions-hdr">Special Traits</div>' +
       m.special_abilities.map(function(a){
-        return '<div class="msb-action"><span class="msb-action-name">' + a.name + '.</span> ' + (a.desc||'') + '</div>';
+        return '<div class="msb-action"><span class="msb-action-name">' + escHtml(a.name) + '.</span> ' + escHtml(a.desc||'') + '</div>';
       }).join('') : '') +
     actionsHtml +
     '<button id="monster-send-btn" class="btn btn-secondary" style="margin-top:0.75rem;font-size:0.72rem;width:100%;">📜 Send to Players</button>';
 
   document.getElementById('monster-send-btn').addEventListener('click', function () {
-    var scores = [['STR',m.strength],['DEX',m.dexterity],['CON',m.constitution],
-                  ['INT',m.intelligence],['WIS',m.wisdom],['CHA',m.charisma]];
     var scoreRow = scores.map(function(s){
       return '<span style="margin-right:0.6rem;"><b>' + s[0] + '</b> ' + (s[1]||'—') + (s[1] ? ' (' + modStr(s[1]) + ')' : '') + '</span>';
     }).join('');
-    var speed = m.speed ? Object.entries(m.speed).filter(function(e){return e[1];}).map(function(e){return e[0]+' '+e[1];}).join(', ') : '—';
     var dataHtml =
       '<div style="color:#aaa;font-style:italic;margin-bottom:0.4rem;">' +
         escHtml((m.size||'') + ' ' + (m.type||'') + (m.subtype?' ('+m.subtype+')':'') + ', ' + (m.alignment||'')) +
       '</div>' +
       '<div style="margin-bottom:0.3rem;"><b>AC</b> ' + escHtml(String(m.armor_class||'—')) + (m.armor_desc?' ('+escHtml(m.armor_desc)+')':'') +
-        ' &nbsp;|&nbsp; <b>HP</b> ' + escHtml(String(m.hit_points||'—')) + ' (' + escHtml(m.hit_dice||'') + ')' +
-        ' &nbsp;|&nbsp; <b>Speed</b> ' + escHtml(speed) + '</div>' +
+        ' &nbsp;|&nbsp; <b>HP</b> ' + escHtml(String(m.hit_points||'—')) + (m.hit_dice?' ('+escHtml(m.hit_dice)+')':'') +
+        ' &nbsp;|&nbsp; <b>Speed</b> ' + escHtml(speedDisplay) + '</div>' +
       '<div style="margin-bottom:0.4rem;"><b>CR</b> ' + escHtml(String(m.challenge_rating||'—')) +
         (m.xp ? ' (' + m.xp.toLocaleString() + ' XP)' : '') + '</div>' +
       '<div style="margin-bottom:0.4rem;">' + scoreRow + '</div>';
@@ -5190,6 +5462,18 @@ document.getElementById('monster-clear-btn').addEventListener('click', function 
   document.getElementById('monster-results-list').innerHTML = '';
   var sb = document.getElementById('monster-stat-block');
   sb.innerHTML = ''; sb.className = 'hidden';
+});
+
+// Source toggle buttons
+document.getElementById('monster-src-5etools').addEventListener('click', function () {
+  _monsterSource = '5etools';
+  document.getElementById('monster-src-5etools').classList.add('monster-src-active');
+  document.getElementById('monster-src-open5e').classList.remove('monster-src-active');
+});
+document.getElementById('monster-src-open5e').addEventListener('click', function () {
+  _monsterSource = 'open5e';
+  document.getElementById('monster-src-open5e').classList.add('monster-src-active');
+  document.getElementById('monster-src-5etools').classList.remove('monster-src-active');
 });
 
 // ============================================================
