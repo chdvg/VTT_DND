@@ -536,8 +536,8 @@ function renderTokenOverlay(tokens) {
     // Hidden tokens are DM-only — never shown on player screens
     if (tok.hidden) return;
 
-    // Hide non-player tokens that fall in a fogged (unrevealed) cell
-    if (!isPlayer && fogGrid && fogRows && fogCols) {
+    // Hide tokens that fall in a fogged (unrevealed) cell
+    if (fogGrid && fogRows && fogCols) {
       var gridC = Math.min(fogCols - 1, Math.max(0, Math.floor(tok.x * fogCols)));
       var gridR = Math.min(fogRows - 1, Math.max(0, Math.floor(tok.y * fogRows)));
       if (!fogGrid[gridR][gridC]) return; // cell is fogged — skip this token
