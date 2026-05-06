@@ -214,6 +214,7 @@ function showImage(imageUrl, fogKey, fit) {
   setTimeout(function () {
     sceneEl.innerHTML = '';
     var img = document.createElement('img');
+    img.draggable = false;
     img.style.cssText = 'width:100%;height:100%;object-fit:' + (fit || 'contain') + ';display:block;';
     sceneEl.appendChild(img);
     sceneEl.classList.remove('fading');
