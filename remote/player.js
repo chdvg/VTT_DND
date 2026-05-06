@@ -23,6 +23,10 @@ var currentMapMeta     = null; // { cols, rows } from builder state
 var triggeredFeatures  = {};   // { featureId: true }
 var currentObjects     = [];   // moveable object definitions
 var currentObjectStates = {};  // objId -> { activated, currentCol, currentRow, currentRotation }
+var _lbObjects = [];           // puzzle lightbox sub-map object defs
+var _lbObjectStates = {};      // puzzle lightbox object states (client-computed, server-relayed)
+var _lbCols = 20;              // sub-map grid columns
+var _lbRows = 20;              // sub-map grid rows
 
 var myPlayerName = null;  // set after successful login
 var myPlayerCls  = null;
@@ -1042,17 +1046,19 @@ function renderLightboxObjects(objects, mapCols, mapRows) {
   var cellH = cH / rows;
   var SPEED = { slow: '4s', normal: '2.5s', fast: '1.2s' };
   objects.forEach(function (obj) {
+    var st = _lbObjectStates[obj.id] || { activated: false, currentCol: obj.col, currentRow: obj.row, currentRotation: 0 };
     var size = parseFloat(obj.size) || 1.0;
     var w = cellW * size;
     var h = cellH * size;
-    var cx = (obj.col + 0.5) * cellW;
-    var cy = (obj.row + 0.5) * cellH;
+    var cx = (st.currentCol + 0.5) * cellW;
+    var cy = (st.currentRow + 0.5) * cellH;
     var div = document.createElement('div');
     div.style.cssText = 'position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;' +
       'width:' + w + 'px;height:' + h + 'px;' +
       'left:' + (cx - w / 2) + 'px;top:' + (cy - h / 2) + 'px;' +
       'border-radius:4px;border:2px solid ' + (obj.color || '#fbbf24') + ';' +
-      'background:rgba(0,0,0,0.15);';
+      'background:rgba(0,0,0,0.15);' +
+      'transform:rotate(' + (st.currentRotation || 0) + 'deg);';
     var iconEl = document.createElement('div');
     iconEl.className = 'obj-icon' + (obj.autoAnim && obj.autoAnim !== 'none' ? ' anim-' + obj.autoAnim : '');
     if (obj.autoAnim && obj.autoAnim !== 'none') {
@@ -1066,6 +1072,34 @@ function renderLightboxObjects(objects, mapCols, mapRows) {
       iconEl.textContent = obj.emoji || '\uD83D\uDD27';
     }
     div.appendChild(iconEl);
+    if (obj.interactive) {
+      div.style.pointerEvents = 'auto';
+      div.style.cursor = 'pointer';
+      (function (def) {
+        div.addEventListener('click', function () {
+          var cur = _lbObjectStates[def.id] || { activated: false, currentCol: def.col, currentRow: def.row, currentRotation: 0 };
+          var next = { activated: cur.activated, currentCol: cur.currentCol, currentRow: cur.currentRow, currentRotation: cur.currentRotation };
+          if (def.clickAction === 'rotate') {
+            var deg = Number(def.rotateDeg) || 90;
+            if (!def.canReset && cur.activated) return;
+            next.currentRotation = cur.activated ? 0 : (cur.currentRotation + deg) % 360;
+            next.activated = def.canReset ? !cur.activated : true;
+          } else {
+            if (!def.canReset && cur.activated) return;
+            if (cur.activated) {
+              next.currentCol = def.col; next.currentRow = def.row;
+            } else {
+              next.currentCol = def.targetCol != null ? def.targetCol : def.col;
+              next.currentRow = def.targetRow != null ? def.targetRow : def.row;
+            }
+            next.activated = def.canReset ? !cur.activated : true;
+          }
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ action: 'interact-lightbox-object', objId: def.id, state: next }));
+          }
+        });
+      }(obj));
+    }
     layer.appendChild(div);
   });
 }
@@ -1080,14 +1114,27 @@ function openPuzzleLightbox(feat) {
   var newSrc = feat.linkedMap || '';
   // Derive the .map.json path from the image URL to get the sub-map's own objects
   var jsonUrl = newSrc.replace(/\.[^/.]+$/, '') + '.map.json';
+  // Reset lightbox state when opening a new sub-map
+  if (!img.src.endsWith(newSrc)) {
+    _lbObjects = [];
+    _lbObjectStates = {};
+  }
   function loadAndRender() {
     fetch(jsonUrl)
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (mapData) {
-        var objects = (mapData && mapData.objects) || [];
-        var cols    = (mapData && mapData.cols) || 20;
-        var rows    = (mapData && mapData.rows) || 20;
-        renderLightboxObjects(objects, cols, rows);
+        _lbObjects      = (mapData && mapData.objects) || [];
+        var cols        = (mapData && mapData.cols) || 20;
+        var rows        = (mapData && mapData.rows) || 20;
+        _lbCols = cols;
+        _lbRows = rows;
+        // Init state for any objects not yet tracked
+        _lbObjects.forEach(function (o) {
+          if (!_lbObjectStates[o.id]) {
+            _lbObjectStates[o.id] = { activated: false, currentCol: o.col, currentRow: o.row, currentRotation: 0 };
+          }
+        });
+        renderLightboxObjects(_lbObjects, cols, rows);
       })
       .catch(function () { /* .map.json not found — image-only lightbox */ });
   }
@@ -1454,6 +1501,12 @@ function handleMessage(msg) {
       if (msg.objId && msg.state) {
         currentObjectStates[msg.objId] = msg.state;
         renderObjectLayer(currentObjects, currentObjectStates, sceneEl.querySelector('img'));
+      }
+      break;
+    case 'LIGHTBOX_OBJECT_STATE':
+      if (msg.objId && msg.state) {
+        _lbObjectStates[msg.objId] = msg.state;
+        renderLightboxObjects(_lbObjects, _lbCols, _lbRows);
       }
       break;
     case 'ping':

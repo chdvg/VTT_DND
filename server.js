@@ -523,6 +523,14 @@ wss.on('connection', (ws, req) => {
           broadcast({ type: 'UPDATE_OBJECTS', objects: currentObjectDefs, objectStates: currentObjectStates });
           saveState();
           break;
+        case 'interact-lightbox-object': {
+          // Relay state changes for sub-map (puzzle lightbox) objects — server has no defs for these
+          const lbId    = String(message.objId || '');
+          const lbState = message.state;
+          if (!lbId || !lbState || typeof lbState !== 'object') break;
+          broadcast({ type: 'LIGHTBOX_OBJECT_STATE', objId: lbId, state: lbState });
+          break;
+        }
         case 'interact-object': {
           // Player or DM clicked an interactive object (toggle A↔B or one-way)
           const ioId  = String(message.objId || '');
