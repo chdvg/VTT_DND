@@ -5033,9 +5033,14 @@ document.getElementById('audio-search').addEventListener('input', function () {
 // ============================================================
 var _monsterCache     = {};          // key: source:slug → normalised monster obj
 var _monsterSource    = '5etools';   // '5etools' | 'open5e'
-var _5etoolsIndex     = null;        // loaded lazily: array of { name, source, page }
-var _5etoolsIndexLoading = false;
-var _5etoolsIndexCallbacks = [];
+var _5etoolsFileMap   = null;        // { "MM": "bestiary-mm.json", ... }
+var _5etoolsFileMapLoading = false;
+var _5etoolsFileMapCbs = [];
+var _5etoolsLoadedSources = {};      // src → monster[] (cache per source file)
+var _5etoolsSearchId  = 0;           // cancel stale searches
+
+// Priority order: main monster books loaded first for fast results
+var _5ET_PRIORITY = ['MM','XMM','VGM','MTF','MPMM','FTD','BGG','VRGR','IDRotF','ERLW','SCC','MOT','EGW','XGE','TCE'];
 
 function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -5046,49 +5051,27 @@ function modStr(score) {
 }
 
 // ── 5etools helpers ───────────────────────────────────────────
-var _5ET_BASE = 'https://5e.tools/data/bestiary/';
+// GitHub raw mirror — CORS-friendly, always up-to-date with 5etools data
+var _5ET_BASE = 'https://raw.githubusercontent.com/5etools-mirror-2/5etools-mirror-2.github.io/master/data/bestiary/';
 
-function load5etoolsIndex(cb) {
-  if (_5etoolsIndex) { cb(_5etoolsIndex); return; }
-  _5etoolsIndexCallbacks.push(cb);
-  if (_5etoolsIndexLoading) return;
-  _5etoolsIndexLoading = true;
-  fetch('https://5e.tools/data/bestiary/index.json')
+function load5etoolsFileMap(cb) {
+  if (_5etoolsFileMap) { cb(_5etoolsFileMap); return; }
+  _5etoolsFileMapCbs.push(cb);
+  if (_5etoolsFileMapLoading) return;
+  _5etoolsFileMapLoading = true;
+  fetch(_5ET_BASE + 'index.json')
     .then(function (r) { return r.json(); })
     .then(function (idx) {
-      // idx is { "MM": "bestiary-mm.json", ... }
-      // Build a flat searchable list by fetching each file's monster list headers
-      // 5etools also exposes a flattened meta list per source file; we only need names
-      // for search — full data fetched on demand
-      var sources = Object.keys(idx);
-      var entries = [];
-      var pending = sources.length;
-      if (!pending) { _5etoolsIndex = []; _5etoolsIndexLoading = false; _5etoolsIndexCallbacks.forEach(function(f){f([]);});  _5etoolsIndexCallbacks=[]; return; }
-      sources.forEach(function (src) {
-        fetch(_5ET_BASE + idx[src])
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            (data.monster || []).forEach(function (m) {
-              entries.push({ name: m.name, source: src, file: idx[src] });
-            });
-          })
-          .catch(function () {})
-          .finally(function () {
-            pending--;
-            if (pending === 0) {
-              _5etoolsIndex = entries;
-              _5etoolsIndexLoading = false;
-              _5etoolsIndexCallbacks.forEach(function (f) { f(_5etoolsIndex); });
-              _5etoolsIndexCallbacks = [];
-            }
-          });
-      });
+      _5etoolsFileMap = idx;
+      _5etoolsFileMapLoading = false;
+      _5etoolsFileMapCbs.forEach(function (f) { f(idx); });
+      _5etoolsFileMapCbs = [];
     })
     .catch(function () {
-      _5etoolsIndex = [];
-      _5etoolsIndexLoading = false;
-      _5etoolsIndexCallbacks.forEach(function (f) { f([]); });
-      _5etoolsIndexCallbacks = [];
+      _5etoolsFileMap = {};
+      _5etoolsFileMapLoading = false;
+      _5etoolsFileMapCbs.forEach(function (f) { f({}); });
+      _5etoolsFileMapCbs = [];
     });
 }
 
@@ -5096,18 +5079,33 @@ function load5etoolsIndex(cb) {
 function fetch5etoolsMonster(entry, cb) {
   var cacheKey = '5etools:' + entry.source + ':' + slugify(entry.name);
   if (_monsterCache[cacheKey]) { cb(_monsterCache[cacheKey]); return; }
-  fetch(_5ET_BASE + entry.file)
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      var raw = (data.monster || []).find(function (m) {
-        return m.name === entry.name && m.source === entry.source;
-      });
-      if (!raw) { cb(null); return; }
+  // Use already-loaded source data if available
+  if (_5etoolsLoadedSources[entry.source]) {
+    var raw = _5etoolsLoadedSources[entry.source].find(function (m) { return m.name === entry.name; });
+    if (raw) {
       var norm = normalise5etools(raw);
       _monsterCache[cacheKey] = norm;
       cb(norm);
-    })
-    .catch(function () { cb(null); });
+    } else { cb(null); }
+    return;
+  }
+  load5etoolsFileMap(function (idx) {
+    var filename = idx[entry.source];
+    if (!filename) { cb(null); return; }
+    fetch(_5ET_BASE + filename)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var monsters = data.monster || [];
+        _5etoolsLoadedSources[entry.source] = monsters;
+        var raw2 = monsters.find(function (m) { return m.name === entry.name; });
+        if (raw2) {
+          var norm2 = normalise5etools(raw2);
+          _monsterCache[cacheKey] = norm2;
+          cb(norm2);
+        } else { cb(null); }
+      })
+      .catch(function () { cb(null); });
+  });
 }
 
 function crToNum(cr) {
@@ -5272,43 +5270,107 @@ function fetchMonster5etools(name) {
   var statEl = document.getElementById('monster-stat-block');
   var listEl = document.getElementById('monster-results-list');
   var q      = name.toLowerCase();
+  var sid    = ++_5etoolsSearchId;
+  var allMatches = [];
 
-  load5etoolsIndex(function (index) {
-    if (!index.length) {
-      statEl.className = 'msb-loading';
-      statEl.textContent = 'Could not load 5etools bestiary index. Check network access to 5e.tools.';
+  statEl.className = 'msb-loading';
+  statEl.textContent = 'Loading bestiary index…';
+  listEl.innerHTML = '';
+
+  load5etoolsFileMap(function (idx) {
+    if (sid !== _5etoolsSearchId) return;
+    var sources = Object.keys(idx);
+    if (!sources.length) {
+      statEl.textContent = 'Could not connect to 5etools data. Check your network or switch to Open5e.';
       return;
     }
-    var matches = index.filter(function (e) { return e.name.toLowerCase().includes(q); });
-    if (!matches.length) {
-      statEl.className = 'msb-loading';
-      statEl.textContent = 'No results for "' + name + '" in 5etools.';
-      return;
-    }
-    if (matches.length === 1) {
-      statEl.textContent = 'Loading ' + matches[0].name + '…';
-      fetch5etoolsMonster(matches[0], function (m) {
-        if (m) renderMonsterStatBlock(m);
-        else { statEl.className = 'msb-loading'; statEl.textContent = 'Failed to load monster data.'; }
-      });
-      return;
-    }
-    statEl.className = 'hidden';
-    statEl.textContent = '';
-    matches.forEach(function (entry) {
-      var btn = document.createElement('button');
-      btn.className = 'monster-result-btn';
-      btn.textContent = entry.name + ' [' + entry.source + ']';
-      btn.onclick = function () {
+
+    // Load priority sources first so common monsters appear quickly
+    sources.sort(function (a, b) {
+      var ai = _5ET_PRIORITY.indexOf(a), bi = _5ET_PRIORITY.indexOf(b);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    var total = sources.length;
+    var completed = 0;
+
+    function updateUI() {
+      if (sid !== _5etoolsSearchId) return;
+      var done = completed >= total;
+      if (!allMatches.length) {
         statEl.className = 'msb-loading';
-        statEl.textContent = 'Loading ' + entry.name + '…';
-        listEl.querySelectorAll('.monster-result-btn').forEach(function (b) { b.classList.toggle('monster-result-active', b === btn); });
-        fetch5etoolsMonster(entry, function (m) {
+        statEl.textContent = done
+          ? 'No results for "' + name + '" in 5etools.'
+          : 'Searching 5etools (' + completed + '/' + total + ' sources)…';
+        return;
+      }
+      // Auto-select single result only when all sources are done
+      if (allMatches.length === 1 && done) {
+        statEl.className = 'msb-loading';
+        statEl.textContent = 'Loading ' + allMatches[0].name + '…';
+        listEl.innerHTML = '';
+        fetch5etoolsMonster(allMatches[0], function (m) {
+          if (sid !== _5etoolsSearchId) return;
           if (m) renderMonsterStatBlock(m);
           else { statEl.className = 'msb-loading'; statEl.textContent = 'Failed to load monster data.'; }
         });
-      };
-      listEl.appendChild(btn);
+        return;
+      }
+      // Show list (rebuild on every update so new results appear)
+      statEl.className = 'hidden';
+      statEl.textContent = '';
+      listEl.innerHTML = '';
+      allMatches.forEach(function (entry) {
+        var btn = document.createElement('button');
+        btn.className = 'monster-result-btn';
+        btn.textContent = entry.name + ' [' + entry.source + ']';
+        btn.onclick = function () {
+          listEl.querySelectorAll('.monster-result-btn').forEach(function (b) { b.classList.toggle('monster-result-active', b === btn); });
+          statEl.className = 'msb-loading';
+          statEl.textContent = 'Loading ' + entry.name + '…';
+          fetch5etoolsMonster(entry, function (m) {
+            if (m) renderMonsterStatBlock(m);
+            else { statEl.className = 'msb-loading'; statEl.textContent = 'Failed to load monster data.'; }
+          });
+        };
+        listEl.appendChild(btn);
+      });
+    }
+
+    statEl.textContent = 'Searching 5etools (0/' + total + ' sources)…';
+
+    sources.forEach(function (src) {
+      function processSource(monsters) {
+        if (sid !== _5etoolsSearchId) return;
+        monsters.forEach(function (m) {
+          if (m.name && m.name.toLowerCase().includes(q)) {
+            allMatches.push({ name: m.name, source: src, file: idx[src] });
+          }
+        });
+        completed++;
+        updateUI();
+      }
+
+      if (_5etoolsLoadedSources[src]) {
+        // Already cached — process asynchronously to avoid blocking the UI
+        setTimeout(function () { processSource(_5etoolsLoadedSources[src]); }, 0);
+      } else {
+        fetch(_5ET_BASE + idx[src])
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            var monsters = data.monster || [];
+            _5etoolsLoadedSources[src] = monsters;
+            processSource(monsters);
+          })
+          .catch(function () {
+            if (sid !== _5etoolsSearchId) return;
+            completed++;
+            updateUI();
+          });
+      }
     });
   });
 }
