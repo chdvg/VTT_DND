@@ -12,15 +12,15 @@
     "cls": "Cleric"
   },
   {
-    "name": "Kat of Grey Towers",
-    "cls": ""
-  },
-  {
     "name": "DragOn",
     "cls": "Druid"
   },
   {
     "name": "Dobby",
     "cls": "FatChub"
+  },
+  {
+    "name": "Kat of GT",
+    "cls": "Warrior"
   }
 ]

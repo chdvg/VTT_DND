@@ -21,6 +21,12 @@ var currentImageUrl = null;
 var currentFeatures    = [];   // feature defs for the current map
 var currentMapMeta     = null; // { cols, rows } from builder state
 var triggeredFeatures  = {};   // { featureId: true }
+var currentObjects     = [];   // moveable object definitions
+var currentObjectStates = {};  // objId -> { activated, currentCol, currentRow, currentRotation }
+var _lbObjects = [];           // puzzle lightbox sub-map object defs
+var _lbObjectStates = {};      // puzzle lightbox object states (client-computed, server-relayed)
+var _lbCols = 20;              // sub-map grid columns
+var _lbRows = 20;              // sub-map grid rows
 
 var myPlayerName = null;  // set after successful login
 var myPlayerCls  = null;
@@ -28,6 +34,14 @@ var myMovementLocked = false;  // set by DM lock controls
 var myTarget     = null;       // label of my current combat target
 var allTargets   = {};         // playerName -> targetLabel (all players' targets)
 var gridEnabled  = false;      // DM-toggled grid overlay
+
+// Login timeout — reset the login button if the server never responds
+var _loginTimeout = null;
+function resetLoginBtn() {
+  var subBtn = document.getElementById('login-submit-btn');
+  if (subBtn) { subBtn.textContent = 'Enter Session'; subBtn.disabled = false; }
+  if (_loginTimeout) { clearTimeout(_loginTimeout); _loginTimeout = null; }
+}
 
 // Unlock audio on any click (but don't auto-dismiss overlay)
 document.addEventListener('click', function () {
@@ -80,6 +94,11 @@ function dismissTapOverlay() {
   if (guestBtn) {
     guestBtn.addEventListener('click', function (e) {
       e.stopPropagation();
+      // Unlock audio — stopPropagation blocks the document-level click listener
+      if (!audioUnlocked) {
+        audioUnlocked = true;
+        if (pendingAudio) { var pa = pendingAudio; pendingAudio = null; playAudio(pa.url, pa.loop); }
+      }
       sessionStorage.setItem('dnd_guest_tapped', '1'); // remember so page-refresh skips overlay
       dismissTapOverlay();
     });
@@ -125,6 +144,13 @@ function dismissTapOverlay() {
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ action: 'player-login', name: player.name, cls: player.cls }));
       if (submitBtn) { submitBtn.textContent = 'Entering...'; submitBtn.disabled = true; }
+      // Safety net: if no login response arrives within 6s, re-enable the button
+      if (_loginTimeout) clearTimeout(_loginTimeout);
+      _loginTimeout = setTimeout(function () {
+        _loginTimeout = null;
+        resetLoginBtn();
+        errEl.textContent = 'No response — check connection and try again.';
+      }, 6000);
     } else {
       errEl.textContent = 'Not connected — try again in a moment.';
     }
@@ -133,6 +159,11 @@ function dismissTapOverlay() {
   if (submitBtn) {
     submitBtn.addEventListener('click', function (e) {
       e.stopPropagation();
+      // Unlock audio — stopPropagation blocks the document-level click listener
+      if (!audioUnlocked) {
+        audioUnlocked = true;
+        if (pendingAudio) { var pa2 = pendingAudio; pendingAudio = null; playAudio(pa2.url, pa2.loop); }
+      }
       doLogin();
     });
   }
@@ -193,6 +224,7 @@ function showImage(imageUrl, fogKey, fit) {
   setTimeout(function () {
     sceneEl.innerHTML = '';
     var img = document.createElement('img');
+    img.draggable = false;
     img.style.cssText = 'width:100%;height:100%;object-fit:' + (fit || 'contain') + ';display:block;';
     sceneEl.appendChild(img);
     sceneEl.classList.remove('fading');
@@ -237,6 +269,88 @@ function clearScene() {
     sceneEl.innerHTML = '';
     sceneEl.classList.remove('fading');
   }, 150);
+}
+
+// ── Object Layer ──────────────────────────────────────────────
+function renderObjectLayer(objects, objStates, imgEl) {
+  var layer = document.getElementById('object-layer');
+  if (!layer) return;
+  layer.innerHTML = '';
+  if (!objects || !objects.length) return;
+  var el = imgEl || sceneEl.querySelector('img');
+  var cW = layer.offsetWidth || sceneEl.offsetWidth;
+  var cH = layer.offsetHeight || sceneEl.offsetHeight;
+  if (!cW || !cH) return;
+  var offX = 0, offY = 0, rendW = cW, rendH = cH;
+  if (el && el.naturalWidth && el.naturalHeight) {
+    var scale = Math.min(cW / el.naturalWidth, cH / el.naturalHeight);
+    rendW = el.naturalWidth  * scale;
+    rendH = el.naturalHeight * scale;
+    offX  = (cW - rendW) / 2;
+    offY  = (cH - rendH) / 2;
+  }
+  var cols = (currentMapMeta && currentMapMeta.cols) || 20;
+  var rows = (currentMapMeta && currentMapMeta.rows) || 20;
+  var cellW = rendW / cols;
+  var cellH = rendH / rows;
+  var SPEED = { slow: '4s', normal: '2.5s', fast: '1.2s' };
+  var fogGrid = (currentFogKey && fogStates[currentFogKey]) ? fogStates[currentFogKey] : null;
+  var fogRows = fogGrid ? fogGrid.length : 0;
+  var fogCols = fogGrid && fogGrid[0] ? fogGrid[0].length : 0;
+  objects.forEach(function (obj) {
+    var st = (objStates && objStates[obj.id]) || { activated: false, currentCol: obj.col, currentRow: obj.row, currentRotation: 0 };
+    // Hide objects that fall in a fogged (unrevealed) cell
+    if (fogGrid && fogRows && fogCols) {
+      var fx = (st.currentCol + 0.5) / cols;
+      var fy = (st.currentRow + 0.5) / rows;
+      var gridC = Math.min(fogCols - 1, Math.max(0, Math.floor(fx * fogCols)));
+      var gridR = Math.min(fogRows - 1, Math.max(0, Math.floor(fy * fogRows)));
+      if (!fogGrid[gridR][gridC]) return;
+    }
+    var size = (parseFloat(obj.size) || 1.0);
+    var w = cellW * size;
+    var h = cellH * size;
+    var cx = offX + (st.currentCol + 0.5) * cellW;
+    var cy = offY + (st.currentRow + 0.5) * cellH;
+    var div = document.createElement('div');
+    div.className = 'obj-cell' + (obj.interactive ? ' interactive' : '') + (st.activated ? ' obj-activated' : '');
+    div.style.cssText = 'position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;' +
+      'width:' + w + 'px;height:' + h + 'px;' +
+      'left:' + (cx - w / 2) + 'px;top:' + (cy - h / 2) + 'px;' +
+      'border-radius:4px;border:2px solid ' + (obj.color || '#fbbf24') + ';' +
+      'background:rgba(0,0,0,0.15);' +
+      'transition:left 0.5s ease,top 0.5s ease,transform 0.5s ease;' +
+      'transform:rotate(' + (st.currentRotation || 0) + 'deg);';
+    var iconEl = document.createElement('div');
+    iconEl.className = 'obj-icon' + (obj.autoAnim && obj.autoAnim !== 'none' ? ' anim-' + obj.autoAnim : '');
+    if (obj.autoAnim && obj.autoAnim !== 'none') {
+      iconEl.style.setProperty('--obj-dur', SPEED[obj.animSpeed] || '2.5s');
+    }
+    if (obj.iconType === 'tile' && obj.tileId) {
+      iconEl.style.cssText = 'width:90%;height:90%;background-size:cover;background-position:center;' +
+        'background-image:url(/assets/Tiles/' + encodeURIComponent(obj.tileId) + ');';
+    } else {
+      iconEl.style.cssText = 'font-size:' + Math.min(w, h) * 0.62 + 'px;line-height:1;';
+      iconEl.textContent = obj.emoji || '\uD83D\uDD27';
+    }
+    div.appendChild(iconEl);
+    if (obj.interactive) {
+      var iBy = obj.interactBy || 'both';
+      var canInteract = (iBy === 'both') || (iBy === 'players' && myPlayerName) || (iBy === 'dm');
+      if (canInteract) {
+        div.style.pointerEvents = 'auto';
+        div.style.cursor = 'pointer';
+        (function (objId) {
+          div.addEventListener('click', function () {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ action: 'interact-object', objId: objId }));
+            }
+          });
+        }(obj.id));
+      }
+    }
+    layer.appendChild(div);
+  });
 }
 
 // ── Grid overlay ─────────────────────────────────────────────
@@ -433,8 +547,8 @@ function renderTokenOverlay(tokens) {
     // Hidden tokens are DM-only — never shown on player screens
     if (tok.hidden) return;
 
-    // Hide non-player tokens that fall in a fogged (unrevealed) cell
-    if (!isPlayer && fogGrid && fogRows && fogCols) {
+    // Hide tokens that fall in a fogged (unrevealed) cell
+    if (fogGrid && fogRows && fogCols) {
       var gridC = Math.min(fogCols - 1, Math.max(0, Math.floor(tok.x * fogCols)));
       var gridR = Math.min(fogRows - 1, Math.max(0, Math.floor(tok.y * fogRows)));
       if (!fogGrid[gridR][gridC]) return; // cell is fogged — skip this token
@@ -780,67 +894,274 @@ function showTriggeredFeature(feat, animate) {
     return;
   }
 
-  var anim = feat.animation || 'fade-in';
+  var type    = feat.type || '';
+  var subtype = feat.effectSubtype || 'fire';
 
-  if (anim === 'shake-reveal') {
+  if (type === 'pit') {
+    // Scene shake then dark cells spread in with stagger
     sceneEl.classList.add('feat-shake');
-    sceneEl.addEventListener('animationend', function handler() {
+    sceneEl.addEventListener('animationend', function h() {
       sceneEl.classList.remove('feat-shake');
-      sceneEl.removeEventListener('animationend', handler);
+      sceneEl.removeEventListener('animationend', h);
     });
-    setTimeout(function () {
-      cells.forEach(function (c) {
-        c.style.transition = 'opacity 0.5s ease';
-        c.style.opacity = '1';
-      });
-    }, 300);
+    cells.forEach(function (c, i) {
+      c.style.background = feat.color || '#1a0a00';
+      setTimeout(function () {
+        c.classList.add('feat-pit-anim');
+        c.addEventListener('animationend', function () { c.style.opacity = '1'; }, { once: true });
+      }, i * 45);
+    });
 
-  } else if (anim === 'flash-red') {
+  } else if (type === 'trap') {
+    sceneEl.classList.add('feat-shake');
+    sceneEl.addEventListener('animationend', function h() {
+      sceneEl.classList.remove('feat-shake');
+      sceneEl.removeEventListener('animationend', h);
+    });
     cells.forEach(function (c) {
-      c.style.background = '#ef4444';
+      c.style.background = feat.color || '#7f1d1d';
+      c.classList.add('feat-trap-anim');
+      c.addEventListener('animationend', function () { c.style.opacity = '1'; }, { once: true });
+    });
+
+  } else if (type === 'puzzle') {
+    cells.forEach(function (c) {
+      c.style.background = feat.color || '#1e3a5f';
       c.style.opacity = '1';
-      c.classList.add('feat-flash-anim');
+      c.classList.add('feat-puzzle-anim');
+      if (feat.linkedMap) {
+        c.style.pointerEvents = 'auto';
+        c.onclick = function () { openPuzzleLightbox(feat); };
+      }
+    });
+
+  } else if (type === 'reveal') {
+    // Show an overlay tile then sweep it away, revealing what's underneath
+    cells.forEach(function (c) {
+      c.style.background = feat.color || '#14532d';
+      c.style.opacity = '1';
+      c.classList.add('feat-reveal-anim');
       c.addEventListener('animationend', function () {
-        c.classList.remove('feat-flash-anim');
-        c.style.background = feat.color || '#7f1d1d';
+        c.style.opacity = '0';
+        c.classList.remove('feat-reveal-anim');
       }, { once: true });
     });
 
-  } else if (anim === 'pulse-gold') {
+  } else if (type === 'effect') {
+    var ANIM_MAP = {
+      fire:      'feat-fire-anim',
+      sparks:    'feat-sparks-anim',
+      explosion: 'feat-explosion-anim',
+      aura:      'feat-aura-anim',
+    };
+    var BG_MAP = {
+      fire:      feat.color || '#ef4444',
+      sparks:    feat.color || '#facc15',
+      explosion: feat.color || '#f97316',
+      aura:      feat.color || '#7c3aed',
+    };
+    var cls = ANIM_MAP[subtype] || 'feat-fire-anim';
+    var bg  = BG_MAP[subtype]  || (feat.color || '#ef4444');
     cells.forEach(function (c) {
-      c.style.background = feat.color || '#d4af37';
-      c.style.opacity = '0.85';
-      c.classList.add('feat-pulse-anim');
-    });
-
-  } else if (anim === 'flash-white') {
-    cells.forEach(function (c) {
-      c.style.background = '#ffffff';
+      c.style.background = bg;
       c.style.opacity = '1';
-      c.classList.add('feat-flash-anim');
-      c.addEventListener('animationend', function () {
-        c.classList.remove('feat-flash-anim');
-        c.style.background = feat.color || '#cccccc';
-      }, { once: true });
+      c.classList.add(cls);
+      if (subtype === 'explosion') {
+        c.addEventListener('animationend', function () {
+          c.classList.remove(cls);
+          c.style.opacity = '0';
+        }, { once: true });
+      }
     });
 
   } else {
-    // fade-in (default)
-    cells.forEach(function (c) {
-      c.style.transition = 'opacity 0.6s ease';
-      c.style.opacity = '1';
-    });
+    // Legacy fallback — honour original animation field
+    var anim = feat.animation || 'fade-in';
+    if (anim === 'shake-reveal') {
+      sceneEl.classList.add('feat-shake');
+      sceneEl.addEventListener('animationend', function h() {
+        sceneEl.classList.remove('feat-shake');
+        sceneEl.removeEventListener('animationend', h);
+      });
+      setTimeout(function () {
+        cells.forEach(function (c) {
+          c.style.transition = 'opacity 0.5s ease';
+          c.style.opacity = '1';
+        });
+      }, 300);
+    } else if (anim === 'flash-red') {
+      cells.forEach(function (c) {
+        c.style.background = '#ef4444';
+        c.style.opacity = '1';
+        c.classList.add('feat-flash-anim');
+        c.addEventListener('animationend', function () {
+          c.classList.remove('feat-flash-anim');
+          c.style.background = feat.color || '#7f1d1d';
+        }, { once: true });
+      });
+    } else if (anim === 'pulse-gold') {
+      cells.forEach(function (c) {
+        c.style.background = feat.color || '#d4af37';
+        c.style.opacity = '0.85';
+        c.classList.add('feat-pulse-anim');
+      });
+    } else if (anim === 'flash-white') {
+      cells.forEach(function (c) {
+        c.style.background = '#ffffff';
+        c.style.opacity = '1';
+        c.classList.add('feat-flash-anim');
+        c.addEventListener('animationend', function () {
+          c.classList.remove('feat-flash-anim');
+          c.style.background = feat.color || '#cccccc';
+        }, { once: true });
+      });
+    } else {
+      cells.forEach(function (c) {
+        c.style.transition = 'opacity 0.6s ease';
+        c.style.opacity = '1';
+      });
+    }
   }
 }
 
 function hideFeatureCells(featureId) {
   var cells = sceneEl.querySelectorAll('.feature-cell[data-feat-id="' + featureId + '"]');
   cells.forEach(function (c) {
-    c.classList.remove('feat-flash-anim', 'feat-pulse-anim');
+    c.classList.remove(
+      'feat-flash-anim', 'feat-pulse-anim',
+      'feat-pit-anim', 'feat-trap-anim', 'feat-puzzle-anim',
+      'feat-reveal-anim', 'feat-fire-anim', 'feat-sparks-anim',
+      'feat-explosion-anim', 'feat-aura-anim'
+    );
     c.style.transition = 'opacity 0.4s ease';
     c.style.opacity = '0';
+    c.onclick = null;
+    c.style.cursor = '';
+    c.style.pointerEvents = '';
   });
 }
+
+// ── Puzzle sub-map lightbox ───────────────────────────────────
+function renderLightboxObjects(objects, mapCols, mapRows) {
+  var layer = document.getElementById('puzzle-lightbox-obj-layer');
+  var img   = document.getElementById('puzzle-lightbox-img');
+  if (!layer || !img) return;
+  layer.innerHTML = '';
+  if (!objects || !objects.length) return;
+  var cW = img.offsetWidth;
+  var cH = img.offsetHeight;
+  if (!cW || !cH) return;
+  var cols = mapCols || 20;
+  var rows = mapRows || 20;
+  var cellW = cW / cols;
+  var cellH = cH / rows;
+  var SPEED = { slow: '4s', normal: '2.5s', fast: '1.2s' };
+  objects.forEach(function (obj) {
+    var st = _lbObjectStates[obj.id] || { activated: false, currentCol: obj.col, currentRow: obj.row, currentRotation: 0 };
+    var size = parseFloat(obj.size) || 1.0;
+    var w = cellW * size;
+    var h = cellH * size;
+    var cx = (st.currentCol + 0.5) * cellW;
+    var cy = (st.currentRow + 0.5) * cellH;
+    var div = document.createElement('div');
+    div.style.cssText = 'position:absolute;display:flex;align-items:center;justify-content:center;box-sizing:border-box;' +
+      'width:' + w + 'px;height:' + h + 'px;' +
+      'left:' + (cx - w / 2) + 'px;top:' + (cy - h / 2) + 'px;' +
+      'border-radius:4px;border:2px solid ' + (obj.color || '#fbbf24') + ';' +
+      'background:rgba(0,0,0,0.15);' +
+      'transform:rotate(' + (st.currentRotation || 0) + 'deg);';
+    var iconEl = document.createElement('div');
+    iconEl.className = 'obj-icon' + (obj.autoAnim && obj.autoAnim !== 'none' ? ' anim-' + obj.autoAnim : '');
+    if (obj.autoAnim && obj.autoAnim !== 'none') {
+      iconEl.style.setProperty('--obj-dur', SPEED[obj.animSpeed] || '2.5s');
+    }
+    if (obj.iconType === 'tile' && obj.tileId) {
+      iconEl.style.cssText = 'width:90%;height:90%;background-size:cover;background-position:center;' +
+        'background-image:url(/assets/Tiles/' + encodeURIComponent(obj.tileId) + ');';
+    } else {
+      iconEl.style.cssText = 'font-size:' + Math.min(w, h) * 0.62 + 'px;line-height:1;';
+      iconEl.textContent = obj.emoji || '\uD83D\uDD27';
+    }
+    div.appendChild(iconEl);
+    if (obj.interactive) {
+      div.style.pointerEvents = 'auto';
+      div.style.cursor = 'pointer';
+      (function (def) {
+        div.addEventListener('click', function () {
+          var cur = _lbObjectStates[def.id] || { activated: false, currentCol: def.col, currentRow: def.row, currentRotation: 0 };
+          var next = { activated: cur.activated, currentCol: cur.currentCol, currentRow: cur.currentRow, currentRotation: cur.currentRotation };
+          if (def.clickAction === 'rotate') {
+            var deg = Number(def.rotateDeg) || 90;
+            if (!def.canReset && cur.activated) return;
+            next.currentRotation = cur.activated ? 0 : (cur.currentRotation + deg) % 360;
+            next.activated = def.canReset ? !cur.activated : true;
+          } else {
+            if (!def.canReset && cur.activated) return;
+            if (cur.activated) {
+              next.currentCol = def.col; next.currentRow = def.row;
+            } else {
+              next.currentCol = def.targetCol != null ? def.targetCol : def.col;
+              next.currentRow = def.targetRow != null ? def.targetRow : def.row;
+            }
+            next.activated = def.canReset ? !cur.activated : true;
+          }
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ action: 'interact-lightbox-object', objId: def.id, state: next }));
+          }
+        });
+      }(obj));
+    }
+    layer.appendChild(div);
+  });
+}
+
+function openPuzzleLightbox(feat) {
+  var lb    = document.getElementById('puzzle-lightbox');
+  var img   = document.getElementById('puzzle-lightbox-img');
+  var title = document.getElementById('puzzle-lightbox-title');
+  if (!lb) return;
+  title.textContent = feat.name || '';
+  lb.classList.add('open');
+  var newSrc = feat.linkedMap || '';
+  // Derive the .map.json path from the image URL to get the sub-map's own objects
+  var jsonUrl = newSrc.replace(/\.[^/.]+$/, '') + '.map.json';
+  // Reset lightbox state when opening a new sub-map
+  if (!img.src.endsWith(newSrc)) {
+    _lbObjects = [];
+    _lbObjectStates = {};
+  }
+  function loadAndRender() {
+    fetch(jsonUrl)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (mapData) {
+        _lbObjects      = (mapData && mapData.objects) || [];
+        var cols        = (mapData && mapData.cols) || 20;
+        var rows        = (mapData && mapData.rows) || 20;
+        _lbCols = cols;
+        _lbRows = rows;
+        // Init state for any objects not yet tracked
+        _lbObjects.forEach(function (o) {
+          if (!_lbObjectStates[o.id]) {
+            _lbObjectStates[o.id] = { activated: false, currentCol: o.col, currentRow: o.row, currentRotation: 0 };
+          }
+        });
+        renderLightboxObjects(_lbObjects, cols, rows);
+      })
+      .catch(function () { /* .map.json not found — image-only lightbox */ });
+  }
+  if (img.src.endsWith(newSrc) && img.naturalWidth) {
+    loadAndRender();
+  } else {
+    img.onload = loadAndRender;
+    img.src = newSrc;
+  }
+}
+(function () {
+  var lb    = document.getElementById('puzzle-lightbox');
+  var close = document.getElementById('puzzle-lightbox-close');
+  if (lb)    lb.addEventListener('click', function (e) { if (e.target === lb) lb.classList.remove('open'); });
+  if (close) close.addEventListener('click', function () { lb.classList.remove('open'); });
+}());
 
 // ── Dice roll animation (3D cube) ─────────────────────────────
 var _diceHideTimer   = null;
@@ -1013,6 +1334,10 @@ function handleMessage(msg) {
       currentFeatures   = Array.isArray(msg.features) ? msg.features : [];
       currentMapMeta    = msg.mapMeta || null;
       triggeredFeatures = {};
+      currentObjects      = [];
+      currentObjectStates = {};
+      var layer = document.getElementById('object-layer');
+      if (layer) layer.innerHTML = '';
       var oldFeatOv = sceneEl.querySelector('.feature-overlay');
       if (oldFeatOv) oldFeatOv.remove();
       var oldTok = sceneEl.querySelector('.token-overlay');
@@ -1063,6 +1388,7 @@ function handleMessage(msg) {
         if (msg.fogKey === currentFogKey) {
           renderFogOverlay(msg.fogGrid, sceneEl.querySelector('img'));
           renderTokenOverlay(currentTokens); // re-check which tokens are in fogged cells
+          renderObjectLayer(currentObjects, currentObjectStates, sceneEl.querySelector('img'));
         }
       }
       break;
@@ -1070,6 +1396,7 @@ function handleMessage(msg) {
       currentFogKey = msg.fogKey || null;
       renderFogOverlay(currentFogKey ? (fogStates[currentFogKey] || null) : null, sceneEl.querySelector('img'));
       renderTokenOverlay(currentTokens);
+      renderObjectLayer(currentObjects, currentObjectStates, sceneEl.querySelector('img'));
       break;
     case 'PLAY_AUDIO':
       if (msg.url) playAudio(msg.url, msg.loop === true);
@@ -1176,6 +1503,23 @@ function handleMessage(msg) {
       gridEnabled = !!msg.enabled;
       renderGridOverlay(sceneEl.querySelector('img'));
       break;
+    case 'UPDATE_OBJECTS':
+      currentObjects      = Array.isArray(msg.objects) ? msg.objects : [];
+      currentObjectStates = (msg.objectStates && typeof msg.objectStates === 'object') ? msg.objectStates : {};
+      renderObjectLayer(currentObjects, currentObjectStates, sceneEl.querySelector('img'));
+      break;
+    case 'OBJECT_STATE_CHANGE':
+      if (msg.objId && msg.state) {
+        currentObjectStates[msg.objId] = msg.state;
+        renderObjectLayer(currentObjects, currentObjectStates, sceneEl.querySelector('img'));
+      }
+      break;
+    case 'LIGHTBOX_OBJECT_STATE':
+      if (msg.objId && msg.state) {
+        _lbObjectStates[msg.objId] = msg.state;
+        renderLightboxObjects(_lbObjects, _lbCols, _lbRows);
+      }
+      break;
     case 'ping':
       // Server heartbeat — no response needed; _lastMsgAt already updated above
       break;
@@ -1186,6 +1530,7 @@ function handleMessage(msg) {
       sessionStorage.setItem('dnd_player_cls',  myPlayerCls);
       // Restore any target this player had (may have been received before login from sendFullState)
       if (allTargets[myPlayerName]) myTarget = allTargets[myPlayerName];
+      resetLoginBtn(); // clear any pending timeout
       dismissTapOverlay();
       var hudEl = document.getElementById('player-hud');
       if (hudEl) hudEl.style.display = 'flex';
@@ -1327,6 +1672,8 @@ function connect() {
 
   ws.onclose = function () {
     statusEl.textContent = 'reconnecting...';
+    // If the login was in-flight when the socket dropped, re-enable the button
+    resetLoginBtn();
     scheduleReconnect();
   };
 

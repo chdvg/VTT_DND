@@ -1432,11 +1432,20 @@ const FOG_KEY      = 'builder-live';
 let fogBuilderGrid = [];   // [row][col] = true (revealed) / false (hidden)
 
 // ── Map Features ─────────────────────────────────────────────
-// features: [{ id, name, type, cells:[[r,c],...], animation, color, description }]
+// features: [{ id, name, type, cells:[[r,c],...], animation, color, description, effectSubtype?, linkedMap? }]
 let features = [];
 // Cells the user has clicked to select for the next feature
 let pendingFeatureCells = []; // [[r,c], ...]
 let editingFeatureId = null;  // id of feature being edited, or null for new
+
+// ── Map Objects ───────────────────────────────────────────────
+// objects: [{ id, col, row, label, iconType, emoji, tileId, color, size,
+//             autoAnim, animSpeed, interactive, interactBy, clickAction,
+//             rotateDeg, targetCol, targetRow, canReset, blocksMovement }]
+let mapObjects = [];
+let editingObjectId = null;
+// When DM is picking a target cell for a slide action
+let _pickingTargetForObj = false;
 
 // WebSocket
 let ws = null;
@@ -1512,8 +1521,8 @@ function renderFeatures() {
   // Draw saved features
   features.forEach(feat => {
     const hex = feat.color || '#c0392b';
-    featureCtx.fillStyle = hex + '99'; // ~60% opacity
-    featureCtx.strokeStyle = hex;
+    featureCtx.fillStyle = hex + 'bb'; // ~73% opacity
+    featureCtx.strokeStyle = '#fff';
     featureCtx.lineWidth = 2;
     (feat.cells || []).forEach(([r, c]) => {
       featureCtx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
@@ -1587,6 +1596,42 @@ function renderFeatureList() {
   });
 }
 
+// ── Feature type → default color / animation mapping ────────
+const FEAT_TYPE_DEFAULTS = {
+  pit:    { color: '#1a0a00', anim: 'pit' },
+  trap:   { color: '#7f1d1d', anim: 'trap' },
+  puzzle: { color: '#1e3a5f', anim: 'puzzle' },
+  reveal: { color: '#14532d', anim: 'reveal' },
+  effect: { color: '#7c2d12', anim: 'effect' },
+};
+
+function _updateFeatTypeUI(type, skipColor) {
+  document.getElementById('feat-effect-opts').style.display = type === 'effect'  ? '' : 'none';
+  document.getElementById('feat-puzzle-opts').style.display = type === 'puzzle'  ? '' : 'none';
+  if (!skipColor) {
+    const def = FEAT_TYPE_DEFAULTS[type];
+    if (def) document.getElementById('feat-color').value = def.color;
+  }
+  const animEl = document.getElementById('feat-animation');
+  if (animEl) animEl.value = type;
+}
+
+// Populate puzzle linked-map dropdown
+async function _populatePuzzleMapDropdown(currentVal) {
+  const sel = document.getElementById('feat-linked-map');
+  try {
+    const r = await fetch('/api/maps');
+    const j = await r.json();
+    const maps = (j.maps || []);
+    sel.innerHTML = '<option value="">(none — no sub-map)</option>' +
+      maps.map(url => {
+        const name = url.split('/').pop();
+        return `<option value="${url}">${name}</option>`;
+      }).join('');
+    if (currentVal) sel.value = currentVal;
+  } catch (_) { /* non-critical */ }
+}
+
 // ── Feature modal ─────────────────────────────────────────────
 function openFeatureModal(editId) {
   editingFeatureId = editId || null;
@@ -1601,25 +1646,35 @@ function openFeatureModal(editId) {
     titleEl.textContent = 'Edit Feature';
     document.getElementById('feat-name').value        = feat.name || '';
     document.getElementById('feat-type').value        = feat.type || 'pit';
-    document.getElementById('feat-animation').value   = feat.animation || 'shake-reveal';
     document.getElementById('feat-color').value       = feat.color || '#1a0a00';
     document.getElementById('feat-description').value = feat.description || '';
     document.getElementById('feat-auto-trigger').checked = !!feat.autoTrigger;
+    // Effect subtype
+    if (feat.effectSubtype) document.getElementById('feat-effect-subtype').value = feat.effectSubtype;
     cellsEl.textContent = (feat.cells || []).length + ' cell(s) selected.';
     // Load cells into pending for re-selection
     pendingFeatureCells = (feat.cells || []).map(c => [...c]);
+    _updateFeatTypeUI(feat.type || 'pit', true);
+    _populatePuzzleMapDropdown(feat.linkedMap || '');
   } else {
     titleEl.textContent = 'Add Feature';
     document.getElementById('feat-name').value        = '';
     document.getElementById('feat-type').value        = 'pit';
-    document.getElementById('feat-animation').value   = 'shake-reveal';
     document.getElementById('feat-color').value       = '#1a0a00';
     document.getElementById('feat-description').value = '';
     document.getElementById('feat-auto-trigger').checked = false;
+    document.getElementById('feat-effect-subtype').value = 'fire';
     cellsEl.textContent = pendingFeatureCells.length + ' cell(s) selected.';
+    _updateFeatTypeUI('pit', false);
+    _populatePuzzleMapDropdown('');
   }
   modal.classList.remove('hidden');
 }
+
+document.getElementById('feat-type').addEventListener('change', function () {
+  _updateFeatTypeUI(this.value, false);
+  if (this.value === 'puzzle') _populatePuzzleMapDropdown('');
+});
 
 document.getElementById('add-feature-btn').addEventListener('click', () => {
   if (pendingFeatureCells.length === 0) {
@@ -1641,12 +1696,19 @@ document.getElementById('feat-save-btn').addEventListener('click', () => {
   if (pendingFeatureCells.length === 0 && !editingFeatureId) {
     statusEl.textContent = 'No cells selected.'; statusEl.style.color = '#ef4444'; return;
   }
+  const type = document.getElementById('feat-type').value;
+  const effectSubtype = type === 'effect' ? document.getElementById('feat-effect-subtype').value : undefined;
+  const linkedMap = type === 'puzzle' ? (document.getElementById('feat-linked-map').value || undefined) : undefined;
+  // Derive animation key from type (for backward compat with player.js legacy fallback)
+  const animKey = type === 'effect' ? ('effect-' + (effectSubtype || 'fire')) : type;
   const feat = {
-    id:          editingFeatureId || ('f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
+    id:           editingFeatureId || ('f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
     name,
-    type:        document.getElementById('feat-type').value,
-    animation:   document.getElementById('feat-animation').value,
-    color:       document.getElementById('feat-color').value,
+    type,
+    animation:    animKey,
+    effectSubtype,
+    linkedMap,
+    color:        document.getElementById('feat-color').value,
     description:  document.getElementById('feat-description').value.trim(),
     autoTrigger:  document.getElementById('feat-auto-trigger').checked,
     cells:        pendingFeatureCells.map(c => [...c]),
@@ -1672,6 +1734,216 @@ function updatePendingCellsDisplay() {
     ? 'No cells selected'
     : pendingFeatureCells.length + ' cell(s) selected — click again to deselect';
 }
+
+// ── Map Objects system ────────────────────────────────────────
+const OBJ_ANIM_DUR = { slow: '4s', normal: '2.5s', fast: '1.2s' };
+
+function renderObjectLayer() {
+  const layer = document.getElementById('object-layer');
+  if (!layer) return;
+  layer.innerHTML = '';
+  mapObjects.forEach(obj => {
+    const x = obj.col * cellSize;
+    const y = obj.row * cellSize;
+    const sz = Math.round(cellSize * (parseFloat(obj.size) || 1.0));
+    const offset = Math.round((cellSize - sz) / 2);
+
+    // Main object div
+    const el = document.createElement('div');
+    el.className = 'builder-obj' + (obj.interactive ? ' obj-interactive' : '');
+    el.dataset.objId = obj.id;
+    el.style.cssText = `left:${x + offset}px;top:${y + offset}px;width:${sz}px;height:${sz}px;` +
+      `font-size:${Math.round(sz * 0.55)}px;border-color:${obj.color || '#fbbf24'};`;
+    el.textContent = obj.iconType === 'tile' ? (obj.tileId || '?') : (obj.emoji || '🪨');
+    el.title = obj.label || 'Object';
+    el.onclick = e => { e.stopPropagation(); openObjectModal(obj.id); };
+    layer.appendChild(el);
+
+    // Slide target marker (B-state ghost)
+    if (obj.clickAction === 'slide' && obj.targetCol != null && obj.targetRow != null) {
+      const tx = obj.targetCol * cellSize + offset;
+      const ty = obj.targetRow * cellSize + offset;
+      const tgt = document.createElement('div');
+      tgt.className = 'builder-obj-target';
+      tgt.style.cssText = `left:${tx}px;top:${ty}px;width:${sz}px;height:${sz}px;` +
+        `border-color:${obj.color || '#fbbf24'};font-size:${Math.round(sz * 0.4)}px;`;
+      tgt.textContent = '↗B';
+      layer.appendChild(tgt);
+    }
+  });
+}
+
+function renderObjectList() {
+  const listEl  = document.getElementById('object-list');
+  const emptyEl = document.getElementById('object-list-empty');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  if (mapObjects.length === 0) {
+    if (emptyEl) emptyEl.style.display = '';
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = 'none';
+  mapObjects.forEach(obj => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem;padding:0.3rem 0.4rem;background:#1f2937;border-radius:4px;border-left:3px solid ' + (obj.color || '#fbbf24') + ';';
+    const icon = document.createElement('span');
+    icon.style.fontSize = '1rem';
+    icon.textContent = obj.iconType === 'tile' ? '🗂' : (obj.emoji || '🪨');
+    const info = document.createElement('span');
+    info.style.cssText = 'flex:1;font-size:0.78rem;color:#e6e6e6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    const animLabel = obj.autoAnim && obj.autoAnim !== 'none' ? ` [${obj.autoAnim}]` : '';
+    info.textContent = (obj.label || 'Object') + ` (${obj.col},${obj.row})` + animLabel;
+    const editBtn = document.createElement('button');
+    editBtn.textContent = '✏️';
+    editBtn.title = 'Edit';
+    editBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0 0.2rem;';
+    editBtn.onclick = () => openObjectModal(obj.id);
+    const delBtn = document.createElement('button');
+    delBtn.textContent = '🗑';
+    delBtn.title = 'Delete';
+    delBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:0.9rem;padding:0 0.2rem;';
+    delBtn.onclick = () => { mapObjects = mapObjects.filter(o => o.id !== obj.id); renderObjectList(); renderObjectLayer(); };
+    row.appendChild(icon);
+    row.appendChild(info);
+    row.appendChild(editBtn);
+    row.appendChild(delBtn);
+    listEl.appendChild(row);
+  });
+}
+
+function _updateObjModalUI() {
+  const iconType    = document.querySelector('input[name="obj-icon-type"]:checked')?.value || 'emoji';
+  const autoAnim    = document.getElementById('obj-auto-anim').value;
+  const interactive = document.getElementById('obj-interactive').checked;
+  const action      = document.getElementById('obj-click-action').value;
+  document.getElementById('obj-emoji-opts').style.display    = iconType === 'emoji' ? '' : 'none';
+  document.getElementById('obj-tile-opts').style.display     = iconType === 'tile'  ? '' : 'none';
+  document.getElementById('obj-anim-speed-row').style.display = autoAnim !== 'none' ? '' : 'none';
+  document.getElementById('obj-interactive-opts').style.display = interactive ? '' : 'none';
+  if (interactive) {
+    document.getElementById('obj-rotate-opts').style.display = action === 'rotate' ? '' : 'none';
+    document.getElementById('obj-slide-opts').style.display  = action === 'slide'  ? '' : 'none';
+  }
+}
+
+function _populateObjTileDropdown() {
+  const sel = document.getElementById('obj-tile-id');
+  if (!sel) return;
+  // Reuse TILES list from builder
+  sel.innerHTML = (typeof TILES !== 'undefined' ? TILES : []).map(t => `<option value="${t.id}">${t.id}</option>`).join('');
+}
+
+function openObjectModal(editId) {
+  editingObjectId = editId || null;
+  const modal   = document.getElementById('object-modal');
+  const titleEl = document.getElementById('object-modal-title');
+  const statusEl = document.getElementById('obj-status');
+  statusEl.textContent = '';
+  _populateObjTileDropdown();
+  if (editId) {
+    const obj = mapObjects.find(o => o.id === editId);
+    if (!obj) return;
+    titleEl.textContent = 'Edit Object';
+    document.getElementById('obj-cell-info').textContent = `Cell (${obj.col}, ${obj.row})`;
+    document.getElementById('obj-label').value           = obj.label || '';
+    document.getElementById('obj-emoji').value           = obj.emoji || '🪨';
+    document.getElementById('obj-color').value           = obj.color || '#fbbf24';
+    document.getElementById('obj-size').value            = String(obj.size || '1.0');
+    document.getElementById('obj-auto-anim').value       = obj.autoAnim || 'none';
+    document.getElementById('obj-anim-speed').value      = obj.animSpeed || 'normal';
+    document.getElementById('obj-interactive').checked   = !!obj.interactive;
+    document.getElementById('obj-interact-by').value     = obj.interactBy || 'both';
+    document.getElementById('obj-click-action').value    = obj.clickAction || 'rotate';
+    document.getElementById('obj-rotate-deg').value      = String(obj.rotateDeg || 90);
+    document.getElementById('obj-target-col').value      = obj.targetCol != null ? obj.targetCol : '';
+    document.getElementById('obj-target-row').value      = obj.targetRow != null ? obj.targetRow : '';
+    document.getElementById('obj-can-reset').value       = obj.canReset === false ? 'false' : 'true';
+    document.getElementById('obj-blocks-movement').checked = !!obj.blocksMovement;
+    // Radio button
+    const iconType = obj.iconType || 'emoji';
+    document.querySelectorAll('input[name="obj-icon-type"]').forEach(r => { r.checked = (r.value === iconType); });
+    if (iconType === 'tile' && obj.tileId) document.getElementById('obj-tile-id').value = obj.tileId;
+  } else {
+    titleEl.textContent = 'Place Object';
+    document.getElementById('obj-cell-info').textContent = `Cell (${_pendingObjCol}, ${_pendingObjRow})`;
+    document.getElementById('obj-label').value           = '';
+    document.getElementById('obj-emoji').value           = '🪨';
+    document.getElementById('obj-color').value           = '#fbbf24';
+    document.getElementById('obj-size').value            = '1.0';
+    document.getElementById('obj-auto-anim').value       = 'none';
+    document.getElementById('obj-anim-speed').value      = 'normal';
+    document.getElementById('obj-interactive').checked   = false;
+    document.getElementById('obj-interact-by').value     = 'both';
+    document.getElementById('obj-click-action').value    = 'rotate';
+    document.getElementById('obj-rotate-deg').value      = '90';
+    document.getElementById('obj-target-col').value      = '';
+    document.getElementById('obj-target-row').value      = '';
+    document.getElementById('obj-can-reset').value       = 'true';
+    document.getElementById('obj-blocks-movement').checked = false;
+    document.querySelectorAll('input[name="obj-icon-type"]').forEach(r => { r.checked = (r.value === 'emoji'); });
+  }
+  _updateObjModalUI();
+  modal.classList.remove('hidden');
+}
+
+// Wire object modal UI event listeners
+['obj-auto-anim', 'obj-click-action', 'obj-interactive'].forEach(id => {
+  document.getElementById(id)?.addEventListener('change', _updateObjModalUI);
+});
+document.querySelectorAll('input[name="obj-icon-type"]').forEach(r => r.addEventListener('change', _updateObjModalUI));
+document.getElementById('obj-interactive').addEventListener('change', _updateObjModalUI);
+
+document.getElementById('obj-cancel-btn').addEventListener('click', () => {
+  document.getElementById('object-modal').classList.add('hidden');
+  editingObjectId = null;
+});
+
+// "Pick on Map" target cell: temporarily dismiss modal, wait for next cell click
+document.getElementById('obj-pick-target-btn').addEventListener('click', () => {
+  _pickingTargetForObj = true;
+  document.getElementById('object-modal').classList.add('hidden');
+});
+
+document.getElementById('obj-save-btn').addEventListener('click', () => {
+  const statusEl  = document.getElementById('obj-status');
+  const iconType  = document.querySelector('input[name="obj-icon-type"]:checked')?.value || 'emoji';
+  const interactive = document.getElementById('obj-interactive').checked;
+  const clickAction = document.getElementById('obj-click-action').value;
+  const obj = {
+    id:              editingObjectId || ('obj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
+    col:             editingObjectId ? mapObjects.find(o => o.id === editingObjectId)?.col : _pendingObjCol,
+    row:             editingObjectId ? mapObjects.find(o => o.id === editingObjectId)?.row : _pendingObjRow,
+    label:           document.getElementById('obj-label').value.trim(),
+    iconType,
+    emoji:           iconType === 'emoji' ? (document.getElementById('obj-emoji').value || '🪨') : undefined,
+    tileId:          iconType === 'tile'  ? (document.getElementById('obj-tile-id').value || undefined) : undefined,
+    color:           document.getElementById('obj-color').value,
+    size:            parseFloat(document.getElementById('obj-size').value) || 1.0,
+    autoAnim:        document.getElementById('obj-auto-anim').value,
+    animSpeed:       document.getElementById('obj-anim-speed').value,
+    interactive,
+    interactBy:      interactive ? document.getElementById('obj-interact-by').value : undefined,
+    clickAction:     interactive ? clickAction : undefined,
+    rotateDeg:       (interactive && clickAction === 'rotate') ? parseInt(document.getElementById('obj-rotate-deg').value, 10) : undefined,
+    targetCol:       (interactive && clickAction === 'slide')  ? (parseInt(document.getElementById('obj-target-col').value, 10) || 0) : undefined,
+    targetRow:       (interactive && clickAction === 'slide')  ? (parseInt(document.getElementById('obj-target-row').value, 10) || 0) : undefined,
+    canReset:        interactive ? (document.getElementById('obj-can-reset').value !== 'false') : undefined,
+    blocksMovement:  document.getElementById('obj-blocks-movement').checked,
+  };
+  if (editingObjectId) {
+    const idx = mapObjects.findIndex(o => o.id === editingObjectId);
+    if (idx !== -1) mapObjects[idx] = obj;
+  } else {
+    mapObjects.push(obj);
+  }
+  editingObjectId = null;
+  document.getElementById('object-modal').classList.add('hidden');
+  renderObjectList();
+  renderObjectLayer();
+});
+
+let _pendingObjCol = 0;
+let _pendingObjRow = 0;
 
 function renderBg() {
   bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
@@ -1884,6 +2156,22 @@ cursorCanvas.addEventListener('mousedown', e => {
     }
     updatePendingCellsDisplay();
     renderFeatures();
+  } else if (activeTool === 'object') {
+    // Picking a target (B) cell for a slide action
+    if (_pickingTargetForObj) {
+      _pickingTargetForObj = false;
+      document.getElementById('obj-target-col').value = col;
+      document.getElementById('obj-target-row').value = row;
+      document.getElementById('object-modal').classList.remove('hidden');
+      return;
+    }
+    // Check if clicking an existing object (open edit)
+    const existing = mapObjects.find(o => o.col === col && o.row === row);
+    if (existing) { openObjectModal(existing.id); return; }
+    // New object placement
+    _pendingObjCol = col;
+    _pendingObjRow = row;
+    openObjectModal(null);
   }
 });
 
@@ -2216,15 +2504,14 @@ document.querySelectorAll('.tool-btn').forEach(btn => {
     document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
 
-    document.getElementById('tile-palette-section').style.display =
-      ['paint','erase','fill'].includes(activeTool) ? '' : 'none';
     document.getElementById('token-options').style.display    = activeTool === 'token'   ? '' : 'none';
     document.getElementById('label-options').style.display    = activeTool === 'label'   ? '' : 'none';
     document.getElementById('image-options').style.display    = activeTool === 'image'   ? '' : 'none';
     document.getElementById('feature-options').style.display  = activeTool === 'feature' ? '' : 'none';
-    // Erase doesn't need palette
+    document.getElementById('object-options').style.display   = activeTool === 'object'  ? '' : 'none';
+    // Tile palette only for paint/fill
     document.getElementById('tile-palette-section').style.display =
-      ['paint','fill'].includes(activeTool) ? '' : (activeTool === 'erase' ? 'none' : 'none');
+      ['paint','fill'].includes(activeTool) ? '' : 'none';
   });
 });
 
@@ -2533,7 +2820,7 @@ document.getElementById('save-confirm-btn').addEventListener('click', async () =
       body: JSON.stringify({
         dataUrl,
         filename: safeName,
-        state: { cols, rows, cellSize, tileMap, tokens, labels, bgImage, fogEnabled, fogGrid: fogBuilderGrid, features },
+        state: { cols, rows, cellSize, tileMap, tokens, labels, bgImage, fogEnabled, fogGrid: fogBuilderGrid, features, objects: mapObjects },
       }),
     });
     const json = await r.json();
@@ -2603,6 +2890,7 @@ function loadMapState(state) {
   tokens    = state.tokens || [];
   labels    = state.labels || [];
   features  = state.features || [];
+  mapObjects = state.objects || [];
   undoStack = [];
 
   // Background image
@@ -2635,6 +2923,8 @@ function loadMapState(state) {
   // Resize canvases and redraw everything
   applySize();
   renderFeatureList();
+  renderObjectList();
+  renderObjectLayer();
 }
 
 // ── Open Modal tab switching ──────────────────────────────────

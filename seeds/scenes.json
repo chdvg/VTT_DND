@@ -210,6 +210,45 @@
         "image": "/assets/maps/Guantlet.png",
         "audio": null,
         "fog": true
+      },
+      {
+        "id": "custom-1777983980183-view-0",
+        "label": "looking_around",
+        "image": "/assets/maps/looking_around.png",
+        "fog": false
+      },
+      {
+        "id": "custom-1777984048317-view-0",
+        "label": "looking_around",
+        "image": "/assets/maps/old_owl_well_daytime_a2_builder.png",
+        "fog": false
+      }
+    ]
+  },
+  {
+    "id": "new_old_owl_well-in-the-woods-1777983484934",
+    "tab": "new_old_owl_well",
+    "label": "in the woods",
+    "views": [
+      {
+        "id": "new_old_owl_well-in-the-woods-1777983484934-view-0",
+        "label": "thewell",
+        "image": "/assets/maps/old_owl_well_daytime_a2_builder.png",
+        "audio": null,
+        "fog": false
+      }
+    ]
+  },
+  {
+    "id": "new_old_owl_well-1777984397518",
+    "label": "new_old_owl_well",
+    "tab": "new_old_owl_well",
+    "views": [
+      {
+        "id": "new_old_owl_well-1777984397518-view-0",
+        "label": "thewell",
+        "image": "/assets/maps/looking_around.png",
+        "fog": true
       }
     ]
   }

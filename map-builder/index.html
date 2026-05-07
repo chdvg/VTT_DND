@@ -47,6 +47,7 @@
         <button class="tool-btn"        data-tool="label"  title="Add Label">🔤 Label</button>
         <button class="tool-btn"        data-tool="image"   title="Place BG Image">🖼 Image</button>
         <button class="tool-btn"        data-tool="feature" title="Add Map Feature">🎯 Feature</button>
+        <button class="tool-btn"        data-tool="object"  title="Place Interactive Object">🔧 Object</button>
       </div>
     </div>
 
@@ -137,6 +138,16 @@
       </div>
     </div>
 
+    <div class="sidebar-section" id="object-options" style="display:none;">
+      <div class="sidebar-title">Map Objects</div>
+      <p class="hint">Click a cell to place an interactive object (lever, boulder, door, statue…)</p>
+      <div style="border-top:1px solid #21262d;padding-top:0.5rem;margin-top:0.25rem;">
+        <div style="font-size:0.75rem;color:#9ca3af;margin-bottom:0.4rem;">Placed Objects:</div>
+        <div id="object-list"></div>
+        <div id="object-list-empty" style="font-size:0.75rem;color:#555;font-style:italic;">No objects yet.</div>
+      </div>
+    </div>
+
     <div class="sidebar-section" id="image-options" style="display:none;">
       <div class="sidebar-title">Background Image</div>
       <p class="hint">Pick from your maps folder:</p>
@@ -160,8 +171,7 @@
         <canvas id="feature-canvas" style="pointer-events:none;"></canvas>
         <canvas id="grid-canvas"></canvas>
         <canvas id="cursor-canvas"></canvas>
-        <div id="fog-layer"></div>
-      </div>
+        <div id="fog-layer"></div>        <div id="object-layer" style="pointer-events:none;"></div>      </div>
     </div>
     <div id="coords">0, 0</div>
   </main>
@@ -197,6 +207,112 @@
   </div>
 </div>
 
+<!-- Object Editor dialog -->
+<div id="object-modal" class="modal hidden">
+  <div class="modal-box">
+    <h2 id="object-modal-title">Place Object</h2>
+    <div id="obj-cell-info" style="font-size:0.78rem;color:#9ca3af;margin-bottom:0.5rem;"></div>
+    <label>Label / Name <input type="text" id="obj-label" placeholder="e.g. Spinning Blade" /></label>
+    <!-- Icon -->
+    <div style="margin-top:0.5rem;">
+      <div style="font-size:0.82rem;color:#9ca3af;margin-bottom:0.3rem;">Icon</div>
+      <div style="display:flex;gap:0.75rem;align-items:center;">
+        <label style="margin:0;font-size:0.85rem;"><input type="radio" name="obj-icon-type" value="emoji" checked /> Emoji</label>
+        <label style="margin:0;font-size:0.85rem;"><input type="radio" name="obj-icon-type" value="tile"  /> Tile ID</label>
+      </div>
+      <div id="obj-emoji-opts" style="margin-top:0.4rem;">
+        <input type="text" id="obj-emoji" value="🪨" maxlength="4" style="width:5rem;font-size:1.3rem;text-align:center;" />
+        <span style="font-size:0.72rem;color:#6b7280;"> ← paste any emoji</span>
+      </div>
+      <div id="obj-tile-opts" style="display:none;margin-top:0.4rem;">
+        <input type="text" id="obj-tile-id" placeholder="e.g. chest, door, well" style="width:100%;" />
+      </div>
+    </div>
+    <label style="margin-top:0.5rem;">Accent Color <input type="color" id="obj-color" value="#fbbf24" /></label>
+    <label style="margin-top:0.5rem;">Size
+      <select id="obj-size">
+        <option value="0.5">Small (½ cell)</option>
+        <option value="0.75">Medium (¾ cell)</option>
+        <option value="1.0" selected>Full cell</option>
+        <option value="1.3">Large (1.3×)</option>
+      </select>
+    </label>
+    <!-- Auto-animation -->
+    <label style="margin-top:0.5rem;">Auto Animation
+      <select id="obj-auto-anim">
+        <option value="none">None</option>
+        <option value="spin">🔄 Continuous Spin</option>
+        <option value="sway-h">↔️ Sway left-right</option>
+        <option value="sway-v">↕️ Sway up-down</option>
+        <option value="float">🌊 Float</option>
+      </select>
+    </label>
+    <div id="obj-anim-speed-row" style="display:none;margin-top:0.4rem;">
+      <label>Speed
+        <select id="obj-anim-speed">
+          <option value="slow">Slow</option>
+          <option value="normal" selected>Normal</option>
+          <option value="fast">Fast</option>
+        </select>
+      </label>
+    </div>
+    <!-- Click interaction -->
+    <label style="margin-top:0.6rem;display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.85rem;">
+      <input type="checkbox" id="obj-interactive" />
+      <span>👆 Clickable / Interactable</span>
+    </label>
+    <div id="obj-interactive-opts" style="display:none;margin-top:0.4rem;">
+      <label>Who can interact
+        <select id="obj-interact-by">
+          <option value="both">DM and Players</option>
+          <option value="players">Players only</option>
+          <option value="dm">DM only</option>
+        </select>
+      </label>
+      <label style="margin-top:0.4rem;">Click Action
+        <select id="obj-click-action">
+          <option value="rotate">🔄 Rotate</option>
+          <option value="slide">↗️ Slide to position</option>
+        </select>
+      </label>
+      <div id="obj-rotate-opts" style="margin-top:0.4rem;">
+        <label>Rotate by
+          <select id="obj-rotate-deg">
+            <option value="90">90°</option>
+            <option value="180">180°</option>
+            <option value="270">270°</option>
+          </select>
+        </label>
+      </div>
+      <div id="obj-slide-opts" style="display:none;margin-top:0.4rem;">
+        <div style="font-size:0.8rem;color:#9ca3af;margin-bottom:0.3rem;">Target cell (B position):</div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+          <label style="margin:0;">Col <input type="number" id="obj-target-col" min="0" style="width:4rem;" /></label>
+          <label style="margin:0;">Row <input type="number" id="obj-target-row" min="0" style="width:4rem;" /></label>
+          <button class="btn btn-secondary btn-small" id="obj-pick-target-btn">Pick on Map</button>
+        </div>
+        <div style="font-size:0.72rem;color:#6b7280;margin-top:0.2rem;">Hover a cell to see its Col, Row in the bottom coords display.</div>
+      </div>
+      <label style="margin-top:0.4rem;">After triggered
+        <select id="obj-can-reset">
+          <option value="true">↩ Toggle A↔B</option>
+          <option value="false">One-way (DM resets manually)</option>
+        </select>
+      </label>
+    </div>
+    <!-- Collision -->
+    <label style="margin-top:0.6rem;display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.85rem;">
+      <input type="checkbox" id="obj-blocks-movement" />
+      <span>🚫 Block token movement (collision)</span>
+    </label>
+    <div class="btn-row" style="margin-top:1rem;">
+      <button class="btn btn-primary"   id="obj-save-btn">Save Object</button>
+      <button class="btn btn-secondary" id="obj-cancel-btn">Cancel</button>
+    </div>
+    <div id="obj-status" style="margin-top:0.4rem;font-size:0.83rem;"></div>
+  </div>
+</div>
+
 <!-- Feature Editor dialog -->
 <div id="feature-modal" class="modal hidden">
   <div class="modal-box">
@@ -211,15 +327,28 @@
         <option value="effect">✨ Effect — visual effect</option>
       </select>
     </label>
-    <label style="margin-top:0.5rem;">Animation
-      <select id="feat-animation">
-        <option value="shake-reveal">Shake &amp; Reveal</option>
-        <option value="flash-red">Red Flash</option>
-        <option value="pulse-gold">Gold Pulse</option>
-        <option value="fade-in">Fade In</option>
-        <option value="flash-white">White Flash</option>
-      </select>
-    </label>
+    <!-- Effect subtype — shown only when type = effect -->
+    <div id="feat-effect-opts" style="display:none;margin-top:0.5rem;">
+      <label>Effect Style
+        <select id="feat-effect-subtype" style="width:100%;background:#1f2937;color:#f3f4f6;border:1px solid #374151;border-radius:4px;padding:0.35rem;margin-top:0.2rem;">
+          <option value="fire">🔥 Fire</option>
+          <option value="sparks">✨ Sparks</option>
+          <option value="explosion">💥 Explosion (one-shot)</option>
+          <option value="aura">🌟 Aura (persistent glow)</option>
+        </select>
+      </label>
+    </div>
+    <!-- Puzzle linked map — shown only when type = puzzle -->
+    <div id="feat-puzzle-opts" style="display:none;margin-top:0.5rem;">
+      <label>Linked Sub-map
+        <select id="feat-linked-map" style="width:100%;background:#1f2937;color:#f3f4f6;border:1px solid #374151;border-radius:4px;padding:0.35rem;margin-top:0.2rem;">
+          <option value="">(none)</option>
+        </select>
+      </label>
+      <div style="font-size:0.74rem;color:#6b7280;margin-top:0.2rem;">Players can tap triggered cells to view this sub-map.</div>
+    </div>
+    <!-- Hidden — animation derived from type at save time for backward compat -->
+    <input type="hidden" id="feat-animation" value="fade-in" />
     <label style="margin-top:0.5rem;">Overlay Color <input type="color" id="feat-color" value="#7c2d12" /></label>
     <label style="margin-top:0.5rem;">Description (shown to DM)
       <textarea id="feat-description" rows="2" placeholder="Optional flavour text…" style="width:100%;background:#0d1117;color:#e6e6e6;border:1px solid #374151;border-radius:4px;padding:0.4rem;font-size:0.85rem;resize:vertical;"></textarea>

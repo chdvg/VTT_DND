@@ -56,6 +56,11 @@ var dmMapFeatures   = [];   // feature definitions for current map
 var dmMapMeta       = null; // { cols, rows } for current map
 var dmTriggeredFeat = {};   // { featureId: true } — which features are triggered
 
+// Moveable objects (DM-side)
+var dmObjects      = [];   // object definitions for current map
+var dmObjStates    = {};   // objId -> { activated, currentCol, currentRow, currentRotation }
+var _dmObjDragging = null; // { objId, startX, startY, startCol, startRow } during drag
+
 // Combat targeting state (DM-side)
 var dmTargets = {};  // playerName -> targetLabel
 var gridEnabled = false; // DM-toggled grid overlay
@@ -285,14 +290,19 @@ function restoreDmState(msg) {
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (state) {
           var mapFeatures = (state && Array.isArray(state.features)) ? state.features : [];
+          var mapObjects_ = (state && Array.isArray(state.objects)) ? state.objects : [];
           var mapMeta = state ? { cols: state.cols, rows: state.rows } : null;
           dmMapFeatures = mapFeatures;
           dmMapMeta     = mapMeta;
           dmTriggeredFeat = {};
-          // Re-push features to server so it has them for broadcasts and auto-trigger
+          dmObjects = mapObjects_;
+          dmObjStates = {};
+          // Re-push features + objects to server so it has them for broadcasts
           wsSend({ action: 'update-features', features: mapFeatures, mapKey: mapKey, mapMeta: mapMeta });
+          wsSend({ action: 'update-objects', objects: mapObjects_ });
           renderFeatureControls(mapKey, mapFeatures, mapMeta);
           updateDmFeatureOverlay();
+          renderDmObjectLayer();
         })
         .catch(function () {});
     }
@@ -415,6 +425,19 @@ function connectWebSocket() {
       }
       return;
     }
+    if (msg.type === 'UPDATE_OBJECTS') {
+      dmObjects    = Array.isArray(msg.objects) ? msg.objects : [];
+      dmObjStates  = (msg.objectStates && typeof msg.objectStates === 'object') ? msg.objectStates : {};
+      renderDmObjectLayer();
+      return;
+    }
+    if (msg.type === 'OBJECT_STATE_CHANGE') {
+      if (msg.objId && msg.state) {
+        dmObjStates[msg.objId] = msg.state;
+        renderDmObjectLayer();
+      }
+      return;
+    }
   };
   ws.onclose = function () {
     statusDot.classList.remove('on');
@@ -477,6 +500,8 @@ document.getElementById('reset-map-btn').addEventListener('click', function () {
   dmMapFeatures   = [];    // clear feature overlay state
   dmMapMeta       = null;
   dmTriggeredFeat = {};
+  dmObjects       = [];
+  dmObjStates     = {};
   // Collapse the map control panel
   var mapControlGrid  = document.getElementById('map-control-grid');
   var mapControlTitle = document.getElementById('map-control-title');
@@ -1022,16 +1047,20 @@ function showSceneView(sceneIdx, viewIdx) {
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (state) {
         var mapFeatures = (state && Array.isArray(state.features)) ? state.features : [];
+        var mapObjs_  = (state && Array.isArray(state.objects)) ? state.objects : [];
         var mapMeta = state ? { cols: state.cols, rows: state.rows } : null;
         // Store on DM side so feature overlay can show cell positions
         dmMapFeatures   = mapFeatures;
         dmMapMeta       = mapMeta;
         dmTriggeredFeat = {};
-        // Push feature definitions to server so reconnecting players receive them
-        // Always send even if empty so server gets mapMeta for auto-trigger coord conversion
+        dmObjects   = mapObjs_;
+        dmObjStates = {};
+        // Push feature definitions + objects to server so reconnecting players receive them
         wsSend({ action: 'update-features', features: mapFeatures, mapKey: fogKey, mapMeta: mapMeta });
+        wsSend({ action: 'update-objects', objects: mapObjs_ });
         renderFeatureControls(fogKey, mapFeatures, mapMeta);
         updateDmFeatureOverlay();
+        renderDmObjectLayer();
       })
       .catch(function () { /* no state file — map may not be from builder */ });
   }
@@ -1349,7 +1378,7 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
     var card = document.createElement('div');
     card.id = 'feat-card-' + feat.id;
     card.style.cssText = 'background:#1f2937;border-radius:5px;padding:0.4rem 0.6rem;' +
-      'border-left:3px solid ' + (feat.color || '#c0392b') + ';min-width:160px;max-width:220px;flex:1;';
+      'border-left:3px solid ' + (feat.color || '#c0392b') + ';min-width:160px;flex:1 1 160px;';
 
     var nameEl = document.createElement('div');
     nameEl.style.cssText = 'font-size:0.82rem;font-weight:bold;color:#e6e6e6;margin-bottom:0.25rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
@@ -1359,7 +1388,15 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
 
     var animEl = document.createElement('div');
     animEl.style.cssText = 'font-size:0.72rem;color:#6b7280;margin-bottom:0.35rem;';
-    animEl.textContent = (ANIM_LABELS[feat.animation] || feat.animation) + ' • ' + (feat.cells || []).length + ' cells';
+    // Show type-specific info instead of raw animation key
+    var typeInfoMap = {
+      pit: '⬛ Pit opens', trap: '💥 Trap springs', puzzle: '🧩 Puzzle',
+      reveal: '👁 Area revealed', effect: '✨ Effect'
+    };
+    var typeInfo = typeInfoMap[feat.type] || feat.type || '';
+    if (feat.type === 'effect' && feat.effectSubtype) typeInfo += ' — ' + feat.effectSubtype;
+    if (feat.type === 'puzzle' && feat.linkedMap) typeInfo += ' — has sub-map';
+    animEl.textContent = typeInfo + ' • ' + (feat.cells || []).length + ' cells';
     card.appendChild(animEl);
 
     if (feat.autoTrigger) {
@@ -1370,12 +1407,12 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
     }
 
     var btnRow = document.createElement('div');
-    btnRow.style.cssText = 'display:flex;gap:0.3rem;';
+    btnRow.style.cssText = 'display:flex;gap:0.3rem;flex-wrap:wrap;';
 
     var trigBtn = document.createElement('button');
     trigBtn.className = 'btn btn-small btn-danger';
     trigBtn.textContent = '⚡ Trigger';
-    trigBtn.style.cssText += 'flex:1;font-size:0.78rem;white-space:nowrap;';
+    trigBtn.style.cssText += 'flex:1 1 100%;font-size:0.78rem;white-space:nowrap;';
     // Apply initial state from tracked triggered set (e.g. after auto-trigger or page restore)
     var alreadyTriggered = !!dmTriggeredFeat[feat.id];
     if (alreadyTriggered) {
@@ -1400,7 +1437,7 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
     resetBtn.className = 'btn btn-small btn-secondary';
     resetBtn.textContent = '↩ Reset';
     resetBtn.disabled = !alreadyTriggered;
-    resetBtn.style.cssText += 'flex:none;font-size:0.78rem;opacity:' + (alreadyTriggered ? '1' : '0.4') + ';';
+    resetBtn.style.cssText += 'flex:1;font-size:0.78rem;opacity:' + (alreadyTriggered ? '1' : '0.4') + ';';
     resetBtn.onclick = function () {
       delete triggeredSet[feat.id];
       delete dmTriggeredFeat[feat.id];
@@ -1413,6 +1450,19 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
       updateDmFeatureOverlay();
     };
     btnRow.appendChild(resetBtn);
+
+    // Puzzle: open sub-map lightbox
+    if (feat.type === 'puzzle' && feat.linkedMap) {
+      var subMapBtn = document.createElement('button');
+      subMapBtn.className = 'btn btn-small btn-secondary';
+      subMapBtn.textContent = '\ud83d\uddfa Sub-map';
+      subMapBtn.style.cssText = 'flex:1;font-size:0.75rem;white-space:nowrap;';
+      (function (f) {
+        subMapBtn.onclick = function () { openDmSubMapLightbox(f); };
+      }(feat));
+      btnRow.appendChild(subMapBtn);
+    }
+
     card.appendChild(btnRow);
     grid.appendChild(card);
   });
@@ -1586,9 +1636,16 @@ function renderFogControls(mapUrl, fogKey) {
   fogFeatOverlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:4;';
   mapWrap.appendChild(fogFeatOverlay);
 
+  // Object layer on fog map
+  var fogObjLayer = document.createElement('div');
+  fogObjLayer.className = 'dm-obj-layer';
+  fogObjLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:6;';
+  mapWrap.appendChild(fogObjLayer);
+
   container.appendChild(mapWrap);
   updateFogTokenOverlay();
   updateDmFeatureOverlay();
+  renderDmObjectLayer();
 }
 
 function sendFogUpdate(fogKey) {
@@ -1670,28 +1727,146 @@ function makeConditionShadow(tok) {
 // Refresh all .dm-feat-overlay divs (on fog map and token map) to show
 // feature cell outlines and triggered fills for the DM.
 function updateDmFeatureOverlay() {
+  var TYPE_COLORS = { pit: '#1a0a00', trap: '#7f1d1d', puzzle: '#1e3a5f', reveal: '#14532d', effect: '#7c2d12' };
+  var TYPE_ANIM   = { pit: 'dm-feat-pit', trap: 'dm-feat-trap', puzzle: 'dm-feat-puzzle', effect: 'dm-feat-effect' };
   document.querySelectorAll('.dm-feat-overlay').forEach(function (overlay) {
     overlay.innerHTML = '';
     if (!dmMapFeatures.length || !dmMapMeta) return;
     var cols = dmMapMeta.cols, rows = dmMapMeta.rows;
     if (!cols || !rows) return;
     dmMapFeatures.forEach(function (feat) {
+      var defaultColor = TYPE_COLORS[feat.type] || '#7f1d1d';
+      var isTriggered  = !!dmTriggeredFeat[feat.id];
       (feat.cells || []).forEach(function (cell) {
         var r = cell[0], c = cell[1];
-        var isTriggered = !!dmTriggeredFeat[feat.id];
         var cd = document.createElement('div');
         cd.dataset.featId = feat.id;
+        if (isTriggered && TYPE_ANIM[feat.type]) cd.classList.add(TYPE_ANIM[feat.type] + '-triggered');
         cd.style.cssText = 'position:absolute;box-sizing:border-box;pointer-events:none;' +
           'left:' + (c / cols * 100) + '%;top:' + (r / rows * 100) + '%;' +
           'width:' + (100 / cols) + '%;height:' + (100 / rows) + '%;' +
-          'background:' + (isTriggered ? (feat.color || '#7f1d1d') : 'transparent') + ';' +
-          'border:1px dashed ' + (feat.color || '#7f1d1d') + ';' +
-          'opacity:' + (isTriggered ? '0.7' : '0.4') + ';' +
+          'background:' + (isTriggered ? (feat.color || defaultColor) : 'transparent') + ';' +
+          'border:1px dashed ' + (feat.color || defaultColor) + ';' +
+          'opacity:' + (isTriggered ? '0.75' : '0.4') + ';' +
           'transition:background 0.3s,opacity 0.3s;';
         overlay.appendChild(cd);
       });
     });
   });
+}
+
+// ── DM puzzle sub-map lightbox ────────────────────────────────
+function openDmSubMapLightbox(feat) {
+  var lb = document.getElementById('dm-submap-lightbox');
+  if (!lb) {
+    lb = document.createElement('div');
+    lb.id = 'dm-submap-lightbox';
+    lb.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.93);z-index:9999;' +
+      'display:flex;align-items:center;justify-content:center;flex-direction:column;gap:0.75rem;';
+    document.body.appendChild(lb);
+  }
+  lb.innerHTML = '';
+  lb.style.display = 'flex';
+  var title = document.createElement('div');
+  title.textContent = '\ud83d\uddfa\ufe0f ' + escHtml(feat.name || 'Sub-map');
+  title.style.cssText = 'color:#e6e6e6;font-size:1.1rem;font-weight:bold;';
+  lb.appendChild(title);
+  var img = document.createElement('img');
+  img.src = feat.linkedMap;
+  img.style.cssText = 'max-width:85vw;max-height:78vh;object-fit:contain;border-radius:4px;' +
+    'box-shadow:0 0 30px rgba(99,179,237,0.4);';
+  lb.appendChild(img);
+  var closeBtn = document.createElement('button');
+  closeBtn.className = 'btn btn-secondary';
+  closeBtn.textContent = '\u2715 Close';
+  closeBtn.onclick = function () { lb.style.display = 'none'; };
+  lb.appendChild(closeBtn);
+}
+
+// ── DM Moveable Object Layer ──────────────────────────────────
+function renderDmObjectLayer() {
+  document.querySelectorAll('.dm-obj-layer').forEach(function (layer) {
+    layer.innerHTML = '';
+    if (!dmObjects.length || !dmMapMeta) return;
+    var cols = dmMapMeta.cols, rows = dmMapMeta.rows;
+    if (!cols || !rows) return;
+    var SPEED = { slow: '4s', normal: '2.5s', fast: '1.2s' };
+    var isFogLayer = layer.parentElement && layer.parentElement.id && layer.parentElement.id.indexOf('fog') >= 0;
+    dmObjects.forEach(function (obj) {
+      var st = dmObjStates[obj.id] || { activated: false, currentCol: obj.col, currentRow: obj.row, currentRotation: 0 };
+      var size = parseFloat(obj.size) || 1.0;
+      var el = document.createElement('div');
+      el.className = 'dm-obj-cell' + (obj.interactive ? ' dm-obj-interactive' : '') + (st.activated ? ' dm-obj-activated' : '');
+      el.dataset.objId = obj.id;
+      el.style.cssText =
+        'left:' + ((st.currentCol + (1 - size) / 2) / cols * 100) + '%;' +
+        'top:' + ((st.currentRow + (1 - size) / 2) / rows * 100) + '%;' +
+        'width:' + (size / cols * 100) + '%;' +
+        'height:' + (size / rows * 100) + '%;' +
+        'transform:rotate(' + (st.currentRotation || 0) + 'deg);' +
+        'border-color:' + (obj.color || '#fbbf24') + ';';
+      // Drag indicator
+      var drag = document.createElement('span');
+      drag.className = 'dm-obj-drag';
+      drag.textContent = '⠿';
+      el.appendChild(drag);
+      // Icon
+      var iconEl = document.createElement('div');
+      iconEl.className = 'obj-icon' + (obj.autoAnim && obj.autoAnim !== 'none' ? ' anim-' + obj.autoAnim : '');
+      if (obj.autoAnim && obj.autoAnim !== 'none') {
+        iconEl.style.setProperty('--obj-dur', SPEED[obj.animSpeed] || '2.5s');
+      }
+      if (obj.iconType === 'tile' && obj.tileId) {
+        iconEl.style.cssText = 'width:80%;height:80%;background-size:cover;background-position:center;' +
+          'background-image:url(/assets/Tiles/' + encodeURIComponent(obj.tileId) + ');';
+      } else {
+        iconEl.style.cssText = 'font-size:1.1em;line-height:1;';
+        iconEl.textContent = obj.emoji || '\uD83D\uDD27';
+      }
+      el.appendChild(iconEl);
+      // Click to interact (token map layer only, not fog layer)
+      // Keep layer pointer-events:none so fog/token clicks pass through empty cells;
+      // individual object elements opt-in with pointer-events:auto.
+      if (!isFogLayer) {
+        el.style.pointerEvents = 'auto';
+        (function (oId, stSnap) {
+          el.onclick = function (e) {
+            e.stopPropagation();
+            wsSend({ action: 'interact-object', objId: oId });
+          };
+          // Drag to move — track on document so pointer-events:none layer doesn't block
+          el.addEventListener('mousedown', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            _dmObjDragging = { objId: oId, lastCol: stSnap.currentCol, lastRow: stSnap.currentRow, layer: layer, cols: cols, rows: rows };
+          });
+        }(obj.id, st));
+      }
+      layer.appendChild(el);
+    });
+    // Ensure layer itself never swallows events (only individual elements do)
+    layer.style.pointerEvents = 'none';
+  });
+
+  // Document-level drag handlers (attached once, guard with _dmObjDragging)
+  if (!renderDmObjectLayer._docDragBound) {
+    renderDmObjectLayer._docDragBound = true;
+    document.addEventListener('mousemove', function (e) {
+      if (!_dmObjDragging) return;
+      var lay = _dmObjDragging.layer;
+      var rect = lay.getBoundingClientRect();
+      var px = (e.clientX - rect.left) / rect.width;
+      var py = (e.clientY - rect.top) / rect.height;
+      var c = Math.max(0, Math.min(_dmObjDragging.cols - 1, Math.floor(px * _dmObjDragging.cols)));
+      var r = Math.max(0, Math.min(_dmObjDragging.rows - 1, Math.floor(py * _dmObjDragging.rows)));
+      if (c !== _dmObjDragging.lastCol || r !== _dmObjDragging.lastRow) {
+        _dmObjDragging.lastCol = c;
+        _dmObjDragging.lastRow = r;
+        wsSend({ action: 'move-object', objId: _dmObjDragging.objId, col: c, row: r });
+      }
+    });
+    document.addEventListener('mouseup', function () { _dmObjDragging = null; });
+  }
 }
 
 // ── Token condition picker popup ──────────────────────────────
@@ -2775,7 +2950,15 @@ function renderTokenControls(mapUrl, mapKey) {
   tokFeatOverlay.className = 'dm-feat-overlay';
   tokFeatOverlay.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:4;';
   mapWrap.appendChild(tokFeatOverlay);
+
+  // Object layer on token map
+  var tokObjLayer = document.createElement('div');
+  tokObjLayer.className = 'dm-obj-layer';
+  tokObjLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:6;';
+  mapWrap.appendChild(tokObjLayer);
+
   updateDmFeatureOverlay();
+  renderDmObjectLayer();
   var tokens = tokenState[mapKey] || [];
   if (tokens.length) {
     // ── Collapsible token list header ──────────────────────────────────
@@ -4846,26 +5029,359 @@ document.getElementById('audio-search').addEventListener('input', function () {
 });
 
 // ============================================================
-// Monster Lookup  (Open5e API)
+// Monster Lookup  (5etools + Open5e)
 // ============================================================
-var _monsterCache = {};
+var _monsterCache     = {};          // key: source:slug → normalised monster obj
+var _monsterSource    = 'open5e';    // 'open5e' | '5etools' (5etools mirrors are currently unavailable)
+var _5etoolsFileMap   = null;        // { "MM": "bestiary-mm.json", ... }
+var _5etoolsFileMapLoading = false;
+var _5etoolsFileMapCbs = [];
+var _5etoolsLoadedSources = {};      // src → monster[] (cache per source file)
+var _5etoolsSearchId  = 0;           // cancel stale searches
+
+// Priority order: main monster books loaded first for fast results
+var _5ET_PRIORITY = ['MM','XMM','VGM','MTF','MPMM','FTD','BGG','VRGR','IDRotF','ERLW','SCC','MOT','EGW','XGE','TCE'];
 
 function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
-
 function modStr(score) {
   var m = Math.floor((score - 10) / 2);
   return (m >= 0 ? '+' : '') + m;
 }
 
+// ── 5etools helpers ───────────────────────────────────────────
+// GitHub raw mirror fetched via server-side proxy — avoids all browser CORS issues
+var _5ET_BASE = '/api/bestiary/';
+
+function load5etoolsFileMap(cb) {
+  if (_5etoolsFileMap) { cb(_5etoolsFileMap); return; }
+  _5etoolsFileMapCbs.push(cb);
+  if (_5etoolsFileMapLoading) return;
+  _5etoolsFileMapLoading = true;
+  fetch(_5ET_BASE + 'index.json')
+    .then(function (r) { return r.json(); })
+    .then(function (idx) {
+      _5etoolsFileMap = idx;
+      _5etoolsFileMapLoading = false;
+      _5etoolsFileMapCbs.forEach(function (f) { f(idx); });
+      _5etoolsFileMapCbs = [];
+    })
+    .catch(function () {
+      _5etoolsFileMap = {};
+      _5etoolsFileMapLoading = false;
+      _5etoolsFileMapCbs.forEach(function (f) { f({}); });
+      _5etoolsFileMapCbs = [];
+    });
+}
+
+// Fetch and normalise a single monster from 5etools JSON
+function fetch5etoolsMonster(entry, cb) {
+  var cacheKey = '5etools:' + entry.source + ':' + slugify(entry.name);
+  if (_monsterCache[cacheKey]) { cb(_monsterCache[cacheKey]); return; }
+  // Use already-loaded source data if available
+  if (_5etoolsLoadedSources[entry.source]) {
+    var raw = _5etoolsLoadedSources[entry.source].find(function (m) { return m.name === entry.name; });
+    if (raw) {
+      var norm = normalise5etools(raw);
+      _monsterCache[cacheKey] = norm;
+      cb(norm);
+    } else { cb(null); }
+    return;
+  }
+  load5etoolsFileMap(function (idx) {
+    var filename = idx[entry.source];
+    if (!filename) { cb(null); return; }
+    fetch(_5ET_BASE + filename)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var monsters = data.monster || [];
+        _5etoolsLoadedSources[entry.source] = monsters;
+        var raw2 = monsters.find(function (m) { return m.name === entry.name; });
+        if (raw2) {
+          var norm2 = normalise5etools(raw2);
+          _monsterCache[cacheKey] = norm2;
+          cb(norm2);
+        } else { cb(null); }
+      })
+      .catch(function () { cb(null); });
+  });
+}
+
+function crToNum(cr) {
+  if (!cr) return '—';
+  if (typeof cr === 'object') cr = cr.cr || '—';
+  return String(cr);
+}
+
+function speedStr5e(speed) {
+  if (!speed) return '';
+  var parts = [];
+  if (speed.walk) parts.push(speed.walk + ' ft.');
+  if (speed.fly)  parts.push('fly ' + speed.fly + ' ft.' + (speed.canHover ? ' (hover)' : ''));
+  if (speed.swim) parts.push('swim ' + speed.swim + ' ft.');
+  if (speed.climb) parts.push('climb ' + speed.climb + ' ft.');
+  if (speed.burrow) parts.push('burrow ' + speed.burrow + ' ft.');
+  return parts.join(', ');
+}
+
+function entryToText(entry) {
+  if (!entry) return '';
+  if (typeof entry === 'string') return entry;
+  if (entry.type === 'entries' || entry.type === 'section') {
+    var sub = (entry.entries || []).map(entryToText).join(' ');
+    return (entry.name ? entry.name + '. ' : '') + sub;
+  }
+  if (entry.type === 'list') return (entry.items || []).map(entryToText).join('; ');
+  if (entry.type === 'table') return '[table]';
+  if (entry.type === 'inlineBlock' || entry.type === 'inline') {
+    return (entry.entries || []).map(entryToText).join('');
+  }
+  return entry.entries ? (entry.entries || []).map(entryToText).join(' ') : '';
+}
+
+// Strip 5etools markup tags: {@condition Stunned}, {@dice 2d6}, {@atk mw}, etc.
+function clean5e(str) {
+  if (!str) return '';
+  return str
+    .replace(/\{@(?:condition|status|skill|sense|action|creature|item|spell|feat|class|subclass|background|race|table|filter|quickref|variantrule|optfeature|legroup|classFeature|subclassFeature|note|comic|scaledice|scaledamage|chance|d20|hit|damage|atk|dc|recharge|dice|coinflip|homebrew|5etools|link|loader|area|book|deity)([^|}]*)\|?([^}]*)}/gi, function (_, p1, p2) { return p2 || p1.trim(); })
+    .replace(/\{@b ([^}]+)\}/gi, '$1')
+    .replace(/\{@i ([^}]+)\}/gi, '$1')
+    .replace(/\{@([^}]+)\}/g, '$1');
+}
+
+function normalise5etools(raw) {
+  // Ability scores
+  var abilityKeys = ['str','dex','con','int','wis','cha'];
+  var fullKeys = ['strength','dexterity','constitution','intelligence','wisdom','charisma'];
+
+  // Saving throws
+  var saves = {};
+  if (raw.save) {
+    Object.entries(raw.save).forEach(function (e) {
+      saves[e[0] + '_save'] = parseInt(e[1]);
+    });
+  }
+
+  // Skills
+  var skills = {};
+  if (raw.skill) {
+    Object.entries(raw.skill).forEach(function (e) {
+      skills[e[0]] = parseInt(e[1]) || e[1];
+    });
+  }
+
+  // AC
+  var acVal = raw.ac && raw.ac[0];
+  var acNum = typeof acVal === 'object' ? acVal.ac : acVal;
+  var acDesc = typeof acVal === 'object' ? (Array.isArray(acVal.from) ? acVal.from.join(', ') : '') : '';
+
+  // HP
+  var hpVal  = raw.hp || {};
+  var hpNum  = hpVal.average || '—';
+  var hpDice = hpVal.formula || '';
+
+  // CR
+  var cr = crToNum(raw.cr);
+  var xpMap = {'0':10,'1/8':25,'1/4':50,'1/2':100,'1':200,'2':450,'3':700,'4':1100,'5':1800,
+    '6':2300,'7':2900,'8':3900,'9':5000,'10':5900,'11':7200,'12':8400,'13':10000,'14':11500,
+    '15':13000,'16':15000,'17':18000,'18':20000,'19':22000,'20':25000,'21':33000,'22':41000,
+    '23':50000,'24':62000,'25':75000,'26':90000,'27':105000,'28':120000,'29':135000,'30':155000};
+  var xp = xpMap[cr];
+
+  // Senses
+  var senses = [];
+  if (raw.senses) (Array.isArray(raw.senses) ? raw.senses : [raw.senses]).forEach(function(s){ senses.push(clean5e(s)); });
+  if (raw.passive !== undefined) senses.push('passive Perception ' + raw.passive);
+
+  // Resistances / immunities
+  function dmgList(arr) {
+    if (!arr) return '';
+    return arr.map(function (e) {
+      if (typeof e === 'string') return e;
+      if (e.special) return e.special;
+      var base = (e.immune || e.resist || e.vulnerable || []).join(', ');
+      var note = e.note ? ' (' + e.note + ')' : '';
+      return base + note;
+    }).join('; ');
+  }
+
+  // Actions / reactions / bonus actions / legendary actions / special traits
+  function parseActions(arr) {
+    if (!arr) return [];
+    return arr.map(function (a) {
+      var text = '';
+      if (Array.isArray(a.entries)) {
+        text = a.entries.map(entryToText).join(' ');
+      } else if (a.entry) { text = entryToText(a.entry); }
+      return { name: a.name || '', desc: clean5e(text) };
+    });
+  }
+
+  var result = { _source: '5etools', name: raw.name };
+  abilityKeys.forEach(function (k, i) { result[fullKeys[i]] = raw[k]; });
+  Object.assign(result, saves);
+  result.skills = Object.keys(skills).length ? skills : null;
+  result.armor_class = acNum;
+  result.armor_desc  = acDesc;
+  result.hit_points  = hpNum;
+  result.hit_dice    = hpDice;
+  result.speed       = raw.speed;  // pass raw for speedStr5e
+  result.challenge_rating = cr;
+  result.xp          = xp;
+  result.size        = Array.isArray(raw.size) ? raw.size.map(function(s){
+    return {T:'Tiny',S:'Small',M:'Medium',L:'Large',H:'Huge',G:'Gargantuan'}[s]||s;
+  }).join('/') : ({T:'Tiny',S:'Small',M:'Medium',L:'Large',H:'Huge',G:'Gargantuan'}[raw.size]||raw.size||'');
+  result.type = typeof raw.type === 'object' ? (raw.type.type || '') + (raw.type.tags ? ' (' + raw.type.tags.join(', ') + ')' : '') : (raw.type || '');
+  result.subtype     = null;  // folded into type above
+  result.alignment   = Array.isArray(raw.alignment)
+    ? raw.alignment.map(function(a){ return ({L:'lawful',N:'neutral',C:'chaotic',G:'good',E:'evil',U:'unaligned',A:'any'}[a]||a); }).join(' ')
+    : (raw.alignment || '');
+  result.senses      = senses.join(', ');
+  result.languages   = Array.isArray(raw.languages) ? raw.languages.join(', ') : (raw.languages || '');
+  result.damage_immunities     = dmgList(raw.immune);
+  result.damage_resistances    = dmgList(raw.resist);
+  result.damage_vulnerabilities= dmgList(raw.vulnerable);
+  result.condition_immunities  = raw.conditionImmune ? (Array.isArray(raw.conditionImmune) ? raw.conditionImmune.map(function(c){ return typeof c === 'string' ? c : (c.conditionImmune||[]).join(', '); }).join(', ') : raw.conditionImmune) : '';
+  result.special_abilities = parseActions(raw.trait);
+  result.actions           = parseActions(raw.action);
+  result.bonus_actions     = parseActions(raw.bonus);
+  result.reactions         = parseActions(raw.reaction);
+  result.legendary_actions = parseActions(raw.legendary);
+  return result;
+}
+
+// ── Main fetch dispatcher ─────────────────────────────────────
 function fetchMonsterByName(name) {
-  var slug = slugify(name);
-  if (_monsterCache[slug]) { renderMonsterStatBlock(_monsterCache[slug]); return; }
+  var statEl  = document.getElementById('monster-stat-block');
+  var listEl  = document.getElementById('monster-results-list');
+  statEl.className = 'msb-loading';
+  statEl.textContent = 'Searching for "' + name + '"…';
+  listEl.innerHTML = '';
+
+  if (_monsterSource === 'open5e') {
+    fetchMonsterOpen5e(name);
+  } else {
+    fetchMonster5etools(name);
+  }
+}
+
+function fetchMonster5etools(name) {
   var statEl = document.getElementById('monster-stat-block');
+  var listEl = document.getElementById('monster-results-list');
+  var q      = name.toLowerCase();
+  var sid    = ++_5etoolsSearchId;
+  var allMatches = [];
+
+  statEl.className = 'msb-loading';
+  statEl.textContent = 'Loading bestiary index…';
+  listEl.innerHTML = '';
+
+  load5etoolsFileMap(function (idx) {
+    if (sid !== _5etoolsSearchId) return;
+    var sources = Object.keys(idx);
+    if (!sources.length) {
+      statEl.textContent = 'Could not connect to 5etools data. Check your network or switch to Open5e.';
+      return;
+    }
+
+    // Load priority sources first so common monsters appear quickly
+    sources.sort(function (a, b) {
+      var ai = _5ET_PRIORITY.indexOf(a), bi = _5ET_PRIORITY.indexOf(b);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    var total = sources.length;
+    var completed = 0;
+
+    function updateUI() {
+      if (sid !== _5etoolsSearchId) return;
+      var done = completed >= total;
+      if (!allMatches.length) {
+        statEl.className = 'msb-loading';
+        statEl.textContent = done
+          ? 'No results for "' + name + '" in 5etools.'
+          : 'Searching 5etools (' + completed + '/' + total + ' sources)…';
+        return;
+      }
+      // Auto-select single result only when all sources are done
+      if (allMatches.length === 1 && done) {
+        statEl.className = 'msb-loading';
+        statEl.textContent = 'Loading ' + allMatches[0].name + '…';
+        listEl.innerHTML = '';
+        fetch5etoolsMonster(allMatches[0], function (m) {
+          if (sid !== _5etoolsSearchId) return;
+          if (m) renderMonsterStatBlock(m);
+          else { statEl.className = 'msb-loading'; statEl.textContent = 'Failed to load monster data.'; }
+        });
+        return;
+      }
+      // Show list (rebuild on every update so new results appear)
+      statEl.className = 'hidden';
+      statEl.textContent = '';
+      listEl.innerHTML = '';
+      allMatches.forEach(function (entry) {
+        var btn = document.createElement('button');
+        btn.className = 'monster-result-btn';
+        btn.textContent = entry.name + ' [' + entry.source + ']';
+        btn.onclick = function () {
+          listEl.querySelectorAll('.monster-result-btn').forEach(function (b) { b.classList.toggle('monster-result-active', b === btn); });
+          statEl.className = 'msb-loading';
+          statEl.textContent = 'Loading ' + entry.name + '…';
+          fetch5etoolsMonster(entry, function (m) {
+            if (m) renderMonsterStatBlock(m);
+            else { statEl.className = 'msb-loading'; statEl.textContent = 'Failed to load monster data.'; }
+          });
+        };
+        listEl.appendChild(btn);
+      });
+    }
+
+    statEl.textContent = 'Searching 5etools (0/' + total + ' sources)…';
+
+    sources.forEach(function (src) {
+      function processSource(monsters) {
+        if (sid !== _5etoolsSearchId) return;
+        monsters.forEach(function (m) {
+          if (m.name && m.name.toLowerCase().includes(q)) {
+            allMatches.push({ name: m.name, source: src, file: idx[src] });
+          }
+        });
+        completed++;
+        updateUI();
+      }
+
+      if (_5etoolsLoadedSources[src]) {
+        // Already cached — process asynchronously to avoid blocking the UI
+        setTimeout(function () { processSource(_5etoolsLoadedSources[src]); }, 0);
+      } else {
+        fetch(_5ET_BASE + idx[src])
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            var monsters = data.monster || [];
+            _5etoolsLoadedSources[src] = monsters;
+            processSource(monsters);
+          })
+          .catch(function () {
+            if (sid !== _5etoolsSearchId) return;
+            completed++;
+            updateUI();
+          });
+      }
+    });
+  });
+}
+
+function fetchMonsterOpen5e(name) {
+  var slug   = 'open5e:' + slugify(name);
+  var statEl = document.getElementById('monster-stat-block');
+  var listEl = document.getElementById('monster-results-list');
+  if (_monsterCache[slug]) { renderMonsterStatBlock(_monsterCache[slug]); return; }
   statEl.className = 'msb-loading';
   statEl.textContent = 'Loading ' + name + '…';
-  document.getElementById('monster-results-list').innerHTML = '';
   fetch('https://api.open5e.com/v1/monsters/?name__icontains=' + encodeURIComponent(name) + '&limit=20')
     .then(function (r) { return r.json(); })
     .then(function (data) {
@@ -4875,19 +5391,17 @@ function fetchMonsterByName(name) {
         return;
       }
       if (data.results.length === 1) {
-        _monsterCache[slug] = data.results[0];
+        _monsterCache['open5e:' + slugify(data.results[0].name)] = data.results[0];
         renderMonsterStatBlock(data.results[0]);
       } else {
         statEl.className = 'hidden';
         statEl.textContent = '';
-        var listEl = document.getElementById('monster-results-list');
-        listEl.innerHTML = '';
         data.results.forEach(function (m) {
           var btn = document.createElement('button');
           btn.className = 'monster-result-btn';
           btn.textContent = m.name;
           btn.onclick = function () {
-            _monsterCache[slugify(m.name)] = m;
+            _monsterCache['open5e:' + slugify(m.name)] = m;
             renderMonsterStatBlock(m);
             listEl.querySelectorAll('.monster-result-btn').forEach(function (b) {
               b.classList.toggle('monster-result-active', b === btn);
@@ -4920,19 +5434,18 @@ function renderMonsterStatBlock(m) {
       '<div class="msb-score-mod">' + (s[1] ? modStr(s[1]) : '') + '</div></div>';
   }).join('');
 
-  var actionsHtml = '';
   function renderActionGroup(label, arr) {
     if (!arr || !arr.length) return '';
     var rows = arr.map(function (a) {
-      return '<div class="msb-action"><span class="msb-action-name">' + a.name + '.</span> ' +
-        (a.desc || '') + '</div>';
+      return '<div class="msb-action"><span class="msb-action-name">' + escHtml(a.name) + '.</span> ' +
+        escHtml(a.desc || '') + '</div>';
     }).join('');
     return '<div class="msb-actions-hdr">' + label + '</div>' + rows;
   }
-  actionsHtml += renderActionGroup('Actions', m.actions);
-  actionsHtml += renderActionGroup('Bonus Actions', m.bonus_actions);
-  actionsHtml += renderActionGroup('Reactions', m.reactions);
-  actionsHtml += renderActionGroup('Legendary Actions', m.legendary_actions);
+  var actionsHtml = renderActionGroup('Actions', m.actions)
+    + renderActionGroup('Bonus Actions', m.bonus_actions)
+    + renderActionGroup('Reactions', m.reactions)
+    + renderActionGroup('Legendary Actions', m.legendary_actions);
 
   var saves = [];
   ['strength_save','dexterity_save','constitution_save','intelligence_save','wisdom_save','charisma_save']
@@ -4942,48 +5455,56 @@ function renderMonsterStatBlock(m) {
       }
     });
 
+  var speedDisplay = m._source === '5etools'
+    ? speedStr5e(m.speed)
+    : (m.speed ? Object.entries(m.speed).filter(function(e){return e[1];}).map(function(e){return e[0]+' '+e[1];}).join(', ') : '');
+
+  var srcBadge = m._source === '5etools'
+    ? '<span style="font-size:0.65rem;color:#888;margin-left:0.5rem;">5etools</span>'
+    : '<span style="font-size:0.65rem;color:#888;margin-left:0.5rem;">Open5e</span>';
+
+  var artSlug = slugify(m.name);
+  var artHtml = '<img class="msb-art" src="https://www.dnd5eapi.co/api/images/monsters/' + artSlug + '.png" alt="" onerror="this.style.display=\'none\'" loading="lazy">';
+
   el.innerHTML =
-    '<div class="msb-name">' + m.name + '</div>' +
-    '<div class="msb-meta">' + (m.size||'') + ' ' + (m.type||'') + (m.subtype ? ' (' + m.subtype + ')' : '') +
-      ', ' + (m.alignment||'') + '</div>' +
+    artHtml +
+    '<div class="msb-name">' + escHtml(m.name) + srcBadge + '</div>' +
+    '<div class="msb-meta">' + escHtml((m.size||'') + ' ' + (m.type||'') + (m.subtype ? ' (' + m.subtype + ')' : '') + ', ' + (m.alignment||'')) + '</div>' +
     '<hr class="msb-divider">' +
-    prop('Armor Class', m.armor_class + (m.armor_desc ? ' (' + m.armor_desc + ')' : '')) +
-    prop('Hit Points', m.hit_points + ' (' + (m.hit_dice||'') + ')') +
-    prop('Speed', m.speed ? Object.entries(m.speed).filter(function(e){return e[1];}).map(function(e){return e[0]+' '+e[1];}).join(', ') : '') +
-    prop('Challenge', m.challenge_rating + (m.cr ? '' : '') + (m.xp ? ' (' + m.xp.toLocaleString() + ' XP)' : '')) +
+    prop('Armor Class', escHtml(String(m.armor_class||'—')) + (m.armor_desc ? ' (' + escHtml(m.armor_desc) + ')' : '')) +
+    prop('Hit Points', escHtml(String(m.hit_points||'—')) + (m.hit_dice ? ' (' + escHtml(m.hit_dice) + ')' : '')) +
+    prop('Speed', escHtml(speedDisplay)) +
+    prop('Challenge', escHtml(String(m.challenge_rating||'—')) + (m.xp ? ' (' + m.xp.toLocaleString() + ' XP)' : '')) +
     '<hr class="msb-divider">' +
     '<div class="msb-scores">' + scoresHtml + '</div>' +
     '<hr class="msb-divider">' +
     (saves.length ? prop('Saving Throws', saves.join(', ')) : '') +
     prop('Skills', m.skills ? Object.entries(m.skills).map(function(e){return e[0]+' +'+e[1];}).join(', ') : '') +
-    prop('Damage Immunities', m.damage_immunities) +
-    prop('Damage Resistances', m.damage_resistances) +
-    prop('Damage Vulnerabilities', m.damage_vulnerabilities) +
-    prop('Condition Immunities', m.condition_immunities) +
-    prop('Senses', m.senses) +
-    prop('Languages', m.languages) +
+    prop('Damage Immunities', escHtml(m.damage_immunities||'')) +
+    prop('Damage Resistances', escHtml(m.damage_resistances||'')) +
+    prop('Damage Vulnerabilities', escHtml(m.damage_vulnerabilities||'')) +
+    prop('Condition Immunities', escHtml(m.condition_immunities||'')) +
+    prop('Senses', escHtml(m.senses||'')) +
+    prop('Languages', escHtml(m.languages||'')) +
     (m.special_abilities && m.special_abilities.length ?
       '<hr class="msb-divider"><div class="msb-actions-hdr">Special Traits</div>' +
       m.special_abilities.map(function(a){
-        return '<div class="msb-action"><span class="msb-action-name">' + a.name + '.</span> ' + (a.desc||'') + '</div>';
+        return '<div class="msb-action"><span class="msb-action-name">' + escHtml(a.name) + '.</span> ' + escHtml(a.desc||'') + '</div>';
       }).join('') : '') +
     actionsHtml +
     '<button id="monster-send-btn" class="btn btn-secondary" style="margin-top:0.75rem;font-size:0.72rem;width:100%;">📜 Send to Players</button>';
 
   document.getElementById('monster-send-btn').addEventListener('click', function () {
-    var scores = [['STR',m.strength],['DEX',m.dexterity],['CON',m.constitution],
-                  ['INT',m.intelligence],['WIS',m.wisdom],['CHA',m.charisma]];
     var scoreRow = scores.map(function(s){
       return '<span style="margin-right:0.6rem;"><b>' + s[0] + '</b> ' + (s[1]||'—') + (s[1] ? ' (' + modStr(s[1]) + ')' : '') + '</span>';
     }).join('');
-    var speed = m.speed ? Object.entries(m.speed).filter(function(e){return e[1];}).map(function(e){return e[0]+' '+e[1];}).join(', ') : '—';
     var dataHtml =
       '<div style="color:#aaa;font-style:italic;margin-bottom:0.4rem;">' +
         escHtml((m.size||'') + ' ' + (m.type||'') + (m.subtype?' ('+m.subtype+')':'') + ', ' + (m.alignment||'')) +
       '</div>' +
       '<div style="margin-bottom:0.3rem;"><b>AC</b> ' + escHtml(String(m.armor_class||'—')) + (m.armor_desc?' ('+escHtml(m.armor_desc)+')':'') +
-        ' &nbsp;|&nbsp; <b>HP</b> ' + escHtml(String(m.hit_points||'—')) + ' (' + escHtml(m.hit_dice||'') + ')' +
-        ' &nbsp;|&nbsp; <b>Speed</b> ' + escHtml(speed) + '</div>' +
+        ' &nbsp;|&nbsp; <b>HP</b> ' + escHtml(String(m.hit_points||'—')) + (m.hit_dice?' ('+escHtml(m.hit_dice)+')':'') +
+        ' &nbsp;|&nbsp; <b>Speed</b> ' + escHtml(speedDisplay) + '</div>' +
       '<div style="margin-bottom:0.4rem;"><b>CR</b> ' + escHtml(String(m.challenge_rating||'—')) +
         (m.xp ? ' (' + m.xp.toLocaleString() + ' XP)' : '') + '</div>' +
       '<div style="margin-bottom:0.4rem;">' + scoreRow + '</div>';
@@ -5008,6 +5529,8 @@ document.getElementById('monster-clear-btn').addEventListener('click', function 
   var sb = document.getElementById('monster-stat-block');
   sb.innerHTML = ''; sb.className = 'hidden';
 });
+
+// Source toggle buttons removed — 5etools mirrors are unavailable; Open5e is the active source
 
 // ============================================================
 // Boot
