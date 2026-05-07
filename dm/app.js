@@ -5051,8 +5051,8 @@ function modStr(score) {
 }
 
 // ── 5etools helpers ───────────────────────────────────────────
-// GitHub raw mirror — CORS-friendly, always up-to-date with 5etools data
-var _5ET_BASE = 'https://raw.githubusercontent.com/5etools-mirror-2/5etools-mirror-2.github.io/master/data/bestiary/';
+// GitHub raw mirror fetched via server-side proxy — avoids all browser CORS issues
+var _5ET_BASE = '/api/bestiary/';
 
 function load5etoolsFileMap(cb) {
   if (_5etoolsFileMap) { cb(_5etoolsFileMap); return; }

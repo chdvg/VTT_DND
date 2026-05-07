@@ -792,6 +792,23 @@ app.post('/api/clear-scene', requireDm, (req, res) => {
 
 app.get('/api/state', (req, res) => { res.json(currentState); });
 
+// ── 5etools bestiary proxy (server-side fetch bypasses browser CORS) ──────────
+const https = require('https');
+app.get('/api/bestiary/:file', requireDm, (req, res) => {
+  const file = req.params.file;
+  // Only allow safe filenames: letters, numbers, hyphens, underscores + .json
+  if (!/^[\w-]+\.json$/i.test(file)) return res.status(400).end();
+  const url = 'https://raw.githubusercontent.com/5etools-mirror-2/5etools-mirror-2.github.io/master/data/bestiary/' + file;
+  https.get(url, (upstream) => {
+    if (upstream.statusCode !== 200) {
+      upstream.resume();
+      return res.status(upstream.statusCode).end();
+    }
+    res.setHeader('Content-Type', 'application/json');
+    upstream.pipe(res);
+  }).on('error', () => res.status(502).end());
+});
+
 app.get('/api/maps', (req, res) => {
   const maps = listFiles('public/assets/maps', ['.jpg', '.jpeg', '.png', '.webp']);
   res.json({ maps });
