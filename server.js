@@ -794,7 +794,8 @@ app.get('/api/state', (req, res) => { res.json(currentState); });
 
 // ── 5etools bestiary proxy (server-side fetch bypasses browser CORS) ──────────
 const https = require('https');
-app.get('/api/bestiary/:file', requireDm, (req, res) => {
+app.get('/api/bestiary/:file', (req, res) => {
+  if (!isDmAuthed(req)) return res.status(401).json({ error: 'Unauthorized' });
   const file = req.params.file;
   // Only allow safe filenames: letters, numbers, hyphens, underscores + .json
   if (!/^[\w-]+\.json$/i.test(file)) return res.status(400).end();

@@ -5032,7 +5032,7 @@ document.getElementById('audio-search').addEventListener('input', function () {
 // Monster Lookup  (5etools + Open5e)
 // ============================================================
 var _monsterCache     = {};          // key: source:slug → normalised monster obj
-var _monsterSource    = '5etools';   // '5etools' | 'open5e'
+var _monsterSource    = 'open5e';    // 'open5e' | '5etools' (5etools mirrors are currently unavailable)
 var _5etoolsFileMap   = null;        // { "MM": "bestiary-mm.json", ... }
 var _5etoolsFileMapLoading = false;
 var _5etoolsFileMapCbs = [];
@@ -5526,17 +5526,7 @@ document.getElementById('monster-clear-btn').addEventListener('click', function 
   sb.innerHTML = ''; sb.className = 'hidden';
 });
 
-// Source toggle buttons
-document.getElementById('monster-src-5etools').addEventListener('click', function () {
-  _monsterSource = '5etools';
-  document.getElementById('monster-src-5etools').classList.add('monster-src-active');
-  document.getElementById('monster-src-open5e').classList.remove('monster-src-active');
-});
-document.getElementById('monster-src-open5e').addEventListener('click', function () {
-  _monsterSource = 'open5e';
-  document.getElementById('monster-src-open5e').classList.add('monster-src-active');
-  document.getElementById('monster-src-5etools').classList.remove('monster-src-active');
-});
+// Source toggle buttons removed — 5etools mirrors are unavailable; Open5e is the active source
 
 // ============================================================
 // Boot
