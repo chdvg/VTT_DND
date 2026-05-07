@@ -5463,7 +5463,11 @@ function renderMonsterStatBlock(m) {
     ? '<span style="font-size:0.65rem;color:#888;margin-left:0.5rem;">5etools</span>'
     : '<span style="font-size:0.65rem;color:#888;margin-left:0.5rem;">Open5e</span>';
 
+  var artSlug = slugify(m.name);
+  var artHtml = '<img class="msb-art" src="https://www.dnd5eapi.co/api/images/monsters/' + artSlug + '.png" alt="" onerror="this.style.display=\'none\'" loading="lazy">';
+
   el.innerHTML =
+    artHtml +
     '<div class="msb-name">' + escHtml(m.name) + srcBadge + '</div>' +
     '<div class="msb-meta">' + escHtml((m.size||'') + ' ' + (m.type||'') + (m.subtype ? ' (' + m.subtype + ')' : '') + ', ' + (m.alignment||'')) + '</div>' +
     '<hr class="msb-divider">' +
