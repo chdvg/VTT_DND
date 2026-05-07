@@ -1378,7 +1378,7 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
     var card = document.createElement('div');
     card.id = 'feat-card-' + feat.id;
     card.style.cssText = 'background:#1f2937;border-radius:5px;padding:0.4rem 0.6rem;' +
-      'border-left:3px solid ' + (feat.color || '#c0392b') + ';min-width:160px;max-width:220px;flex:1;';
+      'border-left:3px solid ' + (feat.color || '#c0392b') + ';min-width:160px;flex:1 1 160px;';
 
     var nameEl = document.createElement('div');
     nameEl.style.cssText = 'font-size:0.82rem;font-weight:bold;color:#e6e6e6;margin-bottom:0.25rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
@@ -1407,12 +1407,12 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
     }
 
     var btnRow = document.createElement('div');
-    btnRow.style.cssText = 'display:flex;gap:0.3rem;';
+    btnRow.style.cssText = 'display:flex;gap:0.3rem;flex-wrap:wrap;';
 
     var trigBtn = document.createElement('button');
     trigBtn.className = 'btn btn-small btn-danger';
     trigBtn.textContent = '⚡ Trigger';
-    trigBtn.style.cssText += 'flex:1;font-size:0.78rem;white-space:nowrap;';
+    trigBtn.style.cssText += 'flex:1 1 100%;font-size:0.78rem;white-space:nowrap;';
     // Apply initial state from tracked triggered set (e.g. after auto-trigger or page restore)
     var alreadyTriggered = !!dmTriggeredFeat[feat.id];
     if (alreadyTriggered) {
@@ -1437,7 +1437,7 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
     resetBtn.className = 'btn btn-small btn-secondary';
     resetBtn.textContent = '↩ Reset';
     resetBtn.disabled = !alreadyTriggered;
-    resetBtn.style.cssText += 'flex:none;font-size:0.78rem;opacity:' + (alreadyTriggered ? '1' : '0.4') + ';';
+    resetBtn.style.cssText += 'flex:1;font-size:0.78rem;opacity:' + (alreadyTriggered ? '1' : '0.4') + ';';
     resetBtn.onclick = function () {
       delete triggeredSet[feat.id];
       delete dmTriggeredFeat[feat.id];
@@ -1456,7 +1456,7 @@ function renderFeatureControls(mapKey, feats, mapMeta) {
       var subMapBtn = document.createElement('button');
       subMapBtn.className = 'btn btn-small btn-secondary';
       subMapBtn.textContent = '\ud83d\uddfa Sub-map';
-      subMapBtn.style.cssText = 'flex:none;font-size:0.75rem;white-space:nowrap;';
+      subMapBtn.style.cssText = 'flex:1;font-size:0.75rem;white-space:nowrap;';
       (function (f) {
         subMapBtn.onclick = function () { openDmSubMapLightbox(f); };
       }(feat));
