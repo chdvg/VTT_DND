@@ -314,20 +314,61 @@
     /* ── 3D Dice Roll Overlay ── */
     #dice-overlay {
       position: fixed;
-      inset: 0;
+      bottom: 62px;
+      left: 50%;
+      transform: translateX(-50%);
       z-index: 600;
       display: none;
       align-items: center;
       justify-content: center;
       flex-direction: column;
-      background: rgba(0,0,0,0);
+      background: rgba(10,10,20,0.93);
+      border: 1px solid rgba(212,175,55,0.45);
+      border-radius: 16px;
+      padding: 14px 22px;
       pointer-events: none;
     }
     #dice-overlay.visible, #dice-overlay.hiding { display: flex; }
-    #dice-overlay.visible { animation: dice-bg-in  0.4s ease forwards; }
-    #dice-overlay.hiding  { animation: dice-bg-out 0.6s ease forwards; }
-    @keyframes dice-bg-in  { to   { background: rgba(0,0,0,0.88); } }
-    @keyframes dice-bg-out { from { background: rgba(0,0,0,0.88); } }
+    #dice-overlay.visible { animation: dice-panel-in  0.35s ease forwards; }
+    #dice-overlay.hiding  { animation: dice-panel-out 0.5s  ease forwards; }
+    @keyframes dice-panel-in  { from { opacity:0; transform:translateX(-50%) translateY(16px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+    @keyframes dice-panel-out { from { opacity:1; transform:translateX(-50%) translateY(0); } to { opacity:0; transform:translateX(-50%) translateY(16px); } }
+
+    /* ── Initiative Bottom Panel ── */
+    #init-bottom-panel {
+      position: fixed;
+      bottom: 62px;
+      right: 12px;
+      z-index: 550;
+      display: none;
+      flex-direction: column;
+      background: rgba(10,10,20,0.93);
+      border: 1px solid rgba(212,175,55,0.35);
+      border-radius: 12px;
+      padding: 8px 10px;
+      pointer-events: none;
+      min-width: 190px;
+      max-width: 260px;
+      max-height: 65vh;
+      overflow-y: auto;
+    }
+    #init-bottom-panel.visible, #init-bottom-panel.hiding { display: flex; }
+    #init-bottom-panel.visible { animation: init-panel-in  0.35s ease forwards; }
+    #init-bottom-panel.hiding  { animation: init-panel-out 0.4s  ease forwards; }
+    @keyframes init-panel-in  { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes init-panel-out { from { opacity:1; transform:translateY(0); } to { opacity:0; transform:translateY(14px); } }
+    #init-bottom-panel .init-panel-title {
+      font-family: Georgia, serif;
+      font-size: 0.72rem;
+      color: #d4af37;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      text-align: center;
+      border-bottom: 1px solid rgba(212,175,55,0.3);
+      padding-bottom: 5px;
+      margin-bottom: 5px;
+    }
+    #init-bottom-panel .init-panel-body { zoom: 0.78; }
     #dice-scene {
       perspective: 900px;
       perspective-origin: 50% 40%;
@@ -649,6 +690,7 @@
     <div id="puzzle-lightbox-close">✕ Close</div>
   </div>
   <div id="popup-overlay"></div>
+  <div id="init-bottom-panel"></div>
   <div id="dice-overlay">
     <div id="dice-scene">
       <div id="dice-wrapper">

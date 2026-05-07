@@ -4309,7 +4309,7 @@ function sendInitiative() {
   fetch('/api/overlay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: 'Initiative Order', data: html, duration: 12000 })
+    body: JSON.stringify({ title: 'Initiative Order', data: html, duration: 12000, subtype: 'initiative' })
   });
 }
 
