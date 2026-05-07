@@ -1231,7 +1231,7 @@ function showDiceRoll(die, result) {
         cube.classList.remove('rolling');
         wrapper.classList.remove('settling');
         frontEl.classList.remove('settled');
-      }, 620);
+      }, 500);
       _diceHideTimer = null;
     }, 3500);
   }, { once: true });
@@ -1257,7 +1257,30 @@ function playAttackAnimation(targetLabels, animType) {
 }
 
 // ── Overlay popup (dice, initiative) ─────────────────────────
-function showOverlay(title, html, duration) {
+// ── Initiative bottom panel ─────────────────────────────────
+var initPanelTimer = null;
+function showInitBottomPanel(title, html, duration) {
+  var panel = document.getElementById('init-bottom-panel');
+  if (!panel) return;
+  if (initPanelTimer) { clearTimeout(initPanelTimer); initPanelTimer = null; }
+  panel.innerHTML =
+    '<div class="init-panel-title">' + (title || 'Initiative') + '</div>' +
+    '<div class="init-panel-body">' + html + '</div>';
+  panel.classList.remove('hiding');
+  panel.classList.add('visible');
+  initPanelTimer = setTimeout(function () {
+    panel.classList.remove('visible');
+    panel.classList.add('hiding');
+    setTimeout(function () { panel.classList.remove('hiding'); }, 400);
+    initPanelTimer = null;
+  }, duration || 12000);
+}
+
+function showOverlay(title, html, duration, subtype) {
+  if (subtype === 'initiative') {
+    showInitBottomPanel(title, html, duration);
+    return;
+  }
   if (popupTimer) { clearTimeout(popupTimer); popupTimer = null; }
   var inner = '';
   if (title) inner += '<div style="font-family:Georgia,serif;font-size:1.5rem;font-weight:bold;color:#d4af37;text-align:center;margin-bottom:1rem;">' + title + '</div>';
@@ -1424,7 +1447,7 @@ function handleMessage(msg) {
       myTarget = null;
       break;
     case 'OVERLAY':
-      showOverlay(msg.title, msg.data, msg.duration);
+      showOverlay(msg.title, msg.data, msg.duration, msg.subtype);
       break;
     case 'DICE_ROLL':
       showDiceRoll(msg.die, msg.result);

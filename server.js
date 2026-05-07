@@ -442,7 +442,7 @@ wss.on('connection', (ws, req) => {
           currentAudio = null;
           broadcast({ type: 'STOP_AUDIO' }); break;
         case 'send-overlay':
-          broadcast({ type: 'OVERLAY', title: message.title || '', data: message.data || '', duration: message.duration || 10000 }); break;
+          broadcast({ type: 'OVERLAY', title: message.title || '', data: message.data || '', duration: message.duration || 10000, subtype: message.subtype || '' }); break;
         case 'update-fog':
           if (message.fogKey) {
             currentFogStates[message.fogKey] = message.fogGrid;
@@ -748,8 +748,8 @@ app.post('/api/show', requireDm, express.json({ limit: '50mb' }), (req, res) => 
 });
 
 app.post('/api/overlay', requireDm, express.json({ limit: '1mb' }), (req, res) => {
-  const { title, data, duration } = req.body;
-  broadcast({ type: 'OVERLAY', title: title || '', data: data || '', duration: duration || 10000 });
+  const { title, data, duration, subtype } = req.body;
+  broadcast({ type: 'OVERLAY', title: title || '', data: data || '', duration: duration || 10000, subtype: subtype || '' });
   res.json({ ok: true });
 });
 
