@@ -94,6 +94,11 @@ function dismissTapOverlay() {
   if (guestBtn) {
     guestBtn.addEventListener('click', function (e) {
       e.stopPropagation();
+      // Unlock audio — stopPropagation blocks the document-level click listener
+      if (!audioUnlocked) {
+        audioUnlocked = true;
+        if (pendingAudio) { var pa = pendingAudio; pendingAudio = null; playAudio(pa.url, pa.loop); }
+      }
       sessionStorage.setItem('dnd_guest_tapped', '1'); // remember so page-refresh skips overlay
       dismissTapOverlay();
     });
@@ -154,6 +159,11 @@ function dismissTapOverlay() {
   if (submitBtn) {
     submitBtn.addEventListener('click', function (e) {
       e.stopPropagation();
+      // Unlock audio — stopPropagation blocks the document-level click listener
+      if (!audioUnlocked) {
+        audioUnlocked = true;
+        if (pendingAudio) { var pa2 = pendingAudio; pendingAudio = null; playAudio(pa2.url, pa2.loop); }
+      }
       doLogin();
     });
   }
