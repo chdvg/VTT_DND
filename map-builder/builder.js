@@ -58,7 +58,7 @@ const TILE_GROUPS = [
   { label: 'Ground',        ids: ['stone-floor','wood-floor','dirt','cave'] },
   { label: 'Terrain',       ids: ['grass','sand','snow','swamp','lava'] },
   { label: 'Water',         ids: ['water','deep-water'] },
-  { label: 'Walls',         ids: ['wall','stone-wall','wall-ruin','door','pit'] },
+  { label: 'Walls',         ids: ['wall','stone-wall','wall-ruin','door','cave-opening','pit'] },
   { label: 'Buildings',     ids: ['cabin','cabin-ruin','tent','well'] },
   { label: 'Roads',         ids: ['road-h','road-v','road-cross','road-turn-ne','road-turn-nw','road-turn-se','road-turn-sw','road-t-n','road-t-s','road-t-e','road-t-w'] },
   { label: 'Nature',        ids: ['tree','tree-large','tree-pine','tree-palm','hill'] },
@@ -425,6 +425,41 @@ function buildTextureCanvas(tileId) {
       x.beginPath(); x.arc(~~(sz*.7),~~(sz*.5),~~(sz*.07)+1,0,Math.PI*2); x.fill();
       x.strokeStyle='#92400e'; x.lineWidth=1;
       x.beginPath(); x.arc(~~(sz*.7),~~(sz*.5),~~(sz*.07)+1,0,Math.PI*2); x.stroke();
+      break;
+    }
+    case 'cave-opening': {
+      // Rocky wall surround
+      const cwg=x.createLinearGradient(0,0,sz,sz);
+      cwg.addColorStop(0,'#5a534e'); cwg.addColorStop(0.5,'#45403c'); cwg.addColorStop(1,'#332e2b');
+      x.fillStyle=cwg; x.fillRect(0,0,sz,sz);
+      // Rock texture — scattered pebble blobs
+      for(let i=0;i<28;i++){
+        const px=r()*sz,py=r()*sz,rad=1.5+r()*4.5;
+        x.beginPath(); x.ellipse(px,py,rad,rad*(0.6+r()*0.5),r()*Math.PI,0,Math.PI*2);
+        x.fillStyle=`rgba(${~~(20+r()*30)},${~~(18+r()*22)},${~~(15+r()*18)},0.45)`; x.fill();
+      }
+      // Highlight cracks
+      x.strokeStyle='rgba(255,255,255,0.07)'; x.lineWidth=0.8;
+      [[sz*.08,sz*.22,sz*.28,sz*.18],[sz*.60,sz*.10,sz*.72,sz*.35],[sz*.15,sz*.70,sz*.30,sz*.60],[sz*.75,sz*.55,sz*.88,sz*.80]].forEach(([x1,y1,x2,y2])=>{
+        x.beginPath(); x.moveTo(x1,y1); x.lineTo(x2,y2); x.stroke();
+      });
+      // Dark cave void — irregular arch shape
+      const ow=sz*.54, oh=sz*.62, ox=sz*.5, oy=sz*.56;
+      x.beginPath();
+      x.moveTo(ox-ow*.5, oy+oh*.5);
+      x.bezierCurveTo(ox-ow*.5,oy-oh*.08, ox-ow*.28,oy-oh*.5, ox,oy-oh*.5);
+      x.bezierCurveTo(ox+ow*.28,oy-oh*.5, ox+ow*.5,oy-oh*.08, ox+ow*.5,oy+oh*.5);
+      x.closePath();
+      const voidGrad=x.createRadialGradient(ox,oy,2,ox,oy+oh*.15,oh*.55);
+      voidGrad.addColorStop(0,'#0a0808'); voidGrad.addColorStop(1,'#000');
+      x.fillStyle=voidGrad; x.fill();
+      // Arch edge highlight — subtle rim light
+      x.strokeStyle='rgba(180,160,140,0.35)'; x.lineWidth=1.5; x.stroke();
+      // Stalactites hanging from arch top
+      [[ox-ow*.18,oy-oh*.48,3,8],[ox,oy-oh*.50,4,10],[ox+ow*.20,oy-oh*.46,3,7]].forEach(([sx2,sy2,sw2,sh2])=>{
+        x.beginPath(); x.moveTo(sx2-sw2*.5,sy2); x.lineTo(sx2+sw2*.5,sy2); x.lineTo(sx2,sy2+sh2); x.closePath();
+        x.fillStyle='#3a3530'; x.fill();
+      });
       break;
     }
     case 'tree': {
@@ -1968,7 +2003,7 @@ function renderTiles() {
 }
 
 // Tiles that should stamp one image per cell (not tile as a repeat pattern)
-const STAMP_TILES = new Set(['tree','tree-large','tree-pine','tree-palm','mountain','hill','aura','aura-large','aura-blue','fire','fire-blue','cabin','cabin-ruin','tent','horse','cow','well','wall-ruin','door','mtn-scree','mtn-alpine','mtn-earthy','mtn-tundra','mtn-slate','road-h','road-v','road-cross','road-turn-ne','road-turn-nw','road-turn-se','road-turn-sw','road-t-n','road-t-s','road-t-e','road-t-w']);
+const STAMP_TILES = new Set(['tree','tree-large','tree-pine','tree-palm','mountain','hill','aura','aura-large','aura-blue','fire','fire-blue','cabin','cabin-ruin','tent','horse','cow','well','wall-ruin','door','cave-opening','mtn-scree','mtn-alpine','mtn-earthy','mtn-tundra','mtn-slate','road-h','road-v','road-cross','road-turn-ne','road-turn-nw','road-turn-se','road-turn-sw','road-t-n','road-t-s','road-t-e','road-t-w']);
 
 function drawTile(ctx, tile, x, y, size) {
   if (tile.url) {
