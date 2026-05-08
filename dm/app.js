@@ -1990,6 +1990,31 @@ function renderTokenControls(mapUrl, mapKey) {
   };
   container.appendChild(ringsToggleBtn);
 
+  // Reveal all hidden tokens not under fog
+  var tokens = (activeTokenMapKey && tokenState[activeTokenMapKey]) ? tokenState[activeTokenMapKey] : [];
+  var hiddenVisible = tokens.filter(function(t) {
+    if (!t.hidden) return false;
+    if (!fogGrid || !fogGrid.length || !currentViewFogKey) return true;
+    var fCols = (fogGrid[0] && fogGrid[0].length) ? fogGrid[0].length : 20;
+    var fRows = fogGrid.length;
+    var gridC = Math.min(fCols - 1, Math.max(0, Math.floor(t.x * fCols)));
+    var gridR = Math.min(fRows - 1, Math.max(0, Math.floor(t.y * fRows)));
+    return !!fogGrid[gridR][gridC];
+  });
+  if (hiddenVisible.length) {
+    var revealAllBtn = document.createElement('button');
+    revealAllBtn.style.cssText = 'flex:none;font-size:0.75rem;padding:0.28rem 0.6rem;border-radius:4px;cursor:pointer;white-space:nowrap;' +
+      'border:1px solid #a78bfa;background:rgba(167,139,250,0.15);color:#a78bfa;';
+    revealAllBtn.textContent = '👁 Reveal (' + hiddenVisible.length + ')';
+    revealAllBtn.title = 'Unhide all hidden tokens not currently in fog of war';
+    revealAllBtn.onclick = function () {
+      hiddenVisible.forEach(function(tok) { tok.hidden = false; });
+      sendTokenUpdate(activeTokenMapKey);
+      renderTokenControls(mapUrl, mapKey);
+    };
+    container.appendChild(revealAllBtn);
+  }
+
   // Item type picker (only when item color is active)
   if (selectedTokenColor === 'item') {
     var ITEM_TYPES_LIST = Object.keys(ITEM_ICONS);
@@ -3748,34 +3773,6 @@ function refreshMapMobsSection() {
     return;
   }
   if (summary) summary.textContent = '📍 Tokens on Map (' + mobs.length + ')';
-
-  // "Reveal all visible" button — shown when any token is hidden
-  var hiddenVisible = mobs.filter(function(t) {
-    if (!t.hidden) return false;
-    if (!fogGrid || !fogGrid.length || !currentViewFogKey) return true; // no fog active — token is visible
-    var fCols = (fogGrid[0] && fogGrid[0].length) ? fogGrid[0].length : 20;
-    var fRows = fogGrid.length;
-    var gridC = Math.min(fCols - 1, Math.max(0, Math.floor(t.x * fCols)));
-    var gridR = Math.min(fRows - 1, Math.max(0, Math.floor(t.y * fRows)));
-    return !!fogGrid[gridR][gridC]; // true = revealed cell
-  });
-  if (hiddenVisible.length) {
-    var revealRow = document.createElement('div');
-    revealRow.style.cssText = 'margin-bottom:0.4rem;';
-    var revealBtn = document.createElement('button');
-    revealBtn.className = 'btn btn-small btn-secondary';
-    revealBtn.style.cssText = 'font-size:0.72rem;width:100%;padding:0.2rem 0.5rem;';
-    revealBtn.textContent = '👁 Reveal All Not Under Fog (' + hiddenVisible.length + ')';
-    revealBtn.title = 'Unhide all hidden tokens that are not currently in fog of war';
-    revealBtn.addEventListener('click', function() {
-      hiddenVisible.forEach(function(tok) { tok.hidden = false; });
-      sendTokenUpdate(activeTokenMapKey);
-      refreshMapMobsSection();
-    });
-    revealRow.appendChild(revealBtn);
-    list.appendChild(revealRow);
-  }
-
   mobs.forEach(function(tok) {
     var alreadyIn = initiative.some(function(e) { return e.name === tok.label; });
     var row = document.createElement('div');
