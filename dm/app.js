@@ -3752,7 +3752,7 @@ function refreshMapMobsSection() {
   // "Reveal all visible" button — shown when any token is hidden
   var hiddenVisible = mobs.filter(function(t) {
     if (!t.hidden) return false;
-    if (!fogGrid || !fogGrid.length) return true; // no fog — token is visible
+    if (!fogGrid || !fogGrid.length || !currentViewFogKey) return true; // no fog active — token is visible
     var fCols = (fogGrid[0] && fogGrid[0].length) ? fogGrid[0].length : 20;
     var fRows = fogGrid.length;
     var gridC = Math.min(fCols - 1, Math.max(0, Math.floor(t.x * fCols)));
