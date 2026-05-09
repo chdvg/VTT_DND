@@ -33,29 +33,19 @@ The DM panel and player screen stay in sync via WebSocket. Everything the DM doe
 A full tile-based map editor accessible at `/map-builder` from the DM machine (link in the DM panel header).
 
 **Tools:**
-| Tool | Description |
-|------|-------------|
-| 🖌 Paint | Click or drag to paint tiles |
-| ⬜ Erase | Remove tiles back to empty |
-| 🪣 Fill | Flood-fill an area with the selected tile |
-| 🪙 Token | Place player or NPC/enemy tokens |
-| 🔤 Label | Add text labels anywhere on the map |
-| 🖼 Image | Place a background image behind the tile grid |
-| 🎯 Feature | Define named trigger regions (pit/trap/puzzle/reveal/effect) |
-| 🔧 Object | Place moveable / interactive objects with auto-animations |
-
+| Tool | Description Tile palette — 49
 **Token tool:**
 - **Player tab** — pick a player from your saved roster; their class icon and color are applied automatically
 - **NPC tab** — choose from 25 standard mob types (each with a unique icon and color) or enter a custom label; tokens auto-number (e.g. Goblin 1, Goblin 2…)
 
-**Tile palette — 49 procedural tile types across 10 groups, plus 132 Kenney pixel-art tiles:**
+**Tile palette — 50 procedural tile types across 10 groups, plus 132 Kenney pixel-art tiles:**
 
 | Group | Tiles |
 |-------|-------|
 | **Ground** | Stone Floor, Wood Floor, Dirt, Cave |
 | **Terrain** | Grass, Sand, Snow, Swamp, Lava |
 | **Water** | Water, Deep Water |
-| **Walls** | Wall, Stone Wall, Ruined Wall, Door, Pit |
+| **Walls** | Wall, Stone Wall, Ruined Wall, Door, Cave Opening, Pit |
 | **Buildings** | Cabin, Ruined Cabin, Tent, Well |
 | **Roads** | Road ─, Road │, Road +, Road ↗ ↖ ↘ ↙ (corners), Road T-N/S/E/W (11 variants) |
 | **Nature** | Tree, Large Tree, Pine, Palm, Hill |
