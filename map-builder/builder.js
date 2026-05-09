@@ -27,6 +27,7 @@ const TILES = [
   { id: 'road-t-e',     label: 'Road T-E', color: '#a8a29e', pattern: 'road-t-e' },
   { id: 'road-t-w',     label: 'Road T-W', color: '#a8a29e', pattern: 'road-t-w' },
   { id: 'door',         label: 'Door',     color: '#7c2d12', pattern: 'door' },
+  { id: 'cave-opening', label: 'Cave-Open',color: '#2c2825', pattern: 'solid' },
   { id: 'pit',          label: 'Pit',      color: '#0a0a0a', pattern: 'solid' },
   { id: 'tree',         label: 'Tree',     color: '#14532d', pattern: 'tree' },
   { id: 'tree-large',   label: 'Tree-L',   color: '#14532d', pattern: 'tree-large' },
