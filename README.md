@@ -343,26 +343,45 @@ A `Dockerfile` and `docker-compose.yml` are included if you prefer a containeriz
 docker compose up --build
 ```
 
-The server starts on **port 3000** as normal. Map files, audio, and server state are mounted as volumes so they persist across container restarts:
+The server starts on **port 3000** as normal.
+
+#### Mode 1 — Local dev (default, bind mounts)
+
+Map files, audio, seeds, and server state are **mounted from your local disk** so changes take effect immediately without rebuilding the image:
 
 | Host path | Container path | Purpose |
 |-----------|---------------|---------|
 | `./public/assets/maps` | `/app/public/assets/maps` | Map images |
 | `./public/assets/audio` | `/app/public/assets/audio` | Audio files |
-| `./data` | `/app/data` | Server state (`state.json`) |
 | `./seeds` | `/app/seeds` | Scene & player roster data |
+| `./data` | `/app/data` | Server state (`state.json`) |
 
-To override the DM password at runtime:
+> If you edit source files (`server.js`, `dm/app.js`, etc.) you must rebuild: `docker compose up --build`
+
+#### Mode 2 — Standalone (portable / ship to another machine)
+
+All assets are **baked into the image** at build time — no local files needed on the target machine. Only `data/` is mounted so server state survives container restarts:
 
 ```bash
-DM_PASSWORD=mysecretpassword docker compose up
+docker compose -f docker-compose.yml -f docker-compose.standalone.yml up
 ```
 
-Or add a `.env` file in the project root:
+Use this when deploying to a machine that doesn't have your local asset folders. Just bring the built image + both compose files.
 
+#### DM Password
+
+Copy `.env.example` to `.env` and set your password:
+
+```bash
+cp .env.example .env
+```
+
+`.env`:
 ```
 DM_PASSWORD=mysecretpassword
 ```
+
+`.env` is gitignored — never commit real passwords. The default password is `dm1234`.
 
 ---
 
