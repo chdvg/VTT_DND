@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v3.9 — Web Edition)
+# D&D VTT Control Console (v3.7.0 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -334,6 +334,35 @@ To find your local IP on Windows:
 ipconfig
 ```
 Look for **IPv4 Address** under your active adapter (usually `192.168.x.x`).
+
+### Run with Docker (optional)
+
+A `Dockerfile` and `docker-compose.yml` are included if you prefer a containerized setup.
+
+```bash
+docker compose up --build
+```
+
+The server starts on **port 3000** as normal. Map files, audio, and server state are mounted as volumes so they persist across container restarts:
+
+| Host path | Container path | Purpose |
+|-----------|---------------|---------|
+| `./public/assets/maps` | `/app/public/assets/maps` | Map images |
+| `./public/assets/audio` | `/app/public/assets/audio` | Audio files |
+| `./data` | `/app/data` | Server state (`state.json`) |
+| `./seeds` | `/app/seeds` | Scene & player roster data |
+
+To override the DM password at runtime:
+
+```bash
+DM_PASSWORD=mysecretpassword docker compose up
+```
+
+Or add a `.env` file in the project root:
+
+```
+DM_PASSWORD=mysecretpassword
+```
 
 ---
 
