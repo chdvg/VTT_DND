@@ -17,7 +17,7 @@ pipeline {
 
     environment {
         IMAGE_NAME     = 'dnd-vtt'
-        NEXUS_REGISTRY = "${env.NEXUS_REGISTRY ?: '127.0.0.1:8086'}"
+        NEXUS_REGISTRY = "${env.NEXUS_REGISTRY ?: 'host.docker.internal:8086'}"
         NEXUS_CREDS    = credentials('nexus-docker')
     }
 
