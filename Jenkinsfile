@@ -7,7 +7,7 @@
 //                                     e.g.  localhost:8082  or  192.168.1.78:8082
 //
 // Branch strategy:
-//   dev    → build + lint-check only (no push)
+//   dev    → build + push image to Nexus (tagged :dev-<build>)
 //   stage  → build + push image to Nexus (tagged :stage-<build>)
 //   main   → build + push image to Nexus (tagged :<version>-<build> and :latest)
 //              + deploy on the local host via docker compose
@@ -46,6 +46,7 @@ pipeline {
                     env.IMAGE_FULL   = "${env.NEXUS_REGISTRY}/${env.IMAGE_NAME}"
                     env.IMAGE_VER    = "${env.IMAGE_FULL}:${env.APP_VERSION}-${env.BUILD_NUMBER}"
                     env.IMAGE_LATEST = "${env.IMAGE_FULL}:latest"
+                    env.IMAGE_DEV    = "${env.IMAGE_FULL}:dev-${env.BUILD_NUMBER}"
                     env.IMAGE_STAGE  = "${env.IMAGE_FULL}:stage-${env.BUILD_NUMBER}"
 
                     echo "Version : ${env.APP_VERSION}"
@@ -59,7 +60,16 @@ pipeline {
         stage('Docker Build') {
             steps {
                 script {
-                    def tag = (env.BRANCH_NAME == 'main') ? env.IMAGE_VER : env.IMAGE_STAGE
+                    def tag
+                    if (env.BRANCH_NAME == 'main') {
+                        tag = env.IMAGE_VER
+                    } else if (env.BRANCH_NAME == 'stage') {
+                        tag = env.IMAGE_STAGE
+                    } else if (env.BRANCH_NAME == 'dev') {
+                        tag = env.IMAGE_DEV
+                    } else {
+                        tag = "${env.IMAGE_FULL}:ci-${env.BUILD_NUMBER}"
+                    }
                     // Label the image with build metadata
                     sh """
                         docker build \\
@@ -74,10 +84,10 @@ pipeline {
             }
         }
 
-        // ── 4. Push to Nexus (stage + main only) ──────────────────────────
+        // ── 4. Push to Nexus (dev + stage + main) ─────────────────────────
         stage('Push to Nexus') {
             when {
-                anyOf { branch 'main'; branch 'stage' }
+                anyOf { branch 'main'; branch 'stage'; branch 'dev' }
             }
             steps {
                 script {
