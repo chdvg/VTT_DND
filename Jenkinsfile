@@ -17,7 +17,7 @@ pipeline {
 
     environment {
         IMAGE_NAME     = 'dnd-vtt'
-        NEXUS_REGISTRY = "${env.NEXUS_REGISTRY ?: 'localhost:8086'}"
+        NEXUS_REGISTRY = "${env.NEXUS_REGISTRY ?: '127.0.0.1:8086'}"
         NEXUS_CREDS    = credentials('nexus-docker')
     }
 
@@ -91,7 +91,7 @@ pipeline {
             }
             steps {
                 script {
-                    sh "docker login ${env.NEXUS_REGISTRY} -u \$NEXUS_CREDS_USR -p \$NEXUS_CREDS_PSW"
+                    sh "echo \"\$NEXUS_CREDS_PSW\" | docker login ${env.NEXUS_REGISTRY} -u \"\$NEXUS_CREDS_USR\" --password-stdin"
                     sh "docker push ${env.BUILT_TAG}"
 
                     // On main also push :latest
