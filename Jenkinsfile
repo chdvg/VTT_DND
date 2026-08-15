@@ -13,7 +13,7 @@
 //              + deploy on the local host via docker compose
 // ─────────────────────────────────────────────────────────────────────────────
 pipeline {
-    agent any
+    agent { label 'wsl-host' }
 
     environment {
         IMAGE_NAME     = 'dnd-vtt'
@@ -40,7 +40,7 @@ pipeline {
         stage('Version') {
             steps {
                 script {
-                    // Use node to read version — no extra Jenkins plugin needed
+                    // Use node to read version from package.json
                     env.APP_VERSION  = sh(script: "node -e \"process.stdout.write(require('./package.json').version)\"", returnStdout: true).trim()
                     env.SHORT_SHA    = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
                     env.IMAGE_FULL   = "${env.NEXUS_REGISTRY}/${env.IMAGE_NAME}"
