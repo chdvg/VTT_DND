@@ -45,6 +45,45 @@
           </div>
         </div>
 
+        <div class="sb-section">
+          <div class="sb-section-hdr">
+            <span class="sb-chev">▾</span>Sessions
+          </div>
+          <div class="sb-section-body">
+            <div style="display:flex;gap:0.4rem;margin-bottom:0.5rem;">
+              <input type="text" id="session-name-input" placeholder="Session name…" style="flex:1;min-width:0;" maxlength="80" />
+              <button id="session-save-btn" class="btn btn-small btn-primary" style="flex:none;white-space:nowrap;">💾 Save</button>
+            </div>
+            <div id="session-list" style="display:flex;flex-direction:column;gap:0.3rem;"></div>
+          </div>
+        </div>
+
+        <div class="sb-section">
+          <div class="sb-section-hdr">
+            <span class="sb-chev">▾</span>Encounters
+          </div>
+          <div class="sb-section-body">
+            <div style="display:flex;gap:0.4rem;margin-bottom:0.5rem;">
+              <input type="text" id="encounter-name-input" placeholder="Encounter name…" style="flex:1;min-width:0;" maxlength="80" />
+              <button id="encounter-save-btn" class="btn btn-small btn-secondary" style="flex:none;white-space:nowrap;">💾 Save</button>
+            </div>
+            <div id="encounter-list" style="display:flex;flex-direction:column;gap:0.3rem;"></div>
+          </div>
+        </div>
+
+        <div class="sb-section">
+          <div class="sb-section-hdr">
+            <span class="sb-chev">▾</span>Scene Bundles
+          </div>
+          <div class="sb-section-body">
+            <div style="display:flex;gap:0.4rem;margin-bottom:0.5rem;">
+              <input type="text" id="bundle-name-input" placeholder="Bundle name…" style="flex:1;min-width:0;" maxlength="80" />
+              <button id="bundle-save-btn" class="btn btn-small btn-secondary" style="flex:none;white-space:nowrap;">💾 Save</button>
+            </div>
+            <div id="bundle-list" style="display:flex;flex-direction:column;gap:0.3rem;"></div>
+          </div>
+        </div>
+
       </div>
       <div class="sidebar-resize-handle" id="sidebar-resize"></div>
     </aside>
@@ -344,6 +383,7 @@
         <div id="init-list"></div>
         <div class="init-action-row">
           <button id="init-send-btn" class="btn btn-primary init-action-btn">⚔️ Send</button>
+          <button id="init-start-btn" class="btn btn-secondary init-action-btn" title="Lift blackout + reset turn + send initiative to players">🎯 Start</button>
           <button id="init-next-btn" class="btn btn-secondary init-action-btn">⏭️ Next</button>
           <button id="init-clear-btn" class="btn btn-warning init-action-btn">🧹 Mobs</button>
           <button id="init-reset-btn" class="btn btn-danger init-action-btn" title="Remove all entries including players">🔄 Reset</button>

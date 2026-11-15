@@ -10,8 +10,10 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });
 
 // ── Persistence ───────────────────────────────────────────────
-const DATA_DIR   = path.join(__dirname, 'data');
+const DATA_DIR   = process.env.DATA_DIR ? require('path').resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
+const STATE_TMP  = path.join(DATA_DIR, 'state.tmp.json');
+const STATE_BACK = path.join(DATA_DIR, 'state.backup.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 
 function saveState() {
@@ -34,44 +36,76 @@ function saveState() {
       allTokenStates,
       currentObjectDefs,
       currentObjectStates,
+      currentHpState,
     };
-    fs.writeFileSync(STATE_FILE, JSON.stringify(snapshot));
+    fs.writeFileSync(STATE_TMP, JSON.stringify(snapshot));
+    if (fs.existsSync(STATE_FILE)) fs.copyFileSync(STATE_FILE, STATE_BACK);
+    // renameSync is atomic on Linux; on Windows/OneDrive fall back to copy+delete
+    try { fs.renameSync(STATE_TMP, STATE_FILE); }
+    catch (_) { fs.copyFileSync(STATE_TMP, STATE_FILE); try { fs.unlinkSync(STATE_TMP); } catch (__) {} }
   } catch (e) {
     console.error('saveState error:', e.message);
   }
 }
 
 function loadState() {
-  try {
-    if (!fs.existsSync(STATE_FILE)) return;
-    const saved = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    if (saved.currentSceneView)       currentSceneView       = saved.currentSceneView;
-    if (saved.currentFogStates)       currentFogStates       = saved.currentFogStates;
-    if (Array.isArray(saved.currentTokens)) currentTokens    = saved.currentTokens;
-    if (saved.currentTokensMapKey)    currentTokensMapKey    = saved.currentTokensMapKey;
-    if (saved.currentTokensShowRings !== undefined) currentTokensShowRings = saved.currentTokensShowRings;
-    if (Array.isArray(saved.currentDrawing)) currentDrawing  = saved.currentDrawing;
-    if (saved.currentDrawingMapKey)   currentDrawingMapKey   = saved.currentDrawingMapKey;
-    if (Array.isArray(saved.currentFeatures)) currentFeatures = saved.currentFeatures;
-    if (saved.currentFeatureStates)   currentFeatureStates   = saved.currentFeatureStates;
-    if (saved.currentMapMeta)         currentMapMeta         = saved.currentMapMeta;
-    if (saved.currentTargets)         currentTargets         = saved.currentTargets;
-    if (typeof saved.gridEnabled === 'boolean') gridEnabled  = saved.gridEnabled;
-    if (typeof saved.allPlayersLocked === 'boolean') allPlayersLocked = saved.allPlayersLocked;
-    if (typeof saved.blackout === 'boolean') currentState.blackout = saved.blackout;
-    if (saved.allTokenStates && typeof saved.allTokenStates === 'object') allTokenStates = saved.allTokenStates;
-    if (Array.isArray(saved.currentObjectDefs)) currentObjectDefs = saved.currentObjectDefs;
-    if (saved.currentObjectStates && typeof saved.currentObjectStates === 'object') currentObjectStates = saved.currentObjectStates;
-    console.log('State restored from disk.');
-  } catch (e) {
-    console.error('loadState error:', e.message);
+  for (const [file, label] of [[STATE_FILE, 'primary'], [STATE_BACK, 'backup']]) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (saved.currentSceneView)       currentSceneView       = saved.currentSceneView;
+      if (saved.currentFogStates)       currentFogStates       = saved.currentFogStates;
+      if (Array.isArray(saved.currentTokens)) currentTokens    = saved.currentTokens;
+      if (saved.currentTokensMapKey)    currentTokensMapKey    = saved.currentTokensMapKey;
+      if (saved.currentTokensShowRings !== undefined) currentTokensShowRings = saved.currentTokensShowRings;
+      if (Array.isArray(saved.currentDrawing)) currentDrawing  = saved.currentDrawing;
+      if (saved.currentDrawingMapKey)   currentDrawingMapKey   = saved.currentDrawingMapKey;
+      if (Array.isArray(saved.currentFeatures)) currentFeatures = saved.currentFeatures;
+      if (saved.currentFeatureStates)   currentFeatureStates   = saved.currentFeatureStates;
+      if (saved.currentMapMeta)         currentMapMeta         = saved.currentMapMeta;
+      if (saved.currentTargets)         currentTargets         = saved.currentTargets;
+      if (typeof saved.gridEnabled === 'boolean') gridEnabled  = saved.gridEnabled;
+      if (typeof saved.allPlayersLocked === 'boolean') allPlayersLocked = saved.allPlayersLocked;
+      if (typeof saved.blackout === 'boolean') currentState.blackout = saved.blackout;
+      if (saved.allTokenStates && typeof saved.allTokenStates === 'object') allTokenStates = saved.allTokenStates;
+      if (Array.isArray(saved.currentObjectDefs)) currentObjectDefs = saved.currentObjectDefs;
+      if (saved.currentObjectStates && typeof saved.currentObjectStates === 'object') currentObjectStates = saved.currentObjectStates;
+      if (saved.currentHpState && typeof saved.currentHpState === 'object') currentHpState = saved.currentHpState;
+      if (label === 'backup') console.warn('State restored from backup (primary was missing/corrupt).');
+      else console.log('State restored from disk.');
+      return;
+    } catch (e) {
+      console.error(`loadState error (${label}):`, e.message);
+    }
   }
+}
+
+let _saveTimer = null;
+function scheduleSave() {
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => { _saveTimer = null; saveState(); }, 1000);
+}
+
+function log(event, details = {}) {
+  console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...details }));
+}
+
+function checkRate(ws, action, limit, windowMs) {
+  const now = Date.now();
+  if (!ws._rates) ws._rates = {};
+  const r = ws._rates[action] || (ws._rates[action] = { n: 0, reset: now + windowMs });
+  if (now > r.reset) { r.n = 0; r.reset = now + windowMs; }
+  return ++r.n <= limit;
 }
 
 // ── DM Password Auth ─────────────────────────────────────────
 const DM_PASSWORD = process.env.DM_PASSWORD || 'dm1234';
 const SESSION_SECRET = crypto.randomBytes(32).toString('hex'); // ephemeral per-run
-const dmSessions = new Set(); // valid session tokens
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8-hour sliding expiry
+const dmSessions = new Map(); // token → expiresAt
+
+// Hourly purge of expired DM sessions
+setInterval(() => { const now = Date.now(); for (const [t, e] of dmSessions) if (now > e) dmSessions.delete(t); }, 60 * 60 * 1000);
 
 function makeToken() { return crypto.randomBytes(24).toString('hex'); }
 function parseCookies(req) {
@@ -83,7 +117,13 @@ function parseCookies(req) {
   return out;
 }
 function isDmAuthed(req) {
-  return dmSessions.has(parseCookies(req).dm_token || '');
+  const token = parseCookies(req).dm_token || '';
+  if (!token) return false;
+  const exp = dmSessions.get(token);
+  if (!exp) return false;
+  if (Date.now() > exp) { dmSessions.delete(token); return false; }
+  dmSessions.set(token, Date.now() + SESSION_TTL_MS); // slide on activity
+  return true;
 }
 
 // Login page
@@ -119,7 +159,7 @@ app.get('/dm-login', (req, res) => {
 app.post('/dm-login', express.urlencoded({ extended: false }), (req, res) => {
   if (req.body.password === DM_PASSWORD) {
     const token = makeToken();
-    dmSessions.add(token);
+    dmSessions.set(token, Date.now() + SESSION_TTL_MS);
     res.setHeader('Set-Cookie', `dm_token=${token}; HttpOnly; SameSite=Strict; Path=/`);
     return res.redirect('/');
   }
@@ -205,6 +245,7 @@ const loggedInPlayers  = new Map();  // playerName -> ws
 let currentTargets     = {};         // playerName -> targetLabel (combat targeting)
 let gridEnabled        = false;      // DM-toggled grid overlay (shown on all screens)
 let allTokenStates     = {};         // mapKey -> tokens[], persisted from DM (all maps)
+let currentHpState     = {};         // name -> { hp, maxHp }
 const clients = new Set();
 const dmClients = new Set();
 let guestCounter = 0;  // increments for each non-DM connection
@@ -237,57 +278,56 @@ setInterval(() => { broadcastClientCount(); }, 5000);
 function broadcast(data) {
   const payload = JSON.stringify(data);
   for (const client of clients) {
-    if (client.readyState === WebSocket.OPEN) client.send(payload);
+    if (client.readyState === WebSocket.OPEN) {
+      try { client.send(payload); } catch (_) {}
+    }
   }
 }
 
+function safeSend(ws, data) {
+  if (ws.readyState !== WebSocket.OPEN) return;
+  try { ws.send(JSON.stringify(data)); } catch (_) {}
+}
+
 function sendFullState(ws) {
-  // Blackout
   if (currentState.blackout) {
-    ws.send(JSON.stringify({ type: 'BLACKOUT', active: true }));
-    return; // nothing to render under blackout
+    safeSend(ws, { type: 'BLACKOUT', active: true });
+    return;
   }
-  // Current scene view (map image, fog key, fit mode)
   if (currentSceneView) {
-    ws.send(JSON.stringify(currentSceneView));
+    safeSend(ws, currentSceneView);
   } else if (currentSceneId) {
-    ws.send(JSON.stringify({ type: 'SHOW_SCENE', sceneId: currentSceneId }));
+    safeSend(ws, { type: 'SHOW_SCENE', sceneId: currentSceneId });
   }
-  // Fog states for every key we know about
   for (const fogKey of Object.keys(currentFogStates)) {
-    ws.send(JSON.stringify({ type: 'UPDATE_FOG', fogKey, fogGrid: currentFogStates[fogKey] }));
+    safeSend(ws, { type: 'UPDATE_FOG', fogKey, fogGrid: currentFogStates[fogKey] });
   }
-  // Tokens
   if (currentTokensMapKey) {
-    ws.send(JSON.stringify({ type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey, showRings: currentTokensShowRings }));
+    safeSend(ws, { type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey, showRings: currentTokensShowRings });
   }
-  // Annotations
   if (currentDrawingMapKey) {
-    ws.send(JSON.stringify({ type: 'UPDATE_DRAWING', strokes: currentDrawing, mapKey: currentDrawingMapKey }));
+    safeSend(ws, { type: 'UPDATE_DRAWING', strokes: currentDrawing, mapKey: currentDrawingMapKey });
   }
-  // Features — send definitions first so the overlay can be built
   if (currentFeatures.length) {
-    ws.send(JSON.stringify({ type: 'UPDATE_FEATURES', features: currentFeatures, mapKey: currentTokensMapKey, mapMeta: (currentSceneView && currentSceneView.mapMeta) || currentMapMeta || null }));
+    safeSend(ws, { type: 'UPDATE_FEATURES', features: currentFeatures, mapKey: currentTokensMapKey, mapMeta: (currentSceneView && currentSceneView.mapMeta) || currentMapMeta || null });
   }
-  // Feature states — replay any triggered features to reconnecting players
   for (const [fid, fstate] of Object.entries(currentFeatureStates)) {
     if (fstate === 'triggered') {
       const feat = currentFeatures.find(f => f.id === fid);
-      if (feat) ws.send(JSON.stringify({ type: 'TRIGGER_FEATURE', feature: feat, allFeatures: currentFeatures, mapKey: currentTokensMapKey, mapMeta: (currentSceneView && currentSceneView.mapMeta) || currentMapMeta || null }));
+      if (feat) safeSend(ws, { type: 'TRIGGER_FEATURE', feature: feat, allFeatures: currentFeatures, mapKey: currentTokensMapKey, mapMeta: (currentSceneView && currentSceneView.mapMeta) || currentMapMeta || null });
     }
   }
-  // Audio — we don't restart audio on reconnect (too disruptive if it's mid-play)
-  // Targeting state
   for (const [player, target] of Object.entries(currentTargets)) {
-    if (target) ws.send(JSON.stringify({ type: 'SET_TARGET', player, target }));
+    if (target) safeSend(ws, { type: 'SET_TARGET', player, target });
   }
-  // Moveable objects
   if (currentObjectDefs.length) {
-    ws.send(JSON.stringify({ type: 'UPDATE_OBJECTS', objects: currentObjectDefs, objectStates: currentObjectStates }));
+    safeSend(ws, { type: 'UPDATE_OBJECTS', objects: currentObjectDefs, objectStates: currentObjectStates });
   }
-  // Grid overlay state
   if (gridEnabled) {
-    ws.send(JSON.stringify({ type: 'GRID_TOGGLE', enabled: true }));
+    safeSend(ws, { type: 'GRID_TOGGLE', enabled: true });
+  }
+  for (const [name, hpData] of Object.entries(currentHpState)) {
+    safeSend(ws, { type: 'HP_UPDATE', name, hp: hpData.hp, maxHp: hpData.maxHp });
   }
 }
 
@@ -316,7 +356,7 @@ wss.on('connection', (ws, req) => {
   const dmAuthed = isDmAuthed(req);
   if (dmAuthed) dmClients.add(ws);
   if (!dmAuthed) ws.guestId = ++guestCounter;
-  console.log(`Client connected. Total: ${clients.size} | isDM: ${dmAuthed} | dmClients: ${dmClients.size}`);
+  log('connect', { isDm: dmAuthed, total: clients.size, dms: dmClients.size });
   broadcastClientCount();
   // Always push current state to newly connected clients.
   if (!dmAuthed) {
@@ -343,19 +383,22 @@ wss.on('connection', (ws, req) => {
       currentTargets: currentTargets,
       gridEnabled: gridEnabled,
       allTokenStates: allTokenStates,
+      objectDefs: currentObjectDefs,
+      objectStates: currentObjectStates,
     }));
   }
 
   ws.on('message', (raw) => {
     try {
       const message = JSON.parse(raw);
+      if (!checkRate(ws, '_msg', 60, 1000)) return; // 60 msg/s global per socket
       const isDm = dmClients.has(ws);
       // All mutating/DM-only actions require an authenticated DM connection
       const DM_ACTIONS = ['blackout','show','show-scene-view','clear','clear-scene','play-audio',
         'stop-audio','send-overlay','update-fog','set-rings','update-tokens',
         'update-drawing','dm-connect','trigger-feature','reset-feature','update-features',
         'lock-player','unlock-player','lock-all','unlock-all','trigger-attack','dm-set-target',
-        'toggle-grid','sync-all-tokens'];
+        'toggle-grid','sync-all-tokens','update-hp'];
       if (DM_ACTIONS.includes(message.action) && !isDm) {
         // If a DM panel is reconnecting after a server restart the session
         // will be gone — tell it to reload so it goes through login again.
@@ -377,7 +420,14 @@ wss.on('connection', (ws, req) => {
           break;
         case 'blackout':
           currentState.blackout = !currentState.blackout;
-          broadcast({ type: 'BLACKOUT', active: currentState.blackout }); break;
+          broadcast({ type: 'BLACKOUT', active: currentState.blackout });
+          if (!currentState.blackout) {
+            // Restore full scene to every player after blackout lifts
+            for (const c of clients) {
+              if (!dmClients.has(c) && c.readyState === WebSocket.OPEN) sendFullState(c);
+            }
+          }
+          break;
         case 'show':
           currentSceneId = message.sceneId || null;
           broadcast({ type: 'SHOW_SCENE', sceneId: currentSceneId }); break;
@@ -396,6 +446,7 @@ wss.on('connection', (ws, req) => {
           const sceneViewMsg = { type: 'SHOW_SCENE_VIEW', image: message.image, audio: message.audio || null, fogKey: message.fogKey || null, audioLoop: message.audioLoop !== false, fit: message.fit || 'contain', mapKey: message.mapKey || null, features: currentFeatures, mapMeta: message.mapMeta || null, label: message.label || '' };
           currentSceneView = sceneViewMsg;
           currentAudio = message.audio ? { url: message.audio, loop: message.audioLoop !== false } : null;
+          log('scene-show', { mapKey: message.mapKey, label: message.label || '' });
           broadcast(sceneViewMsg);
           broadcast({ type: 'UPDATE_TOKENS', tokens: [], mapKey: currentTokensMapKey });
           broadcast({ type: 'UPDATE_DRAWING', strokes: [], mapKey: currentDrawingMapKey });
@@ -416,6 +467,7 @@ wss.on('connection', (ws, req) => {
           currentFeatureStates = {};
           currentTargets = {};
           allTokenStates = {};
+          currentHpState = {};
           broadcast({ type: 'CLEAR' });
           saveState();
           break;
@@ -649,7 +701,7 @@ wss.on('connection', (ws, req) => {
             const loggedInMsg = JSON.stringify({ type: 'LOGGED_IN_PLAYERS', players: [...loggedInPlayers.keys()] });
             for (const dm of dmClients) { if (dm.readyState === WebSocket.OPEN) dm.send(loggedInMsg); }
             broadcastClientCount();
-            console.log('Player logged in:', player.name);
+            log('player-login', { name: player.name, cls: loginCls });
           } catch (e) {
             console.error('player-login error:', e);
             ws.send(JSON.stringify({ type: 'PLAYER_LOGIN_ERR', error: 'Server error during login.' }));
@@ -657,6 +709,7 @@ wss.on('connection', (ws, req) => {
           break;
         }
         case 'move-player-token': {
+          if (!checkRate(ws, 'move', 20, 1000)) break; // 20 moves/s
           if (!ws.playerName) break;
           if (allPlayersLocked || lockedPlayers.has(ws.playerName)) break;
           const tokIdx = currentTokens.findIndex(
@@ -696,6 +749,7 @@ wss.on('connection', (ws, req) => {
               }
             }
           }
+          scheduleSave();
           break;
         }
         case 'set-target': {
@@ -710,6 +764,7 @@ wss.on('connection', (ws, req) => {
           break;
         }
         case 'player-dice-roll': {
+          if (!checkRate(ws, 'dice', 5, 5000)) break; // 5 rolls per 5s
           if (!ws.playerName) break;
           const pdie    = parseInt(message.die)    || 0;
           const presult = parseInt(message.result) || 0;
@@ -724,6 +779,16 @@ wss.on('connection', (ws, req) => {
           }
           break;
         }
+        case 'update-hp': {
+          const hpName = String(message.name || '').trim().slice(0, 64);
+          const hpCur  = typeof message.hp    === 'number' ? Math.round(message.hp)    : null;
+          const hpMax  = typeof message.maxHp === 'number' ? Math.round(message.maxHp) : null;
+          if (!hpName || hpCur === null || hpMax === null) break;
+          currentHpState[hpName] = { hp: hpCur, maxHp: hpMax };
+          broadcast({ type: 'HP_UPDATE', name: hpName, hp: hpCur, maxHp: hpMax });
+          saveState();
+          break;
+        }
       }
     } catch (err) { console.error('Bad message:', err); }
   });
@@ -735,7 +800,7 @@ wss.on('connection', (ws, req) => {
       const loggedInMsg = JSON.stringify({ type: 'LOGGED_IN_PLAYERS', players: [...loggedInPlayers.keys()] });
       for (const dm of dmClients) { if (dm.readyState === WebSocket.OPEN) dm.send(loggedInMsg); }
     }
-    console.log('Client disconnected. Total: ' + clients.size);
+    log('disconnect', { player: ws.playerName || null, total: clients.size });
     broadcastClientCount();
   });
 });
@@ -768,12 +833,34 @@ app.post('/api/stopaudio', requireDm, (req, res) => {
 app.post('/api/blackout', requireDm, (req, res) => {
   currentState.blackout = !currentState.blackout;
   broadcast({ type: 'BLACKOUT', active: currentState.blackout });
+  if (!currentState.blackout) {
+    for (const c of clients) {
+      if (!dmClients.has(c) && c.readyState === WebSocket.OPEN) sendFullState(c);
+    }
+  }
   res.json({ ok: true, blackout: currentState.blackout });
 });
 
 app.post('/api/clear', requireDm, (req, res) => {
+  currentSceneId = null;
+  currentSceneView = null;
   currentState.nowShowing = '—'; currentState.content = ''; currentState.blackout = false;
+  currentTokens = [];
+  currentTokensMapKey = null;
+  currentDrawing = [];
+  currentDrawingMapKey = null;
+  currentFogStates = {};
+  currentAudio = null;
+  currentFeatures = [];
+  currentFeatureStates = {};
+  currentTargets = {};
+  allTokenStates = {};
+  currentObjectDefs = [];
+  currentObjectStates = {};
+  currentHpState = {};
   broadcast({ type: 'CLEAR' });
+  saveState();
+  log('clear', { via: 'rest' });
   res.json({ ok: true });
 });
 
@@ -786,11 +873,294 @@ app.post('/api/clear-scene', requireDm, (req, res) => {
   currentFogStates = {};
   currentFeatures = [];
   currentFeatureStates = {};
+  currentTargets = {};
+  allTokenStates = {};
+  currentObjectDefs = [];
+  currentObjectStates = {};
   broadcast({ type: 'CLEAR_SCENE' });
+  saveState();
   res.json({ ok: true });
 });
 
 app.get('/api/state', (req, res) => { res.json(currentState); });
+
+// ── Session snapshots ─────────────────────────────────────────
+const SESSIONS_DIR = path.join(DATA_DIR, 'sessions');
+if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+
+function sessionFileName(name) {
+  return path.join(SESSIONS_DIR, name.replace(/[^a-zA-Z0-9 _-]/g, '').trim().slice(0, 80) + '.session.json');
+}
+
+app.get('/api/sessions', requireDm, (req, res) => {
+  try {
+    const files = fs.readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.session.json'));
+    const sessions = files.map(f => {
+      try {
+        const d = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf8'));
+        return { name: d.name, savedAt: d.savedAt, scene: d.sceneLabel || null };
+      } catch { return null; }
+    }).filter(Boolean).sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
+    res.json({ sessions });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/sessions/save', requireDm, express.json({ limit: '8mb' }), (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  try {
+    const snapshot = {
+      name,
+      savedAt: new Date().toISOString(),
+      sceneLabel: (currentSceneView && (currentSceneView.label || currentSceneView.mapKey)) || null,
+      // server state
+      currentSceneView, currentFogStates, currentTokens, currentTokensMapKey,
+      currentTokensShowRings, currentDrawing, currentDrawingMapKey,
+      currentFeatures, currentFeatureStates, currentMapMeta,
+      currentTargets, gridEnabled, allPlayersLocked,
+      blackout: currentState.blackout, allTokenStates,
+      currentObjectDefs, currentObjectStates,
+      // DM client state passed up from the browser
+      initiative: Array.isArray(req.body.initiative) ? req.body.initiative : [],
+      currentTurn: Number(req.body.currentTurn) || 0,
+    };
+    fs.writeFileSync(sessionFileName(name), JSON.stringify(snapshot));
+    log('session-save', { name });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/sessions/load', requireDm, express.json({ limit: '8mb' }), (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  try {
+    const file = sessionFileName(name);
+    if (!fs.existsSync(file)) return res.status(404).json({ error: 'Session not found' });
+    const d = JSON.parse(fs.readFileSync(file, 'utf8'));
+
+    // Restore all server state from snapshot
+    currentSceneView        = d.currentSceneView        || null;
+    currentFogStates        = d.currentFogStates        || {};
+    currentTokens           = Array.isArray(d.currentTokens) ? d.currentTokens : [];
+    currentTokensMapKey     = d.currentTokensMapKey     || null;
+    currentTokensShowRings  = d.currentTokensShowRings  !== undefined ? d.currentTokensShowRings : true;
+    currentDrawing          = Array.isArray(d.currentDrawing) ? d.currentDrawing : [];
+    currentDrawingMapKey    = d.currentDrawingMapKey    || null;
+    currentFeatures         = Array.isArray(d.currentFeatures) ? d.currentFeatures : [];
+    currentFeatureStates    = d.currentFeatureStates    || {};
+    currentMapMeta          = d.currentMapMeta          || null;
+    currentTargets          = d.currentTargets          || {};
+    gridEnabled             = typeof d.gridEnabled === 'boolean' ? d.gridEnabled : false;
+    allPlayersLocked        = typeof d.allPlayersLocked === 'boolean' ? d.allPlayersLocked : false;
+    currentState.blackout   = typeof d.blackout === 'boolean' ? d.blackout : false;
+    allTokenStates          = (d.allTokenStates && typeof d.allTokenStates === 'object') ? d.allTokenStates : {};
+    currentObjectDefs       = Array.isArray(d.currentObjectDefs) ? d.currentObjectDefs : [];
+    currentObjectStates     = (d.currentObjectStates && typeof d.currentObjectStates === 'object') ? d.currentObjectStates : {};
+
+    saveState();
+
+    // Push restored state to all connected clients
+    for (const c of clients) {
+      if (!dmClients.has(c) && c.readyState === WebSocket.OPEN) sendFullState(c);
+    }
+    for (const dm of dmClients) {
+      if (dm.readyState !== WebSocket.OPEN) continue;
+      dm.send(JSON.stringify({
+        type: 'DM_STATE_RESTORE',
+        playerCount: clients.size - dmClients.size,
+        connectedList: [...clients].filter(c => !dmClients.has(c) && c.readyState === WebSocket.OPEN)
+          .map(c => c.playerName ? { name: c.playerName, type: 'player' } : { name: 'Guest #' + c.guestId, type: 'guest' }),
+        sceneView: currentSceneView, fogStates: currentFogStates,
+        tokens: currentTokens, tokensMapKey: currentTokensMapKey,
+        drawing: currentDrawing, drawingMapKey: currentDrawingMapKey,
+        features: currentFeatures, featureStates: currentFeatureStates,
+        blackout: currentState.blackout,
+        loggedInPlayers: [...loggedInPlayers.keys()],
+        lockedPlayers: [...lockedPlayers],
+        allPlayersLocked, currentTargets, gridEnabled, allTokenStates,
+        objectDefs: currentObjectDefs, objectStates: currentObjectStates,
+      }));
+    }
+
+    log('session-load', { name });
+    res.json({ ok: true, initiative: d.initiative || [], currentTurn: d.currentTurn || 0 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/sessions/:name', requireDm, (req, res) => {
+  const name = String(req.params.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  try {
+    const file = sessionFileName(name);
+    if (!fs.existsSync(file)) return res.status(404).json({ error: 'Session not found' });
+    fs.unlinkSync(file);
+    log('session-delete', { name });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Encounter presets ─────────────────────────────────────────
+const ENCOUNTERS_DIR = path.join(DATA_DIR, 'encounters');
+if (!fs.existsSync(ENCOUNTERS_DIR)) fs.mkdirSync(ENCOUNTERS_DIR, { recursive: true });
+
+function encounterFileName(name) {
+  return path.join(ENCOUNTERS_DIR, name.replace(/[^a-zA-Z0-9 _-]/g, '').trim().slice(0, 80) + '.encounter.json');
+}
+
+app.get('/api/encounters', requireDm, (req, res) => {
+  try {
+    const files = fs.readdirSync(ENCOUNTERS_DIR).filter(f => f.endsWith('.encounter.json'));
+    const encounters = files.map(f => {
+      try {
+        const d = JSON.parse(fs.readFileSync(path.join(ENCOUNTERS_DIR, f), 'utf8'));
+        return { name: d.name, savedAt: d.savedAt, count: (d.tokens || []).length };
+      } catch { return null; }
+    }).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ encounters });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/encounters/save', requireDm, express.json({ limit: '1mb' }), (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  // Strip x/y/id — positions are re-assigned on deploy
+  const tokens = (Array.isArray(req.body.tokens) ? req.body.tokens : [])
+    .filter(t => t.type !== 'player')
+    .map(({ id: _id, x: _x, y: _y, ...rest }) => rest);
+  try {
+    fs.writeFileSync(encounterFileName(name), JSON.stringify({ name, savedAt: new Date().toISOString(), tokens }));
+    log('encounter-save', { name, count: tokens.length });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/encounters/deploy', requireDm, express.json({ limit: '1mb' }), (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  try {
+    const file = encounterFileName(name);
+    if (!fs.existsSync(file)) return res.status(404).json({ error: 'Encounter not found' });
+    const d = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const presetTokens = Array.isArray(d.tokens) ? d.tokens : [];
+    const n = presetTokens.length;
+    // Spread tokens in a row near the top of the map so DM can drag them into position
+    const deployed = presetTokens.map((t, i) => ({
+      ...t,
+      id: crypto.randomBytes(6).toString('hex'),
+      x: n <= 1 ? 0.5 : 0.1 + (0.8 * i / (n - 1)),
+      y: 0.08,
+    }));
+    currentTokens = [...currentTokens, ...deployed];
+    if (currentTokensMapKey) allTokenStates[currentTokensMapKey] = currentTokens;
+    broadcast({ type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey, showRings: currentTokensShowRings });
+    saveState();
+    log('encounter-deploy', { name, count: deployed.length });
+    res.json({ ok: true, deployed: deployed.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/encounters/:name', requireDm, (req, res) => {
+  const name = String(req.params.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  try {
+    const file = encounterFileName(name);
+    if (!fs.existsSync(file)) return res.status(404).json({ error: 'Encounter not found' });
+    fs.unlinkSync(file);
+    log('encounter-delete', { name });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Scene bundles ─────────────────────────────────────────────
+const BUNDLES_DIR = path.join(DATA_DIR, 'scene-bundles');
+if (!fs.existsSync(BUNDLES_DIR)) fs.mkdirSync(BUNDLES_DIR, { recursive: true });
+
+function bundleFileName(name) {
+  return path.join(BUNDLES_DIR, name.replace(/[^a-zA-Z0-9 _-]/g, '').trim().slice(0, 80) + '.bundle.json');
+}
+
+app.get('/api/scene-bundles', requireDm, (req, res) => {
+  try {
+    const files = fs.readdirSync(BUNDLES_DIR).filter(f => f.endsWith('.bundle.json'));
+    const bundles = files.map(f => {
+      try {
+        const d = JSON.parse(fs.readFileSync(path.join(BUNDLES_DIR, f), 'utf8'));
+        return { name: d.name, savedAt: d.savedAt, label: d.label || null };
+      } catch { return null; }
+    }).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ bundles });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/scene-bundles/save', requireDm, express.json({ limit: '8mb' }), (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  if (!currentSceneView) return res.status(400).json({ error: 'No active scene to save' });
+  try {
+    const sv = currentSceneView;
+    const fogKey = sv.fogKey || null;
+    const bundle = {
+      name, savedAt: new Date().toISOString(),
+      image: sv.image, fogKey,
+      fogGrid: fogKey ? (currentFogStates[fogKey] || null) : null,
+      audio: sv.audio || null, audioLoop: sv.audioLoop !== false,
+      fit: sv.fit || 'contain', mapKey: sv.mapKey || null,
+      features: currentFeatures,
+      mapMeta: currentMapMeta || sv.mapMeta || null,
+      label: sv.label || name,
+    };
+    fs.writeFileSync(bundleFileName(name), JSON.stringify(bundle));
+    log('bundle-save', { name });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/scene-bundles/load', requireDm, express.json({ limit: '8mb' }), (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  try {
+    const file = bundleFileName(name);
+    if (!fs.existsSync(file)) return res.status(404).json({ error: 'Bundle not found' });
+    const d = JSON.parse(fs.readFileSync(file, 'utf8'));
+    currentState.blackout = false;
+    currentTokens = []; currentTokensMapKey = d.mapKey || null;
+    currentDrawing = []; currentDrawingMapKey = d.mapKey || null;
+    currentFogStates = {};
+    if (d.fogKey && d.fogGrid) currentFogStates[d.fogKey] = d.fogGrid;
+    currentFeatures = Array.isArray(d.features) ? d.features : [];
+    currentFeatureStates = {}; currentTargets = {};
+    currentObjectDefs = []; currentObjectStates = {};
+    currentMapMeta = d.mapMeta || null;
+    const sv = {
+      type: 'SHOW_SCENE_VIEW', image: d.image,
+      audio: d.audio || null, fogKey: d.fogKey || null,
+      audioLoop: d.audioLoop !== false, fit: d.fit || 'contain',
+      mapKey: d.mapKey || null, features: currentFeatures,
+      mapMeta: currentMapMeta, label: d.label || name,
+    };
+    currentSceneView = sv;
+    currentAudio = d.audio ? { url: d.audio, loop: d.audioLoop !== false } : null;
+    broadcast(sv);
+    broadcast({ type: 'UPDATE_TOKENS', tokens: [], mapKey: currentTokensMapKey });
+    broadcast({ type: 'UPDATE_DRAWING', strokes: [], mapKey: currentDrawingMapKey });
+    if (d.fogKey && d.fogGrid) broadcast({ type: 'UPDATE_FOG', fogKey: d.fogKey, fogGrid: d.fogGrid });
+    saveState();
+    log('bundle-load', { name });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/scene-bundles/:name', requireDm, (req, res) => {
+  const name = String(req.params.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  try {
+    const file = bundleFileName(name);
+    if (!fs.existsSync(file)) return res.status(404).json({ error: 'Bundle not found' });
+    fs.unlinkSync(file);
+    log('bundle-delete', { name });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // ── 5etools bestiary proxy (server-side fetch bypasses browser CORS) ──────────
 const https = require('https');
@@ -937,7 +1307,16 @@ app.use('/dm', requireDm);
 app.get('/remote/player', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'player.html')); });
 app.get('/player', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'player.html')); });
 
-const PORT = 3000;
+app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));
+app.get('/readyz',  (_req, res) => res.json({
+  status: 'ok',
+  clients: clients.size,
+  dms: dmClients.size,
+  blackout: currentState.blackout,
+  scene: currentSceneView ? (currentSceneView.label || currentSceneView.mapKey || 'loaded') : null,
+}));
+
+const PORT = Number(process.env.PORT) || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   // Find the LAN (Wi-Fi/Ethernet) IP for display
   let lanIp = 'localhost';
