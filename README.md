@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v3.7.0 — Web Edition)
+# D&D VTT Control Console (v3.8.0 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -166,7 +166,9 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
 - **Add All Players to Round** — rolls for all rostered players and adds them to the current round in one click.
 - PC entries show a **PC** badge in the initiative list so you can distinguish players from mobs at a glance.
 - **⚔️ Send** — broadcast current order to players.
+- **🎯 Start** — lifts blackout (if active), resets turn counter to 0, and sends initiative to all players in a single click; the fastest way to kick off combat.
 - **⏭️ Next** — advance turn and broadcast.
+- **💀 Kill Mobs** — marks every non-player, non-item token on the current map as dead simultaneously (red ✕ overlay on all screens) and removes mob entries from the initiative list while keeping player entries.
 - **🧹 Clear Mobs** — removes all mob/NPC entries but keeps PC entries in the list for the next encounter.
 - **🔄 Hard Reset** — clears the entire initiative list including players (prompts for confirmation).
 - **Persistence** — the current round, turn position, and all entries survive a page refresh (saved to `localStorage`).
@@ -187,9 +189,75 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
   - Clearing a scene resets all targeting state
 - **⚔️ Attack Log** — a running log below the initiative table records every auto-triggered attack: attacker name (gold), target(s) (red), spell/sword icon, and timestamp. A **Clear** button wipes the log.
 
-### Monster Lookup
+### HP Tracking
 
-Real-time monster stat block lookup powered by the [Open5e API](https://open5e.com/).
+Full per-combatant HP tracking integrated into the initiative tracker.
+
+- Every initiative entry shows a **❤️ Set HP** button when HP hasn't been assigned yet
+- Once set, the row shows: `[−5][−1] ❤️ 14/20 [+1][+5]` with color coding — green (> 50%), yellow (25–50%), red (< 25%)
+- Click the HP fraction display at any time to open an inline edit form to change current or max HP
+- **Auto-dead at 0 HP** — when HP hits 0, the matching map token is automatically marked dead (💀 overlay appears on all screens); healing back above 0 removes the marker automatically
+- **Player HP bar** — after the DM sets HP for a player-name combatant, that player sees a color-coded HP bar (❤️ bar + `14 / 20` text) in their HUD alongside the dice bar
+- HP state is synced to all clients via `HP_UPDATE` WS messages, replayed to reconnecting clients via `sendFullState`, and persisted in `data/state.json`
+- HP is included in session snapshots — save/load a session to restore full HP state
+
+### Session Snapshots
+
+Save and restore complete game state as named sessions — useful for running multiple encounters with different groups or pausing mid-session.
+
+**Left sidebar → Sessions section:**
+- Type a name and click **💾 Save** — captures the active scene, all map fog states, all token positions (every map), drawings, features, interactive objects, combat targets, grid/lock settings, blackout state, and the **full initiative tracker** (entries, rolls, HP, conditions, turn order)
+- Saved as `data/sessions/<name>.session.json` — survives server restarts
+- Each saved session shows the scene label and save timestamp
+- **▶ Load** — restores all state server-side, pushes the full scene to player screens immediately, sends DM_STATE_RESTORE to sync the DM panel, and restores the initiative tracker
+- Load prompts for confirmation before replacing current state
+- **🗑** — delete a saved session
+
+### Encounter Presets
+
+Save named groups of mob/item tokens and deploy them to any active map instantly.
+
+**Left sidebar → Encounters section:**
+- Type a name and click **💾 Save** — captures all non-player tokens on the current map (type, label, color, mob type, conditions, dead/hidden state); positions are stripped so tokens redeploy fresh
+- Each preset shows token count
+- **⚔️ Deploy** — adds the preset tokens to the active map, spread in a row near the top; DM drags them into position
+- Requires an active map to be loaded before deploying
+- Stored in `data/encounters/<name>.encounter.json`
+- **🗑** — delete a preset
+
+### Scene Bundles
+
+Save the full scene configuration (map + fog grid + audio + features) as a reusable bundle — distinct from sessions in that bundles capture the *setup*, not runtime state like tokens or initiative.
+
+**Left sidebar → Scene Bundles section:**
+- Type a name and click **💾 Save** — captures the active map image, fog key, current fog grid, audio track, loop setting, fit mode, features, and map meta
+- **▶ Load** — broadcasts `SHOW_SCENE_VIEW` + `UPDATE_FOG` to all screens, clearing existing tokens and drawings (same as clicking a scene from the Scene Builder, but in one click)
+- Pair with **Encounter Presets** for instant full combat setup: load a bundle to set the scene, then deploy an encounter to drop the mobs
+- Stored in `data/scene-bundles/<name>.bundle.json`
+- **🗑** — delete a bundle
+
+### Loot Drops
+
+When a mob is marked dead a **loot picker** automatically appears.
+
+- Triggered by the 💀 button in the token list **or** via right-click → Mark Dead on the DM map
+- Picker shows quick buttons: 💰 Gold · 📦 Chest · 🧪 Potion · ⚔️ Sword · 🛡️ Shield · 📜 Scroll · 🗝️ Key · Skip
+- Selecting a type spawns an item token at the dead mob's position, immediately visible to players (unless fogged)
+- Picker auto-dismisses after 20 seconds if ignored
+- Not triggered for player tokens or item tokens
+
+### Token Notes
+
+DMs can attach a short text note to any token for in-session reference.
+
+- Right-click any token on the DM map → **📝 Note** → type any text
+- Note is stored in the token object and persists with saves and sessions
+- Tokens with a note show a small **📝** badge in the bottom-right corner of the token dot on the DM map
+- Hovering the badge shows the full note text
+- Notes are **DM-only** — not broadcast to player screens
+- Delete a note by opening it and clearing the text
+
+
 
 - **Wildcard / partial-name search** — searches by `name__icontains`, so typing `"goblin"` returns Goblin, Goblin Boss, Dust Goblin, Chaos-Spawn Goblin, etc. (up to 20 results)
 - When multiple matches are found, clickable result buttons appear — select one to load its full stat block
@@ -259,7 +327,7 @@ The Reference panel is a tabbed quick-reference hub for DMs, with live API looku
 - **💀 Death / KO state** — each token row in the TOKEN PLACEMENT list has a 💀/💚 button to toggle the token's death state:
   - 💀 = defeated/KO — a red ✕ overlay is drawn over the token on the DM map and all player screens
   - 💚 = alive (default)
-- **Right-click context menu** — right-clicking a token dot directly on the DM map opens a context menu with quick actions: toggle visibility (👁️/🙈), toggle death (💀/💚), remove token (✕), and jump to that token's initiative entry
+- **Right-click context menu** — right-clicking a token dot directly on the DM map opens a context menu with quick actions: toggle visibility (👁️/🙈), lock/unlock movement (player tokens), toggle death (💀/💚), **📝 Note** (set or edit a DM note on the token), and remove token (✕)
 - **Condition rings** — when a combatant in the initiative tracker has active buffs or debuffs, their map token displays colored rings: 🟢 green for buffs, 🔴 red for debuffs; multiple conditions stack as concentric rings outward
   - Rings update instantly when conditions are added, removed, or expire on turn advance
   - Token list below the map shows condition badges with icon, name, and rounds remaining
@@ -328,6 +396,28 @@ Server starts on **port 3000**.
 
 - **DM Panel:** `http://localhost:3000` — password protected
 - **Player Screen:** `http://<your-ip>:3000/remote/player` — open to all devices on the network
+
+### Run Tests
+
+```bash
+npm test
+```
+
+Runs the integration test suite (20 tests, ~3–4 seconds). Tests spawn a real server on port 3099 with an isolated data directory; no extra dependencies needed beyond the existing `ws` package.
+
+```
+✔ Health endpoints (2 tests)
+✔ DM auth (4 tests)
+✔ WebSocket: auth enforcement (2 tests)
+✔ WebSocket: scene and token flow (3 tests)
+✔ WebSocket: HP tracking (2 tests)
+✔ WebSocket: blackout (1 test)
+✔ WebSocket: rate limiting (1 test)
+✔ REST: session lifecycle (1 test)
+✔ REST: encounter lifecycle (1 test)
+✔ REST: scene bundle lifecycle (1 test)
+✔ State persistence (2 tests)
+```
 
 To find your local IP on Windows:
 ```
@@ -413,6 +503,8 @@ Replace `dm1234` with your password. Don't commit this to a public repo.
 Click the **🔒 Lock** button in the top-right of the DM panel header. This clears your session and redirects back to the login page.
 
 > Sessions are in-memory — restarting the server automatically logs everyone out.
+>
+> **DM sessions expire automatically after 8 hours of inactivity** (sliding window — activity resets the timer). An idle browser tab left open overnight will require re-login the next day.
 
 > **Token & map state persists across restarts.** Token positions for every map are saved to `data/state.json` on every change and restored automatically when the server starts. The `data/` folder is created automatically and is not committed to git.
 
@@ -439,6 +531,14 @@ Click the **🔒 Lock** button in the top-right of the DM panel header. This cle
 ├── seeds/
 │   ├── scenes.json         # Scene/view data persisted by the server
 │   └── players.json        # Player roster (name list) persisted by the server
+├── test/
+│   └── server.test.js      # 20 integration tests (node:test, no extra deps)
+├── data/                   # Runtime state (auto-created, gitignored)
+│   ├── state.json          # Full server state snapshot
+│   ├── state.backup.json   # Previous snapshot (auto-rotated on every save)
+│   ├── sessions/           # Named session snapshots (.session.json)
+│   ├── encounters/         # Named encounter presets (.encounter.json)
+│   └── scene-bundles/      # Named scene bundles (.bundle.json)
 └── shared/types/           # Shared TypeScript type definitions
 ```
 
@@ -540,6 +640,9 @@ Scenes are stored in `seeds/scenes.json`. Structure:
 | `SET_FOG_KEY` | server → player | `{ fogKey }` — activates or clears fog overlay on player screens at runtime |
 | `UPDATE_OBJECTS` | server → all | `{ objects[], objectStates{} }` — full object definitions + current states |
 | `OBJECT_STATE_CHANGE` | server → all | `{ objId, state }` — single object state update after an interaction or DM drag |
+| `HP_UPDATE` | server → all | `{ name, hp, maxHp }` — HP change for a named combatant; replayed to reconnecting clients |
+| `HP_UPDATE` | server → all | `{ name, hp, maxHp }` — HP change for a named combatant; replayed to reconnecting clients |
+| `HP_UPDATE` | server → all | `{ name, hp, maxHp }` — HP change for a named combatant; replayed on reconnect |
 
 **DM → Server additional actions:**
 
@@ -551,6 +654,7 @@ Scenes are stored in `seeds/scenes.json`. Structure:
 | `update-objects` | `{ objects[] }` | DM pushes object definitions for the current map |
 | `interact-object` | `{ objId }` | Player or DM clicks an interactive object (toggle A↔B) |
 | `move-object` | `{ objId, col, row }` | DM drags an object to a new cell |
+| `update-hp` | `{ name, hp, maxHp }` | DM sets HP for a named combatant; stored server-side and broadcast as `HP_UPDATE` |
 
 ---
 
