@@ -253,22 +253,26 @@ let guestCounter = 0;  // increments for each non-DM connection
 // Restore persisted state before starting
 loadState();
 
+let _lastClientSnapshot = '';
+
 function broadcastClientCount() {
-  // Purge any dead connections so stale sockets don't skew the count
   for (const c of clients)   { if (c.readyState !== WebSocket.OPEN) { clients.delete(c); dmClients.delete(c); } }
   for (const d of dmClients) { if (d.readyState !== WebSocket.OPEN) dmClients.delete(d); }
-  // Count only non-DM clients (player screens)
   const playerCount = clients.size - dmClients.size;
-  // Build list of connected player clients
   const connectedList = [];
   for (const c of clients) {
     if (dmClients.has(c)) continue;
     connectedList.push(c.playerName ? { name: c.playerName, type: 'player' } : { name: 'Guest #' + c.guestId, type: 'guest' });
   }
   const payload = JSON.stringify({ type: 'clients', count: playerCount, connectedList });
-  console.log(`broadcastClientCount: total=${clients.size} dms=${dmClients.size} players=${playerCount}`);
+  // Only log when the count or roster actually changes
+  const snapshot = `${clients.size}:${dmClients.size}:${connectedList.map(c=>c.name).sort().join(',')}`;
+  if (snapshot !== _lastClientSnapshot) {
+    _lastClientSnapshot = snapshot;
+    log('clients', { total: clients.size, dms: dmClients.size, players: playerCount });
+  }
   for (const dm of dmClients) {
-    if (dm.readyState === WebSocket.OPEN) dm.send(payload);
+    if (dm.readyState === WebSocket.OPEN) try { dm.send(payload); } catch (_) {}
   }
 }
 

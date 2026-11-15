@@ -6,5 +6,9 @@
   {
     "name": "DragOn",
     "cls": "Druid"
+  },
+  {
+    "name": "RateTestPlayer",
+    "cls": "Fighter"
   }
 ]
