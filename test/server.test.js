@@ -463,3 +463,92 @@ describe('State persistence', () => {
     await dm.close();
   });
 });
+
+// ── Fog state ─────────────────────────────────────────────────
+describe('WebSocket: fog state', () => {
+  test('update-fog broadcasts to all clients', async () => {
+    const dm  = makeWs(dmCookie);
+    const pla = makeWs();
+    await Promise.all([dm.open(), pla.open()]);
+    await dm.next('DM_STATE_RESTORE');
+
+    dm.send({ action: 'show-scene-view', image: '/assets/maps/test.png', mapKey: 'fog-test', fogKey: 'fog-test:0' });
+    await dm.next('SHOW_SCENE_VIEW');
+
+    const fogGrid = [[true, false], [false, true]];
+    dm.send({ action: 'update-fog', fogKey: 'fog-test:0', fogGrid });
+
+    const plaMsg = await pla.next('UPDATE_FOG');
+    assert.equal(plaMsg.fogKey, 'fog-test:0');
+    assert.deepEqual(plaMsg.fogGrid, fogGrid);
+
+    await Promise.all([dm.close(), pla.close()]);
+  });
+
+  test('sendFullState replays fog to reconnecting client', async () => {
+    const dm = makeWs(dmCookie);
+    await dm.open();
+    await dm.next('DM_STATE_RESTORE');
+
+    const fogGrid = [[true, true], [false, false]];
+    dm.send({ action: 'update-fog', fogKey: 'fog-test:0', fogGrid });
+    await dm.next('UPDATE_FOG');
+
+    const pla = makeWs();
+    await pla.open();
+    const fogMsg = await pla.next('UPDATE_FOG');
+    assert.equal(fogMsg.fogKey, 'fog-test:0');
+    assert.deepEqual(fogMsg.fogGrid, fogGrid);
+
+    await Promise.all([dm.close(), pla.close()]);
+  });
+
+  test('set-fog-key broadcasts SET_FOG_KEY and updates scene', async () => {
+    const dm  = makeWs(dmCookie);
+    const pla = makeWs();
+    await Promise.all([dm.open(), pla.open()]);
+    await dm.next('DM_STATE_RESTORE');
+
+    dm.send({ action: 'set-fog-key', fogKey: 'fog-test:0' });
+
+    const plaMsg = await pla.next('SET_FOG_KEY');
+    assert.equal(plaMsg.fogKey, 'fog-test:0');
+
+    dm.send({ action: 'set-fog-key', fogKey: null });
+    const offMsg = await pla.next('SET_FOG_KEY');
+    assert.equal(offMsg.fogKey, null);
+
+    await Promise.all([dm.close(), pla.close()]);
+  });
+});
+
+// ── Per-action rate limiting ───────────────────────────────────
+describe('WebSocket: per-action rate limiting', () => {
+  test('player-dice-roll is throttled to 5 per 5s', async () => {
+    // Login a player first
+    const pla = makeWs();
+    await pla.open();
+    await pla.next('DM_STATE_RESTORE', 2000).catch(() => {}); // DM restore won't come; just wait for initial msgs
+    pla.send({ action: 'player-login', name: 'RateTestPlayer', cls: 'Fighter' });
+    await pla.next('PLAYER_LOGIN_OK');
+
+    const dm = makeWs(dmCookie);
+    await dm.open();
+    await dm.next('DM_STATE_RESTORE');
+
+    // Send 8 dice rolls — only 5 should get through (broadcast back to dm)
+    let received = 0;
+    dm.ws.on('message', raw => {
+      if (JSON.parse(raw).type === 'PLAYER_DICE_ROLL') received++;
+    });
+
+    for (let i = 0; i < 8; i++) {
+      pla.send({ action: 'player-dice-roll', die: 20, result: 10 });
+    }
+    await sleep(500);
+
+    assert.ok(received <= 5, `Expected ≤5 rolls through, got ${received}`);
+
+    await Promise.all([dm.close(), pla.close()]);
+  });
+});
