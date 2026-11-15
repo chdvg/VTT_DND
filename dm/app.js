@@ -62,7 +62,8 @@ var dmObjStates    = {};   // objId -> { activated, currentCol, currentRow, curr
 var _dmObjDragging = null; // { objId, startX, startY, startCol, startRow } during drag
 
 // Combat targeting state (DM-side)
-var dmTargets = {};  // playerName -> targetLabel
+var dmTargets  = {};  // playerName -> targetLabel
+var dmHpState  = {};  // tokenLabel -> { hp, maxHp }
 var gridEnabled = false; // DM-toggled grid overlay
 
 // Item token state
@@ -308,6 +309,7 @@ function restoreDmState(msg) {
     }
   }
   if (msg.hpState && typeof msg.hpState === 'object') {
+    Object.assign(dmHpState, msg.hpState);
     initiative.forEach(function(e) {
       if (msg.hpState[e.name]) { e.hp = msg.hpState[e.name].hp; e.maxHp = msg.hpState[e.name].maxHp; }
     });
@@ -409,12 +411,17 @@ function connectWebSocket() {
       return;
     }
     if (msg.type === 'HP_UPDATE') {
+      dmHpState[msg.name] = { hp: msg.hp, maxHp: msg.maxHp };
       var hpEntry = initiative.find(function(e) { return e.name === msg.name; });
       if (hpEntry && (hpEntry.hp !== msg.hp || hpEntry.maxHp !== msg.maxHp)) {
         hpEntry.hp    = msg.hp;
         hpEntry.maxHp = msg.maxHp;
         saveInitiative();
         renderInitiative();
+      }
+      if (activeTokenMapKey && activeTokenMapUrl) {
+        var onMap = (tokenState[activeTokenMapKey] || []).some(function(t) { return t.label === msg.name; });
+        if (onMap) renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
       }
       return;
     }
@@ -2658,6 +2665,17 @@ function renderTokenControls(mapUrl, mapKey) {
       noteBadge.style.cssText = 'position:absolute;bottom:-8px;right:-8px;font-size:9px;pointer-events:none;z-index:5;';
       dot.appendChild(noteBadge);
     }
+    var _hpInfo = dmHpState[tok.label];
+    if (_hpInfo && _hpInfo.maxHp > 0 && tok.type !== 'player' && tok.type !== 'item') {
+      var _pct = Math.max(0, _hpInfo.hp / _hpInfo.maxHp);
+      var _hpC = _pct > 0.5 ? '#4ade80' : _pct > 0.25 ? '#fbbf24' : '#f87171';
+      var _bw = document.createElement('div');
+      _bw.style.cssText = 'position:absolute;bottom:-5px;left:0;right:0;height:3px;background:#111;border-radius:2px;pointer-events:none;z-index:7;overflow:hidden;';
+      var _bf = document.createElement('div');
+      _bf.style.cssText = 'height:100%;border-radius:2px;background:' + _hpC + ';width:' + (_pct*100) + '%;';
+      _bw.appendChild(_bf);
+      dot.appendChild(_bw);
+    }
 
     // Right-click context menu
     dot.addEventListener('contextmenu', (function (t) {
@@ -2731,6 +2749,10 @@ function renderTokenControls(mapUrl, mapKey) {
             renderTokenControls(mapUrl, mapKey);
           }
         });
+        // HP
+        if (t.type !== 'player' && t.type !== 'item') {
+          menuItem('\u2764\uFE0F HP', function () { showTokenHpPanel(t, mapKey); });
+        }
         // Separator
         var sep = document.createElement('div');
         sep.style.cssText = 'border-top:1px solid #30363d;margin:0.2rem 0;';
@@ -5730,6 +5752,90 @@ document.getElementById('monster-clear-btn').addEventListener('click', function 
 });
 
 // Source toggle buttons removed — 5etools mirrors are unavailable; Open5e is the active source
+
+// ============================================================
+// Token HP Panel
+// ============================================================
+function showTokenHpPanel(tok, mapKey) {
+  var old = document.getElementById('tok-hp-panel');
+  if (old) old.remove();
+  var ex = dmHpState[tok.label];
+  var panel = document.createElement('div');
+  panel.id = 'tok-hp-panel';
+  panel.style.cssText = 'position:fixed;z-index:10000;background:#1a1f2e;border:1px solid #d4af37;' +
+    'border-radius:8px;padding:0.65rem 0.8rem;box-shadow:0 4px 20px rgba(0,0,0,0.85);' +
+    'left:50%;top:40%;transform:translate(-50%,-50%);min-width:230px;';
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'color:#d4af37;font-weight:bold;margin-bottom:0.55rem;font-size:0.78rem;';
+  hdr.textContent = '\u2764\uFE0F HP \u2014 ' + tok.label;
+  panel.appendChild(hdr);
+  // Current / Max row
+  var setRow = document.createElement('div');
+  setRow.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-bottom:0.45rem;';
+  var hpInp = document.createElement('input');
+  hpInp.type = 'number'; hpInp.min = '0'; hpInp.placeholder = 'HP';
+  hpInp.value = ex ? ex.hp : '';
+  hpInp.style.cssText = 'width:52px;font-size:0.85rem;';
+  var sep = document.createElement('span');
+  sep.textContent = '/'; sep.style.cssText = 'color:#555;';
+  var maxInp = document.createElement('input');
+  maxInp.type = 'number'; maxInp.min = '1'; maxInp.placeholder = 'Max';
+  maxInp.value = ex ? ex.maxHp : '';
+  maxInp.style.cssText = 'width:52px;font-size:0.85rem;';
+  var setBtn = document.createElement('button');
+  setBtn.className = 'btn btn-small btn-primary';
+  setBtn.textContent = '\u2713 Set';
+  setBtn.onclick = function() {
+    var newMax = parseInt(maxInp.value) || null;
+    if (!newMax) return;
+    var newHp = parseInt(hpInp.value);
+    if (isNaN(newHp)) newHp = newMax;
+    newHp = Math.max(0, Math.min(newMax, newHp));
+    dmHpState[tok.label] = { hp: newHp, maxHp: newMax };
+    sendHpUpdate(tok.label, newHp, newMax);
+    if (newHp <= 0 && !tok.dead) { tok.dead = true; sendTokenUpdate(mapKey); }
+    renderTokenControls(activeTokenMapUrl, mapKey);
+    panel.remove();
+  };
+  setRow.appendChild(hpInp); setRow.appendChild(sep);
+  setRow.appendChild(maxInp); setRow.appendChild(setBtn);
+  panel.appendChild(setRow);
+  // Quick adjust buttons (only when HP already set)
+  if (ex) {
+    var adjRow = document.createElement('div');
+    adjRow.style.cssText = 'display:flex;gap:0.28rem;margin-bottom:0.45rem;flex-wrap:wrap;';
+    [-10, -5, -1, 1, 5, 10].forEach(function(adj) {
+      var ab = document.createElement('button');
+      ab.className = 'btn btn-small ' + (adj < 0 ? 'btn-danger' : 'btn-secondary');
+      ab.style.cssText = 'font-size:0.72rem;padding:0.1rem 0.4rem;';
+      ab.textContent = (adj > 0 ? '+' : '') + adj;
+      ab.onclick = function() {
+        var cur = dmHpState[tok.label] ? dmHpState[tok.label].hp    : 0;
+        var max = dmHpState[tok.label] ? dmHpState[tok.label].maxHp : cur;
+        var nHp = Math.max(0, Math.min(max, cur + adj));
+        dmHpState[tok.label] = { hp: nHp, maxHp: max };
+        sendHpUpdate(tok.label, nHp, max);
+        hpInp.value = nHp; maxInp.value = max;
+        if (nHp <= 0 && !tok.dead) { tok.dead = true; sendTokenUpdate(mapKey); }
+        renderTokenControls(activeTokenMapUrl, mapKey);
+      };
+      adjRow.appendChild(ab);
+    });
+    panel.appendChild(adjRow);
+  }
+  var closeBtn = document.createElement('button');
+  closeBtn.className = 'btn btn-warning btn-small';
+  closeBtn.style.cssText = 'width:100%;';
+  closeBtn.textContent = 'Close';
+  closeBtn.onclick = function() { panel.remove(); };
+  panel.appendChild(closeBtn);
+  document.body.appendChild(panel);
+  setTimeout(function() {
+    function dismiss(e) { if (!panel.contains(e.target)) { panel.remove(); document.removeEventListener('mousedown', dismiss); } }
+    document.addEventListener('mousedown', dismiss);
+  }, 10);
+  (ex ? hpInp : maxInp).focus();
+}
 
 // ============================================================
 // Loot Drop Picker
