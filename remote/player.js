@@ -30,6 +30,21 @@ var _lbRows = 20;              // sub-map grid rows
 
 var myPlayerName = null;  // set after successful login
 var myPlayerCls  = null;
+var myHp         = null;
+var myMaxHp      = null;
+
+function updateHpDisplay() {
+  var el   = document.getElementById('player-hp-display');
+  var bar  = document.getElementById('player-hp-bar');
+  var text = document.getElementById('player-hp-text');
+  if (!el) return;
+  if (myMaxHp == null || !myPlayerName) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  var pct   = myMaxHp > 0 ? Math.max(0, myHp / myMaxHp) : 0;
+  var color = pct > 0.5 ? '#4ade80' : pct > 0.25 ? '#fbbf24' : '#f87171';
+  if (bar)  { bar.style.width = (pct * 100) + '%'; bar.style.background = color; }
+  if (text) { text.style.color = color; text.textContent = myHp + ' / ' + myMaxHp; }
+}
 var myMovementLocked = false;  // set by DM lock controls
 var myTarget     = null;       // label of my current combat target
 var allTargets   = {};         // playerName -> targetLabel (all players' targets)
@@ -180,6 +195,8 @@ function dismissTapOverlay() {
       e.stopPropagation();
       myPlayerName = null;
       myPlayerCls  = null;
+      myHp = null; myMaxHp = null;
+      updateHpDisplay();
       sessionStorage.removeItem('dnd_player_name');
       sessionStorage.removeItem('dnd_player_cls');
       var playerHud = document.getElementById('player-hud');
@@ -1485,6 +1502,13 @@ function handleMessage(msg) {
       if (msg.mapKey === currentMapKey || !currentMapKey) {
         delete triggeredFeatures[msg.featureId];
         hideFeatureCells(msg.featureId);
+      }
+      break;
+    case 'HP_UPDATE':
+      if (msg.name === myPlayerName) {
+        myHp    = msg.hp;
+        myMaxHp = msg.maxHp;
+        updateHpDisplay();
       }
       break;
     case 'update':
