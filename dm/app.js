@@ -62,7 +62,8 @@ var dmObjStates    = {};   // objId -> { activated, currentCol, currentRow, curr
 var _dmObjDragging = null; // { objId, startX, startY, startCol, startRow } during drag
 
 // Combat targeting state (DM-side)
-var dmTargets = {};  // playerName -> targetLabel
+var dmTargets  = {};  // playerName -> targetLabel
+var dmHpState  = {};  // tokenLabel -> { hp, maxHp }
 var gridEnabled = false; // DM-toggled grid overlay
 
 // Item token state
@@ -307,6 +308,14 @@ function restoreDmState(msg) {
         .catch(function () {});
     }
   }
+  if (msg.hpState && typeof msg.hpState === 'object') {
+    Object.assign(dmHpState, msg.hpState);
+    initiative.forEach(function(e) {
+      if (msg.hpState[e.name]) { e.hp = msg.hpState[e.name].hp; e.maxHp = msg.hpState[e.name].maxHp; }
+    });
+    saveInitiative();
+    renderInitiative();
+  }
   updateFogToggleBtn();
 }
 
@@ -398,6 +407,21 @@ function connectWebSocket() {
         }
         renderInitiative();
         if (activeTokenMapKey && activeTokenMapUrl) renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+      }
+      return;
+    }
+    if (msg.type === 'HP_UPDATE') {
+      dmHpState[msg.name] = { hp: msg.hp, maxHp: msg.maxHp };
+      var hpEntry = initiative.find(function(e) { return e.name === msg.name; });
+      if (hpEntry && (hpEntry.hp !== msg.hp || hpEntry.maxHp !== msg.maxHp)) {
+        hpEntry.hp    = msg.hp;
+        hpEntry.maxHp = msg.maxHp;
+        saveInitiative();
+        renderInitiative();
+      }
+      if (activeTokenMapKey && activeTokenMapUrl) {
+        var onMap = (tokenState[activeTokenMapKey] || []).some(function(t) { return t.label === msg.name; });
+        if (onMap) renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
       }
       return;
     }
@@ -2634,6 +2658,24 @@ function renderTokenControls(mapUrl, mapKey) {
       dot.style.opacity = '0.5';
       dot.style.border = '2px solid #ef4444';
     }
+    if (tok.note) {
+      var noteBadge = document.createElement('span');
+      noteBadge.textContent = '\uD83D\uDCDD';
+      noteBadge.title = tok.note;
+      noteBadge.style.cssText = 'position:absolute;bottom:-8px;right:-8px;font-size:9px;pointer-events:none;z-index:5;';
+      dot.appendChild(noteBadge);
+    }
+    var _hpInfo = dmHpState[tok.label];
+    if (_hpInfo && _hpInfo.maxHp > 0 && tok.type !== 'player' && tok.type !== 'item') {
+      var _pct = Math.max(0, _hpInfo.hp / _hpInfo.maxHp);
+      var _hpC = _pct > 0.5 ? '#4ade80' : _pct > 0.25 ? '#fbbf24' : '#f87171';
+      var _bw = document.createElement('div');
+      _bw.style.cssText = 'position:absolute;bottom:-5px;left:0;right:0;height:3px;background:#111;border-radius:2px;pointer-events:none;z-index:7;overflow:hidden;';
+      var _bf = document.createElement('div');
+      _bf.style.cssText = 'height:100%;border-radius:2px;background:' + _hpC + ';width:' + (_pct*100) + '%;';
+      _bw.appendChild(_bf);
+      dot.appendChild(_bw);
+    }
 
     // Right-click context menu
     dot.addEventListener('contextmenu', (function (t) {
@@ -2693,10 +2735,24 @@ function renderTokenControls(mapUrl, mapKey) {
             initiative = initiative.filter(function (en) { return en.name !== t.label; });
             if (fogDeferredInit[mapKey]) fogDeferredInit[mapKey] = fogDeferredInit[mapKey].filter(function (d) { return d.label !== t.label; });
             renderInitiative();
+            if (t.type !== 'player' && t.type !== 'item') showLootDropPicker(t, mapKey);
           }
           sendTokenUpdate(mapKey);
           renderTokenControls(mapUrl, mapKey);
         });
+        // Note
+        menuItem('\uD83D\uDCDD Note', function () {
+          var n = prompt('Note for ' + t.label + ':', t.note || '');
+          if (n !== null) {
+            if (n.trim()) t.note = n.trim(); else delete t.note;
+            sendTokenUpdate(mapKey);
+            renderTokenControls(mapUrl, mapKey);
+          }
+        });
+        // HP
+        if (t.type !== 'player' && t.type !== 'item') {
+          menuItem('\u2764\uFE0F HP', function () { showTokenHpPanel(t, mapKey); });
+        }
         // Separator
         var sep = document.createElement('div');
         sep.style.cssText = 'border-top:1px solid #30363d;margin:0.2rem 0;';
@@ -3092,6 +3148,7 @@ function renderTokenControls(mapUrl, mapKey) {
             initiative = initiative.filter(function (e) { return e.name !== t.label; });
             if (fogDeferredInit[mk]) fogDeferredInit[mk] = fogDeferredInit[mk].filter(function (d) { return d.label !== t.label; });
             renderInitiative();
+            if (t.type !== 'player' && t.type !== 'item') showLootDropPicker(t, mk);
           }
           sendTokenUpdate(mk);
           renderTokenControls(mapUrl, mk);
@@ -3136,6 +3193,24 @@ function renderTokenControls(mapUrl, mapKey) {
       renderTokenControls(mapUrl, mapKey);
     };
     listDiv.appendChild(clearAllBtn);
+    var killMobsBtn = document.createElement('button');
+    killMobsBtn.textContent = '\uD83D\uDC80 Kill Mobs';
+    killMobsBtn.className = 'btn btn-danger btn-small';
+    killMobsBtn.style.marginTop = '0.2rem';
+    killMobsBtn.onclick = function () {
+      var anyChanged = false;
+      (tokenState[mapKey] || []).forEach(function (t) {
+        if (t.type !== 'player' && t.type !== 'item' && !t.dead) { t.dead = true; anyChanged = true; }
+      });
+      if (anyChanged) {
+        initiative = initiative.filter(function (e) { return e.isPlayer; });
+        fogDeferredInit[mapKey] = [];
+        renderInitiative();
+        sendTokenUpdate(mapKey);
+        renderTokenControls(mapUrl, mapKey);
+      }
+    };
+    listDiv.appendChild(killMobsBtn);
     mapTarget.appendChild(listDiv);
   }
 
@@ -3954,6 +4029,13 @@ function nextInitiativeTurn() {
 
 document.getElementById('init-next-btn').addEventListener('click', nextInitiativeTurn);
 document.getElementById('init-send-btn').addEventListener('click', sendInitiative);
+document.getElementById('init-start-btn') && document.getElementById('init-start-btn').addEventListener('click', function () {
+  if (isBlackout) { wsSend({ action: 'blackout' }); isBlackout = false; blackoutBtn.classList.remove('active'); }
+  currentTurn = 0;
+  saveInitiative();
+  renderInitiative();
+  sendInitiative();
+});
 document.getElementById('qa-init-next-btn') && document.getElementById('qa-init-next-btn').addEventListener('click', nextInitiativeTurn);
 document.getElementById('qa-init-send-btn') && document.getElementById('qa-init-send-btn').addEventListener('click', sendInitiative);
 
@@ -3988,8 +4070,37 @@ var CONDITIONS = [
 var conditionRefs = JSON.parse(localStorage.getItem('dnd-cond-refs') || '[]');
 function saveConditionRefs() { localStorage.setItem('dnd-cond-refs', JSON.stringify(conditionRefs)); }
 
-var openCondPanel  = null; // index of entry with open cond panel
-var openTargetPanel = null; // index of entry with open target picker
+var openCondPanel   = null;
+var openTargetPanel = null;
+var openHpPanel     = null;
+
+function sendHpUpdate(name, hp, maxHp) {
+  wsSend({ action: 'update-hp', name: name, hp: hp, maxHp: maxHp });
+}
+
+function applyHpDelta(idx, delta) {
+  var entry = initiative[idx];
+  if (entry == null || entry.maxHp == null) return;
+  entry.hp = Math.max(0, Math.min(entry.maxHp, (entry.hp || 0) + delta));
+  saveInitiative();
+  sendHpUpdate(entry.name, entry.hp, entry.maxHp);
+  checkHpDead(idx);
+  renderInitiative();
+}
+
+function checkHpDead(idx) {
+  var entry = initiative[idx];
+  if (!activeTokenMapKey || entry == null || entry.maxHp == null) return;
+  var tokens = tokenState[activeTokenMapKey] || [];
+  var tok = tokens.find(function(t) { return t.label === entry.name; });
+  if (!tok) return;
+  var shouldDead = entry.hp <= 0;
+  if (!!tok.dead !== shouldDead) {
+    tok.dead = shouldDead;
+    sendTokenUpdate(activeTokenMapKey);
+    renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+  }
+}
 
 function renderInitiative() {
   refreshMapMobsSection();
@@ -4128,6 +4239,91 @@ function renderInitiative() {
       });
       div.appendChild(badges);
     }
+
+    // ── HP row ──
+    (function (idx, entry) {
+      var hpRow = document.createElement('div');
+      hpRow.style.cssText = 'display:flex;align-items:center;gap:0.3rem;margin-top:0.25rem;flex-wrap:wrap;';
+      var hpCur = entry.hp != null ? entry.hp : null;
+      var hpMax = entry.maxHp != null ? entry.maxHp : null;
+      if (hpMax != null) {
+        var pct = hpMax > 0 ? Math.max(0, hpCur / hpMax) : 0;
+        var hpColor = pct > 0.5 ? '#4ade80' : pct > 0.25 ? '#fbbf24' : '#f87171';
+        [-5, -1, 1, 5].forEach(function(adj) {
+          if (adj === 1) {
+            var disp = document.createElement('span');
+            disp.style.cssText = 'font-size:0.75rem;font-weight:600;color:' + hpColor +
+              ';cursor:pointer;padding:1px 6px;border:1px solid #21262d;border-radius:3px;white-space:nowrap;';
+            disp.textContent = '\u2764\uFE0F ' + hpCur + '/' + hpMax;
+            disp.title = 'Click to edit HP';
+            disp.onclick = function(e) {
+              e.stopPropagation();
+              openHpPanel = (openHpPanel === idx) ? null : idx;
+              openCondPanel = null; openTargetPanel = null;
+              renderInitiative();
+            };
+            hpRow.appendChild(disp);
+          }
+          var ab = document.createElement('button');
+          ab.className = 'init-cond-btn';
+          ab.textContent = (adj > 0 ? '+' : '') + adj;
+          ab.style.cssText = 'font-size:0.68rem;padding:0 5px;' +
+            (adj < 0 ? 'color:#f87171;border-color:#7f1d1d;' : 'color:#4ade80;border-color:#14532d;');
+          ab.onclick = (function(d) { return function(e) { e.stopPropagation(); applyHpDelta(idx, d); }; })(adj);
+          hpRow.appendChild(ab);
+        });
+      } else {
+        var setBtn = document.createElement('button');
+        setBtn.className = 'init-cond-btn';
+        setBtn.textContent = '\u2764\uFE0F Set HP';
+        setBtn.style.cssText = 'font-size:0.68rem;';
+        setBtn.onclick = function(e) {
+          e.stopPropagation();
+          openHpPanel = (openHpPanel === idx) ? null : idx;
+          openCondPanel = null; openTargetPanel = null;
+          renderInitiative();
+        };
+        hpRow.appendChild(setBtn);
+      }
+      div.appendChild(hpRow);
+
+      if (openHpPanel === idx) {
+        var hpPanel = document.createElement('div');
+        hpPanel.className = 'init-cond-panel';
+        hpPanel.style.cssText = 'display:flex;align-items:center;gap:0.4rem;padding:0.4rem 0.5rem;flex-wrap:wrap;';
+        var ci = document.createElement('input');
+        ci.type = 'number'; ci.min = '0'; ci.placeholder = 'HP';
+        ci.value = entry.hp != null ? entry.hp : (entry.maxHp != null ? entry.maxHp : '');
+        ci.style.cssText = 'width:52px;font-size:0.8rem;';
+        var sep = document.createElement('span');
+        sep.textContent = '/'; sep.style.cssText = 'color:#555;';
+        var mi = document.createElement('input');
+        mi.type = 'number'; mi.min = '1'; mi.placeholder = 'Max';
+        mi.value = entry.maxHp != null ? entry.maxHp : '';
+        mi.style.cssText = 'width:52px;font-size:0.8rem;';
+        var ok = document.createElement('button');
+        ok.className = 'btn btn-small btn-primary';
+        ok.textContent = '\u2713 Set';
+        ok.onclick = function(e) {
+          e.stopPropagation();
+          var newMax = parseInt(mi.value) || null;
+          if (!newMax) return;
+          var newHp = parseInt(ci.value);
+          if (isNaN(newHp)) newHp = newMax;
+          newHp = Math.max(0, Math.min(newMax, newHp));
+          initiative[idx].maxHp = newMax;
+          initiative[idx].hp    = newHp;
+          openHpPanel = null;
+          saveInitiative();
+          sendHpUpdate(initiative[idx].name, newHp, newMax);
+          checkHpDead(idx);
+          renderInitiative();
+        };
+        hpPanel.appendChild(ci); hpPanel.appendChild(sep);
+        hpPanel.appendChild(mi); hpPanel.appendChild(ok);
+        div.appendChild(hpPanel);
+      }
+    })(i, entry);
 
     // ── Target picker panel ──
     if (openTargetPanel === i) {
@@ -5558,6 +5754,434 @@ document.getElementById('monster-clear-btn').addEventListener('click', function 
 // Source toggle buttons removed — 5etools mirrors are unavailable; Open5e is the active source
 
 // ============================================================
+// Token HP Panel
+// ============================================================
+function showTokenHpPanel(tok, mapKey) {
+  var old = document.getElementById('tok-hp-panel');
+  if (old) old.remove();
+  var ex = dmHpState[tok.label];
+  var panel = document.createElement('div');
+  panel.id = 'tok-hp-panel';
+  panel.style.cssText = 'position:fixed;z-index:10000;background:#1a1f2e;border:1px solid #d4af37;' +
+    'border-radius:8px;padding:0.65rem 0.8rem;box-shadow:0 4px 20px rgba(0,0,0,0.85);' +
+    'left:50%;top:40%;transform:translate(-50%,-50%);min-width:230px;';
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'color:#d4af37;font-weight:bold;margin-bottom:0.55rem;font-size:0.78rem;';
+  hdr.textContent = '\u2764\uFE0F HP \u2014 ' + tok.label;
+  panel.appendChild(hdr);
+  // Current / Max row
+  var setRow = document.createElement('div');
+  setRow.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-bottom:0.45rem;';
+  var hpInp = document.createElement('input');
+  hpInp.type = 'number'; hpInp.min = '0'; hpInp.placeholder = 'HP';
+  hpInp.value = ex ? ex.hp : '';
+  hpInp.style.cssText = 'width:52px;font-size:0.85rem;';
+  var sep = document.createElement('span');
+  sep.textContent = '/'; sep.style.cssText = 'color:#555;';
+  var maxInp = document.createElement('input');
+  maxInp.type = 'number'; maxInp.min = '1'; maxInp.placeholder = 'Max';
+  maxInp.value = ex ? ex.maxHp : '';
+  maxInp.style.cssText = 'width:52px;font-size:0.85rem;';
+  var setBtn = document.createElement('button');
+  setBtn.className = 'btn btn-small btn-primary';
+  setBtn.textContent = '\u2713 Set';
+  setBtn.onclick = function() {
+    var newMax = parseInt(maxInp.value) || null;
+    if (!newMax) return;
+    var newHp = parseInt(hpInp.value);
+    if (isNaN(newHp)) newHp = newMax;
+    newHp = Math.max(0, Math.min(newMax, newHp));
+    dmHpState[tok.label] = { hp: newHp, maxHp: newMax };
+    sendHpUpdate(tok.label, newHp, newMax);
+    if (newHp <= 0 && !tok.dead) { tok.dead = true; sendTokenUpdate(mapKey); }
+    renderTokenControls(activeTokenMapUrl, mapKey);
+    panel.remove();
+  };
+  setRow.appendChild(hpInp); setRow.appendChild(sep);
+  setRow.appendChild(maxInp); setRow.appendChild(setBtn);
+  panel.appendChild(setRow);
+  // Quick adjust buttons (only when HP already set)
+  if (ex) {
+    var adjRow = document.createElement('div');
+    adjRow.style.cssText = 'display:flex;gap:0.28rem;margin-bottom:0.45rem;flex-wrap:wrap;';
+    [-10, -5, -1, 1, 5, 10].forEach(function(adj) {
+      var ab = document.createElement('button');
+      ab.className = 'btn btn-small ' + (adj < 0 ? 'btn-danger' : 'btn-secondary');
+      ab.style.cssText = 'font-size:0.72rem;padding:0.1rem 0.4rem;';
+      ab.textContent = (adj > 0 ? '+' : '') + adj;
+      ab.onclick = function() {
+        var cur = dmHpState[tok.label] ? dmHpState[tok.label].hp    : 0;
+        var max = dmHpState[tok.label] ? dmHpState[tok.label].maxHp : cur;
+        var nHp = Math.max(0, Math.min(max, cur + adj));
+        dmHpState[tok.label] = { hp: nHp, maxHp: max };
+        sendHpUpdate(tok.label, nHp, max);
+        hpInp.value = nHp; maxInp.value = max;
+        if (nHp <= 0 && !tok.dead) { tok.dead = true; sendTokenUpdate(mapKey); }
+        renderTokenControls(activeTokenMapUrl, mapKey);
+      };
+      adjRow.appendChild(ab);
+    });
+    panel.appendChild(adjRow);
+  }
+  var closeBtn = document.createElement('button');
+  closeBtn.className = 'btn btn-warning btn-small';
+  closeBtn.style.cssText = 'width:100%;';
+  closeBtn.textContent = 'Close';
+  closeBtn.onclick = function() { panel.remove(); };
+  panel.appendChild(closeBtn);
+  document.body.appendChild(panel);
+  setTimeout(function() {
+    function dismiss(e) { if (!panel.contains(e.target)) { panel.remove(); document.removeEventListener('mousedown', dismiss); } }
+    document.addEventListener('mousedown', dismiss);
+  }, 10);
+  (ex ? hpInp : maxInp).focus();
+}
+
+// ============================================================
+// Loot Drop Picker
+// ============================================================
+function showLootDropPicker(deadTok, mapKey) {
+  var old = document.getElementById('loot-drop-picker');
+  if (old) old.remove();
+  var panel = document.createElement('div');
+  panel.id = 'loot-drop-picker';
+  panel.style.cssText = 'position:fixed;z-index:10000;background:#1a1f2e;border:1px solid #d4af37;' +
+    'border-radius:8px;padding:0.65rem 0.8rem;box-shadow:0 4px 20px rgba(0,0,0,0.85);' +
+    'left:50%;top:40%;transform:translate(-50%,-50%);min-width:220px;';
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'color:#d4af37;font-weight:bold;margin-bottom:0.5rem;font-size:0.78rem;';
+  hdr.textContent = '\uD83E\uDE99 Loot from ' + deadTok.label + '?';
+  panel.appendChild(hdr);
+  var btnWrap = document.createElement('div');
+  btnWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.3rem;margin-bottom:0.4rem;';
+  var LOOT_QUICK = ['Gold', 'Chest', 'Potion', 'Sword', 'Shield', 'Scroll', 'Key'];
+  LOOT_QUICK.forEach(function(itemType) {
+    var b = document.createElement('button');
+    b.className = 'btn btn-small btn-secondary';
+    b.style.cssText = 'font-size:0.75rem;';
+    b.textContent = (ITEM_ICONS[itemType] || '\uD83C\uDF81') + ' ' + itemType;
+    b.onclick = function() {
+      panel.remove();
+      var newTok = { id: 'loot_' + Date.now().toString(36), type: 'item', itemType: itemType, label: itemType,
+        x: Math.min(0.95, Math.max(0.05, deadTok.x + 0.025)),
+        y: Math.min(0.95, Math.max(0.05, deadTok.y + 0.025)) };
+      if (!tokenState[mapKey]) tokenState[mapKey] = [];
+      tokenState[mapKey].push(newTok);
+      sendTokenUpdate(mapKey);
+      renderTokenControls(activeTokenMapUrl, mapKey);
+    };
+    btnWrap.appendChild(b);
+  });
+  panel.appendChild(btnWrap);
+  var skip = document.createElement('button');
+  skip.className = 'btn btn-warning btn-small';
+  skip.style.cssText = 'width:100%;';
+  skip.textContent = 'Skip';
+  skip.onclick = function() { panel.remove(); };
+  panel.appendChild(skip);
+  document.body.appendChild(panel);
+  var _t = setTimeout(function() { if (panel.parentNode) panel.remove(); }, 20000);
+  skip.addEventListener('click', function() { clearTimeout(_t); });
+}
+
+// ============================================================
+// Encounters
+// ============================================================
+function initEncounters() {
+  var saveBtn = document.getElementById('encounter-save-btn');
+  var nameInp = document.getElementById('encounter-name-input');
+  if (!saveBtn || !nameInp) return;
+
+  saveBtn.addEventListener('click', function () {
+    var name = nameInp.value.trim();
+    if (!name) { nameInp.focus(); return; }
+    var mapKey = activeTokenMapKey;
+    var tokens = mapKey ? (tokenState[mapKey] || []) : [];
+    var mobs = tokens.filter(function (t) { return t.type !== 'player'; });
+    if (!mobs.length) { alert('No mob or item tokens on the current map to save.'); return; }
+    saveBtn.disabled = true; saveBtn.textContent = '…';
+    fetch('/api/encounters/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, tokens: mobs }),
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.ok) { nameInp.value = ''; renderEncounterList(); }
+      else alert('Save failed: ' + (d.error || 'unknown'));
+    })
+    .catch(function (e) { alert('Save failed: ' + e.message); })
+    .finally(function () { saveBtn.disabled = false; saveBtn.textContent = '💾 Save'; });
+  });
+
+  renderEncounterList();
+}
+
+function renderEncounterList() {
+  var container = document.getElementById('encounter-list');
+  if (!container) return;
+  fetch('/api/encounters')
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      container.innerHTML = '';
+      if (!d.encounters || !d.encounters.length) {
+        container.innerHTML = '<div style="font-size:0.75rem;color:#555;padding:0.3rem 0;">No saved encounters</div>';
+        return;
+      }
+      d.encounters.forEach(function (enc) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:0.3rem;background:#0d1117;border:1px solid #21262d;border-radius:4px;padding:0.3rem 0.4rem;';
+
+        var info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;overflow:hidden;';
+        var nameEl = document.createElement('div');
+        nameEl.style.cssText = 'font-size:0.78rem;color:#e6e6e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;';
+        nameEl.textContent = enc.name;
+        var metaEl = document.createElement('div');
+        metaEl.style.cssText = 'font-size:0.68rem;color:#555;';
+        metaEl.textContent = enc.count + ' token' + (enc.count !== 1 ? 's' : '');
+        info.appendChild(nameEl);
+        info.appendChild(metaEl);
+
+        var deployBtn = document.createElement('button');
+        deployBtn.className = 'btn btn-small btn-primary';
+        deployBtn.style.cssText = 'flex:none;padding:0.15rem 0.45rem;font-size:0.7rem;';
+        deployBtn.textContent = '⚔️ Deploy';
+        deployBtn.addEventListener('click', function () {
+          if (!activeTokenMapKey) { alert('No active map. Load a scene first.'); return; }
+          deployBtn.disabled = true; deployBtn.textContent = '…';
+          fetch('/api/encounters/deploy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: enc.name }),
+          })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data.ok) alert('Deploy failed: ' + (data.error || 'unknown'));
+          })
+          .catch(function (e) { alert('Deploy failed: ' + e.message); })
+          .finally(function () { deployBtn.disabled = false; deployBtn.textContent = '⚔️ Deploy'; });
+        });
+
+        var delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-small btn-danger';
+        delBtn.style.cssText = 'flex:none;padding:0.15rem 0.45rem;font-size:0.7rem;';
+        delBtn.textContent = '🗑';
+        delBtn.title = 'Delete encounter';
+        delBtn.addEventListener('click', function () {
+          if (!confirm('Delete encounter "' + enc.name + '"?')) return;
+          fetch('/api/encounters/' + encodeURIComponent(enc.name), { method: 'DELETE' })
+            .then(function () { renderEncounterList(); })
+            .catch(function (e) { alert('Delete failed: ' + e.message); });
+        });
+
+        row.appendChild(info);
+        row.appendChild(deployBtn);
+        row.appendChild(delBtn);
+        container.appendChild(row);
+      });
+    })
+    .catch(function () {
+      container.innerHTML = '<div style="font-size:0.75rem;color:#555;">Failed to load encounters</div>';
+    });
+}
+
+// ============================================================
+// Scene Bundles
+// ============================================================
+function initBundles() {
+  var saveBtn = document.getElementById('bundle-save-btn');
+  var nameInp = document.getElementById('bundle-name-input');
+  if (!saveBtn || !nameInp) return;
+  saveBtn.addEventListener('click', function () {
+    var name = nameInp.value.trim();
+    if (!name) { nameInp.focus(); return; }
+    saveBtn.disabled = true; saveBtn.textContent = '\u2026';
+    fetch('/api/scene-bundles/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name }),
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.ok) { nameInp.value = ''; renderBundleList(); }
+      else alert('Save failed: ' + (d.error || 'No active scene'));
+    })
+    .catch(function (e) { alert('Save failed: ' + e.message); })
+    .finally(function () { saveBtn.disabled = false; saveBtn.textContent = '\uD83D\uDCBE Save'; });
+  });
+  renderBundleList();
+}
+
+function renderBundleList() {
+  var container = document.getElementById('bundle-list');
+  if (!container) return;
+  fetch('/api/scene-bundles')
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      container.innerHTML = '';
+      if (!d.bundles || !d.bundles.length) {
+        container.innerHTML = '<div style="font-size:0.75rem;color:#555;padding:0.3rem 0;">No saved bundles</div>';
+        return;
+      }
+      d.bundles.forEach(function (b) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:0.3rem;background:#0d1117;border:1px solid #21262d;border-radius:4px;padding:0.3rem 0.4rem;';
+        var info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;overflow:hidden;';
+        var nameEl = document.createElement('div');
+        nameEl.style.cssText = 'font-size:0.78rem;color:#e6e6e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;';
+        nameEl.textContent = b.name;
+        var metaEl = document.createElement('div');
+        metaEl.style.cssText = 'font-size:0.68rem;color:#555;white-space:nowrap;';
+        metaEl.textContent = b.label || '';
+        info.appendChild(nameEl); info.appendChild(metaEl);
+        var loadBtn = document.createElement('button');
+        loadBtn.className = 'btn btn-small btn-secondary';
+        loadBtn.style.cssText = 'flex:none;padding:0.15rem 0.45rem;font-size:0.7rem;';
+        loadBtn.textContent = '\u25B6 Load';
+        loadBtn.addEventListener('click', function () {
+          if (!confirm('Load bundle "' + b.name + '"? This replaces the current map and tokens.')) return;
+          loadBtn.disabled = true; loadBtn.textContent = '\u2026';
+          fetch('/api/scene-bundles/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: b.name }),
+          })
+          .then(function (r) { return r.json(); })
+          .then(function (data) { if (!data.ok) alert('Load failed: ' + (data.error || 'unknown')); })
+          .catch(function (e) { alert('Load failed: ' + e.message); })
+          .finally(function () { loadBtn.disabled = false; loadBtn.textContent = '\u25B6 Load'; });
+        });
+        var delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-small btn-danger';
+        delBtn.style.cssText = 'flex:none;padding:0.15rem 0.45rem;font-size:0.7rem;';
+        delBtn.textContent = '\uD83D\uDDD1';
+        delBtn.title = 'Delete bundle';
+        delBtn.addEventListener('click', function () {
+          if (!confirm('Delete bundle "' + b.name + '"?')) return;
+          fetch('/api/scene-bundles/' + encodeURIComponent(b.name), { method: 'DELETE' })
+            .then(function () { renderBundleList(); })
+            .catch(function (e) { alert('Delete failed: ' + e.message); });
+        });
+        row.appendChild(info); row.appendChild(loadBtn); row.appendChild(delBtn);
+        container.appendChild(row);
+      });
+    })
+    .catch(function () {
+      container.innerHTML = '<div style="font-size:0.75rem;color:#555;">Failed to load bundles</div>';
+    });
+}
+
+// ============================================================
+// Sessions
+// ============================================================
+function initSessions() {
+  var saveBtn  = document.getElementById('session-save-btn');
+  var nameInp  = document.getElementById('session-name-input');
+  if (!saveBtn || !nameInp) return;
+
+  saveBtn.addEventListener('click', function () {
+    var name = nameInp.value.trim();
+    if (!name) { nameInp.focus(); return; }
+    saveBtn.disabled = true;
+    saveBtn.textContent = '…';
+    fetch('/api/sessions/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, initiative: initiative, currentTurn: currentTurn }),
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.ok) { nameInp.value = ''; renderSessionList(); }
+      else alert('Save failed: ' + (d.error || 'unknown error'));
+    })
+    .catch(function (e) { alert('Save failed: ' + e.message); })
+    .finally(function () { saveBtn.disabled = false; saveBtn.textContent = '💾 Save'; });
+  });
+
+  renderSessionList();
+}
+
+function renderSessionList() {
+  var container = document.getElementById('session-list');
+  if (!container) return;
+  fetch('/api/sessions')
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      container.innerHTML = '';
+      if (!d.sessions || !d.sessions.length) {
+        container.innerHTML = '<div style="font-size:0.75rem;color:#555;padding:0.3rem 0;">No saved sessions</div>';
+        return;
+      }
+      d.sessions.forEach(function (s) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:0.3rem;background:#0d1117;border:1px solid #21262d;border-radius:4px;padding:0.3rem 0.4rem;';
+
+        var info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;overflow:hidden;';
+        var nameEl = document.createElement('div');
+        nameEl.style.cssText = 'font-size:0.78rem;color:#e6e6e6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;';
+        nameEl.textContent = s.name;
+        var metaEl = document.createElement('div');
+        metaEl.style.cssText = 'font-size:0.68rem;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        var d2 = s.savedAt ? new Date(s.savedAt).toLocaleString() : '';
+        metaEl.textContent = (s.scene ? s.scene + ' · ' : '') + d2;
+        info.appendChild(nameEl);
+        info.appendChild(metaEl);
+
+        var loadBtn = document.createElement('button');
+        loadBtn.className = 'btn btn-small btn-secondary';
+        loadBtn.style.cssText = 'flex:none;padding:0.15rem 0.45rem;font-size:0.7rem;';
+        loadBtn.textContent = '▶ Load';
+        loadBtn.addEventListener('click', function () {
+          if (!confirm('Load session "' + s.name + '"? This replaces the current map, tokens, and initiative.')) return;
+          loadBtn.disabled = true;
+          loadBtn.textContent = '…';
+          fetch('/api/sessions/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: s.name }),
+          })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data.ok) { alert('Load failed: ' + (data.error || 'unknown')); return; }
+            // Restore initiative tracker
+            if (Array.isArray(data.initiative)) {
+              initiative  = data.initiative;
+              currentTurn = data.currentTurn || 0;
+              saveInitiative();
+              renderInitiative();
+            }
+          })
+          .catch(function (e) { alert('Load failed: ' + e.message); })
+          .finally(function () { loadBtn.disabled = false; loadBtn.textContent = '▶ Load'; });
+        });
+
+        var delBtn = document.createElement('button');
+        delBtn.className = 'btn btn-small btn-danger';
+        delBtn.style.cssText = 'flex:none;padding:0.15rem 0.45rem;font-size:0.7rem;';
+        delBtn.textContent = '🗑';
+        delBtn.title = 'Delete session';
+        delBtn.addEventListener('click', function () {
+          if (!confirm('Delete session "' + s.name + '"?')) return;
+          fetch('/api/sessions/' + encodeURIComponent(s.name), { method: 'DELETE' })
+            .then(function () { renderSessionList(); })
+            .catch(function (e) { alert('Delete failed: ' + e.message); });
+        });
+
+        row.appendChild(info);
+        row.appendChild(loadBtn);
+        row.appendChild(delBtn);
+        container.appendChild(row);
+      });
+    })
+    .catch(function () {
+      container.innerHTML = '<div style="font-size:0.75rem;color:#555;">Failed to load sessions</div>';
+    });
+}
+
+// ============================================================
 // Boot
 // ============================================================
 connectWebSocket();
@@ -5567,6 +6191,9 @@ initSceneBuilder();
 loadPlayerRoster();
 loadInitiative();
 renderInitiative();
+initSessions();
+initEncounters();
+initBundles();
 
 // ── Sidebar toggle + resize ───────────────────────────────────
 (function () {

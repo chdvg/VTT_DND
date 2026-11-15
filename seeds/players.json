@@ -1,26 +1,10 @@
 [
   {
-    "name": "Vaeris",
-    "cls": "Sorcerer"
-  },
-  {
     "name": "Benny Silvertongue",
     "cls": "Rogue"
   },
   {
-    "name": "Arcanus",
-    "cls": "Cleric"
-  },
-  {
     "name": "DragOn",
     "cls": "Druid"
-  },
-  {
-    "name": "Dobby",
-    "cls": "FatChub"
-  },
-  {
-    "name": "Kat of GT",
-    "cls": "Warrior"
   }
 ]

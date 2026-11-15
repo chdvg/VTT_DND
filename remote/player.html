@@ -708,9 +708,17 @@
   </div>
   <div id="blackout-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:#000;"></div>
   <div id="unlock-bar" style="display:none"></div>
-  <!-- Player HUD: logoff + dice bar — shown only after login -->
+  <!-- Player HUD: logoff + HP + dice bar — shown only after login -->
   <div id="player-hud">
     <button id="logoff-btn" title="Log off character">⚔ Log Off</button>
+    <div id="player-hp-display" style="display:none;align-items:center;gap:0.4rem;
+      background:rgba(10,10,20,0.82);border:1px solid #2a2f3a;border-radius:6px;padding:3px 10px;">
+      <span style="font-size:0.82rem;">❤️</span>
+      <div id="player-hp-bar-wrap" style="width:56px;height:7px;background:#1a1f2e;border-radius:4px;overflow:hidden;">
+        <div id="player-hp-bar" style="height:100%;width:100%;background:#4ade80;transition:width 0.3s,background 0.3s;border-radius:4px;"></div>
+      </div>
+      <span id="player-hp-text" style="font-size:0.82rem;font-weight:600;color:#4ade80;white-space:nowrap;"></span>
+    </div>
     <div id="player-dice-bar" style="display:flex;align-items:center;gap:0.35rem;
       background:rgba(10,10,20,0.82);border:1px solid #2a2f3a;border-radius:6px;
       padding:3px 8px;flex-wrap:wrap;">

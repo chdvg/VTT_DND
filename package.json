@@ -1,12 +1,13 @@
 {
   "name": "dnd-control-console",
-  "version": "3.7.0",
+  "version": "3.8.0",
   "description": "A modular D&D VTT control console — web-only, served over intranet.",
   "author": "Charles",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test": "node --test test/server.test.js"
   },
   "dependencies": {
     "express": "^4.19.0",
