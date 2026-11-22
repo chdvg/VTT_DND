@@ -1,0 +1,221 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Characters -- DM Panel</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#0d1117;color:#e6e6e6;height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+    a{color:#d4af37;text-decoration:none;}
+    header{background:#161b22;padding:0.85rem 1.5rem;border-bottom:2px solid #d4af37;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;gap:1rem;}
+    header h1{font-size:1.3rem;letter-spacing:1px;color:#d4af37;font-weight:700;}
+    .hdr-right{display:flex;align-items:center;gap:0.6rem;}
+    .layout{display:flex;flex:1;min-height:0;overflow:hidden;}
+    .sidebar{width:300px;min-width:260px;flex-shrink:0;background:#161b22;border-right:1px solid #30363d;display:flex;flex-direction:column;overflow:hidden;}
+    .sidebar-top{padding:0.75rem;display:flex;gap:0.4rem;border-bottom:1px solid #30363d;flex-wrap:wrap;}
+    .char-list{flex:1;overflow-y:auto;padding:0.5rem;}
+    .char-list::-webkit-scrollbar{width:5px;}
+    .char-list::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px;}
+    .char-item{padding:0.65rem 0.75rem;border-radius:6px;cursor:pointer;border:1px solid transparent;margin-bottom:0.3rem;transition:all 0.15s;}
+    .char-item:hover{background:#1c2128;border-color:#30363d;}
+    .char-item.active{background:#1c2128;border-color:#d4af37;}
+    .char-item-name{font-weight:600;font-size:0.9rem;}
+    .char-item.active .char-item-name{color:#d4af37;}
+    .char-item-sub{font-size:0.72rem;color:#666;margin-top:0.1rem;}
+    .char-list-empty{color:#555;font-size:0.82rem;padding:1rem;text-align:center;line-height:1.6;}
+    .sidebar-hint{padding:0.65rem 0.85rem;border-top:1px solid #21262d;font-size:0.68rem;color:#444;line-height:1.6;}
+    .sidebar-hint code{color:#555;}
+    .main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}
+    #empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.6rem;padding:2rem;text-align:center;}
+    #empty-state .icon{font-size:4rem;opacity:0.5;}
+    #empty-state h2{color:#555;font-size:1.1rem;}
+    #empty-state p{color:#444;font-size:0.82rem;max-width:360px;line-height:1.6;}
+    #char-editor{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;}
+    .editor-header{padding:0.85rem 1.25rem;background:#161b22;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;flex-shrink:0;}
+    #f-name{background:transparent;border:none;border-bottom:2px solid #d4af37;color:#e6e6e6;font-size:1.3rem;font-weight:700;padding:0.15rem 0.4rem;min-width:200px;flex:1;max-width:500px;outline:none;}
+    #f-name::placeholder{color:#333;}
+    .editor-meta{font-size:0.72rem;color:#444;}
+    .editor-actions{margin-left:auto;display:flex;gap:0.4rem;}
+    .char-tabs{display:flex;border-bottom:1px solid #30363d;background:#161b22;flex-shrink:0;overflow-x:auto;}
+    .char-tabs::-webkit-scrollbar{height:0;}
+    .char-tab{padding:0.6rem 1.1rem;background:none;border:none;color:#666;cursor:pointer;font-size:0.82rem;font-weight:600;border-bottom:2px solid transparent;transition:all 0.15s;white-space:nowrap;}
+    .char-tab:hover{color:#ccc;background:#1c2128;}
+    .char-tab.active{color:#d4af37;border-bottom-color:#d4af37;background:#0d1117;}
+    .char-panes{flex:1;overflow:hidden;position:relative;min-height:0;}
+    .char-pane{display:none;height:100%;overflow-y:auto;padding:1.25rem 1.5rem;}
+    .char-pane.active{display:block;}
+    .char-pane::-webkit-scrollbar{width:6px;}
+    .char-pane::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px;}
+    .section-hdr{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#d4af37;border-bottom:1px solid #21262d;padding-bottom:0.4rem;margin:1.25rem 0 0.85rem;opacity:0.75;}
+    .section-hdr:first-child{margin-top:0;}
+    .form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:0.85rem 1.1rem;margin-bottom:0.5rem;}
+    .form-grid.cols-2{grid-template-columns:repeat(2,1fr);}
+    .form-grid.cols-3{grid-template-columns:repeat(3,1fr);}
+    .form-group{display:flex;flex-direction:column;gap:0.3rem;}
+    .form-group.full{grid-column:1/-1;}
+    .form-label{font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:#666;font-weight:600;}
+    input[type=text],input[type=number],select,textarea{width:100%;padding:0.5rem 0.65rem;background:#0d1117;border:1px solid #2a2f3a;border-radius:5px;color:#e6e6e6;font-size:0.88rem;font-family:inherit;transition:border-color 0.15s;}
+    input[type=text]:focus,input[type=number]:focus,select:focus,textarea:focus{outline:none;border-color:#d4af37;background:#0a0d14;}
+    textarea{resize:vertical;min-height:88px;line-height:1.6;}
+    textarea.tall{min-height:140px;}
+    textarea.xtall{min-height:220px;}
+    select option{background:#161b22;}
+    input[type=file]{display:none;}
+    .ability-block{display:grid;grid-template-columns:repeat(6,1fr);gap:0.75rem;margin-bottom:0.5rem;}
+    .ability-score{background:#0a0d14;border:1px solid #2a2f3a;border-radius:7px;padding:0.65rem 0.5rem;text-align:center;display:flex;flex-direction:column;align-items:center;gap:0.25rem;}
+    .ability-score:focus-within{border-color:#d4af37;}
+    .ability-score .form-label{font-size:0.62rem;}
+    .ability-score input[type=number]{text-align:center;padding:0.3rem 0;font-size:1.05rem;font-weight:700;width:100%;background:transparent;border:none;border-bottom:1px solid #2a2f3a;border-radius:0;}
+    .ability-score input[type=number]:focus{outline:none;border-bottom-color:#d4af37;background:transparent;}
+    .ability-mod{font-size:0.78rem;color:#d4af37;font-weight:700;min-height:1.1em;}
+    .btn{padding:0.42rem 0.9rem;font-size:0.78rem;font-weight:700;border:2px solid transparent;border-radius:5px;cursor:pointer;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap;transition:all 0.15s;display:inline-block;text-align:center;}
+    .btn-primary{background:#d4af37;color:#0d1117;border-color:#d4af37;}
+    .btn-primary:hover{background:#e6c74c;}
+    .btn-secondary{background:#21262d;color:#ccc;border-color:#30363d;}
+    .btn-secondary:hover{background:#30363d;color:#e6e6e6;}
+    .btn-danger{background:transparent;color:#f87171;border-color:#7f1d1d;}
+    .btn-danger:hover{background:#7f1d1d;color:#fff;}
+    .btn-sm{padding:0.28rem 0.65rem;font-size:0.72rem;}
+  </style>
+</head>
+<body>
+<header>
+  <h1>📋 Character Sheets</h1>
+  <div class="hdr-right">
+    <span id="auto-save-status" style="display:none;font-size:0.78rem;color:#4ade80;">&#10003; Saved</span>
+    <a href="/" class="btn btn-secondary btn-sm">&#8592; DM Panel</a>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-top">
+      <button id="new-char-btn" class="btn btn-primary btn-sm" style="flex:1;">+ New Character</button>
+      <label class="btn btn-secondary btn-sm" style="cursor:pointer;" title="Import JSON">
+        &#128229; Import
+        <input type="file" id="import-file" accept=".json">
+      </label>
+      <a href="/characters/template.json" download="character_template.json" class="btn btn-secondary btn-sm" title="Download example format">&#128196; Template</a>
+    </div>
+    <div class="char-list" id="char-list">
+      <div class="char-list-empty">No characters yet -- click + New Character to start.</div>
+    </div>
+    <div class="sidebar-hint">
+      <strong style="color:#555;">Import format:</strong> JSON with <code>name</code>, <code>race</code>, <code>class</code>, <code>level</code>, <code>hp</code>, <code>ac</code>, <code>str/dex/con/int/wis/cha</code>, <code>backstory</code>... Download Template for the full example.
+    </div>
+  </aside>
+
+  <main class="main">
+    <div id="empty-state">
+      <div class="icon">&#129497;</div>
+      <h2>No character selected</h2>
+      <p>Select a character from the list, click <strong>+ New Character</strong> to create one, or import an existing JSON sheet.</p>
+    </div>
+
+    <div id="char-editor" style="display:none;">
+      <div class="editor-header">
+        <input type="text" id="f-name" placeholder="Character Name" maxlength="80"/>
+        <span class="editor-meta" id="char-last-updated"></span>
+        <div class="editor-actions">
+          <button id="export-btn" class="btn btn-secondary btn-sm" title="Download as JSON">&#128228; Export</button>
+          <button id="delete-btn" class="btn btn-danger btn-sm">&#128465; Delete</button>
+        </div>
+      </div>
+
+      <div class="char-tabs">
+        <button class="char-tab active" data-tab="basics">&#128203; Basics</button>
+        <button class="char-tab" data-tab="stats">&#127922; Stats</button>
+        <button class="char-tab" data-tab="story">&#128214; Story</button>
+        <button class="char-tab" data-tab="gear">&#127820; Gear &amp; Abilities</button>
+        <button class="char-tab" data-tab="notes">&#128221; Session Notes</button>
+      </div>
+
+      <div class="char-panes">
+
+        <div class="char-pane active" id="pane-basics">
+          <div class="form-grid">
+            <div class="form-group"><label class="form-label">Player (Real Name)</label><input type="text" id="f-player" placeholder="e.g. John" maxlength="80"/></div>
+            <div class="form-group"><label class="form-label">Race</label><input type="text" id="f-race" placeholder="e.g. Mountain Dwarf" maxlength="80"/></div>
+            <div class="form-group"><label class="form-label">Class</label><input type="text" id="f-class" placeholder="e.g. Fighter" maxlength="80"/></div>
+            <div class="form-group"><label class="form-label">Subclass</label><input type="text" id="f-subclass" placeholder="e.g. Battle Master" maxlength="80"/></div>
+            <div class="form-group"><label class="form-label">Level</label><input type="number" id="f-level" min="1" max="20" placeholder="1"/></div>
+            <div class="form-group"><label class="form-label">Background</label><input type="text" id="f-background" placeholder="e.g. Soldier" maxlength="80"/></div>
+            <div class="form-group"><label class="form-label">Alignment</label>
+              <select id="f-alignment">
+                <option value="">--</option>
+                <option>Lawful Good</option><option>Neutral Good</option><option>Chaotic Good</option>
+                <option>Lawful Neutral</option><option>True Neutral</option><option>Chaotic Neutral</option>
+                <option>Lawful Evil</option><option>Neutral Evil</option><option>Chaotic Evil</option>
+              </select>
+            </div>
+            <div class="form-group"><label class="form-label">Experience Points</label><input type="number" id="f-experience" min="0" placeholder="0"/></div>
+            <div class="form-group"><label class="form-label">Age</label><input type="text" id="f-age" placeholder="e.g. 45" maxlength="40"/></div>
+          </div>
+        </div>
+
+        <div class="char-pane" id="pane-stats">
+          <div class="section-hdr">Ability Scores</div>
+          <div class="ability-block">
+            <div class="ability-score"><label class="form-label">STR</label><input type="number" id="f-str" min="1" max="30" placeholder="10" class="ability-input"/><div class="ability-mod" id="mod-str">--</div></div>
+            <div class="ability-score"><label class="form-label">DEX</label><input type="number" id="f-dex" min="1" max="30" placeholder="10" class="ability-input"/><div class="ability-mod" id="mod-dex">--</div></div>
+            <div class="ability-score"><label class="form-label">CON</label><input type="number" id="f-con" min="1" max="30" placeholder="10" class="ability-input"/><div class="ability-mod" id="mod-con">--</div></div>
+            <div class="ability-score"><label class="form-label">INT</label><input type="number" id="f-int" min="1" max="30" placeholder="10" class="ability-input"/><div class="ability-mod" id="mod-int">--</div></div>
+            <div class="ability-score"><label class="form-label">WIS</label><input type="number" id="f-wis" min="1" max="30" placeholder="10" class="ability-input"/><div class="ability-mod" id="mod-wis">--</div></div>
+            <div class="ability-score"><label class="form-label">CHA</label><input type="number" id="f-cha" min="1" max="30" placeholder="10" class="ability-input"/><div class="ability-mod" id="mod-cha">--</div></div>
+          </div>
+          <div class="section-hdr">Combat Stats</div>
+          <div class="form-grid cols-3">
+            <div class="form-group"><label class="form-label">Max HP</label><input type="number" id="f-hp" min="1" placeholder="e.g. 35"/></div>
+            <div class="form-group"><label class="form-label">Armor Class</label><input type="number" id="f-ac" min="1" placeholder="e.g. 18"/></div>
+            <div class="form-group"><label class="form-label">Speed (ft)</label><input type="number" id="f-speed" min="0" placeholder="e.g. 30"/></div>
+            <div class="form-group"><label class="form-label">Initiative Bonus</label><input type="number" id="f-initiative" placeholder="e.g. 2"/></div>
+            <div class="form-group"><label class="form-label">Proficiency Bonus</label><input type="number" id="f-profbonus" placeholder="e.g. 3"/></div>
+            <div class="form-group"><label class="form-label">Hit Dice</label><input type="text" id="f-hitdice" placeholder="e.g. 5d10" maxlength="40"/></div>
+            <div class="form-group"><label class="form-label">Passive Perception</label><input type="number" id="f-passiveperc" placeholder="auto"/></div>
+            <div class="form-group"><label class="form-label">Spell Save DC</label><input type="number" id="f-spellsavedc" placeholder="--"/></div>
+            <div class="form-group"><label class="form-label">Spell Attack Bonus</label><input type="number" id="f-spellatk" placeholder="--"/></div>
+          </div>
+          <div class="section-hdr">Proficiencies</div>
+          <div class="form-grid cols-2">
+            <div class="form-group"><label class="form-label">Saving Throw Proficiencies</label><input type="text" id="f-saves" placeholder="e.g. STR, CON" maxlength="200"/></div>
+            <div class="form-group"><label class="form-label">Skill Proficiencies</label><input type="text" id="f-skills" placeholder="e.g. Athletics, Perception, Stealth" maxlength="400"/></div>
+            <div class="form-group"><label class="form-label">Languages</label><input type="text" id="f-languages" placeholder="e.g. Common, Dwarvish" maxlength="200"/></div>
+            <div class="form-group"><label class="form-label">Other Proficiencies</label><input type="text" id="f-proficiencies" placeholder="e.g. All armor, smith's tools" maxlength="400"/></div>
+          </div>
+        </div>
+
+        <div class="char-pane" id="pane-story">
+          <div class="form-grid cols-2">
+            <div class="form-group full"><label class="form-label">Backstory</label><textarea id="f-backstory" class="xtall" placeholder="Character's history, origin, and motivation..."></textarea></div>
+            <div class="form-group"><label class="form-label">Personality Traits</label><textarea id="f-personality" placeholder="How the character acts and speaks..."></textarea></div>
+            <div class="form-group"><label class="form-label">Ideals</label><textarea id="f-ideals" placeholder="What the character believes in..."></textarea></div>
+            <div class="form-group"><label class="form-label">Bonds</label><textarea id="f-bonds" placeholder="People, places, or things the character cares about..."></textarea></div>
+            <div class="form-group"><label class="form-label">Flaws</label><textarea id="f-flaws" placeholder="Weaknesses, vices, compulsions..."></textarea></div>
+            <div class="form-group full"><label class="form-label">Physical Appearance</label><textarea id="f-appearance" placeholder="Height, build, distinguishing features..."></textarea></div>
+          </div>
+        </div>
+
+        <div class="char-pane" id="pane-gear">
+          <div class="form-grid cols-2">
+            <div class="form-group full"><label class="form-label">Class Features &amp; Racial Traits</label><textarea id="f-features" class="tall" placeholder="e.g. Second Wind (1d10+5, 1/short rest), Action Surge, Darkvision 60ft..."></textarea></div>
+            <div class="form-group full"><label class="form-label">Equipment &amp; Inventory</label><textarea id="f-equipment" class="tall" placeholder="e.g. Chain Mail +1 (AC 17), Longsword +1 (1d8+5), 3x Healing Potion, 85gp..."></textarea></div>
+            <div class="form-group full"><label class="form-label">Spells &amp; Spell Slots</label><textarea id="f-spells" class="tall" placeholder="Slots: 1st x4  2nd x3  3rd x2&#10;Cantrips: Fire Bolt, Prestidigitation&#10;Prepared: Fireball, Shield, Misty Step..."></textarea></div>
+          </div>
+        </div>
+
+        <div class="char-pane" id="pane-notes">
+          <div class="form-grid cols-2">
+            <div class="form-group full"><label class="form-label">Session Notes</label><textarea id="f-notes" style="min-height:200px;" placeholder="- Knows Klarg works for the Black Spider&#10;- Owes Sildar Hallwinter a favour&#10;- Has the Cragmaw map, hasn't told the party"></textarea></div>
+            <div class="form-group full"><label class="form-label">Relationships &amp; Contacts</label><textarea id="f-relationships" class="tall" placeholder="Sildar Hallwinter -- Friendly, rescued from the cave&#10;Klarg -- Hostile bugbear boss&#10;Gundren Rockseeker -- Quest giver, missing"></textarea></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="/characters/app.js"></script>
+</body>
+</html>

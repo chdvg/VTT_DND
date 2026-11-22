@@ -16,6 +16,7 @@
       </div>
       <span id="status-dot" class="status-dot off"></span>
       <a href="/map-builder" class="dm-logout-btn" title="Open Map Builder" style="color:#d4af37;border-color:#d4af37;">🗺️ Map Builder</a>
+      <a href="/characters" target="_blank" class="dm-logout-btn" title="Character Sheets" style="color:#a78bfa;border-color:#a78bfa;">📋 Characters</a>
       <a href="/dm-logout" class="dm-logout-btn" title="Lock DM panel">🔒 Lock</a>
     </div>
   </header>
@@ -357,6 +358,99 @@
         </div>
       </details>
     </section>
+    <!-- ── AI Dungeon Master Assistant ── -->
+    <section class="panel" id="section-ai-assistant">
+      <details>
+        <summary class="panel-summary">
+          <span class="drag-handle" title="Drag to reorder">⠿</span>🤖 AI Assistant
+          <span class="sb-chevron">▶</span>
+        </summary>
+        <div style="margin-top:0.75rem;">
+
+          <!-- Settings panel (hidden by default) -->
+          <div id="ai-settings-panel" style="display:none;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:0.75rem;margin-bottom:0.75rem;">
+            <div style="font-size:0.72rem;font-weight:bold;text-transform:uppercase;letter-spacing:0.08em;color:#888;margin-bottom:0.6rem;">⚙️ AI Provider Settings</div>
+            <div class="ai-settings-row">
+              <label class="ai-settings-label">Provider</label>
+              <select id="ai-provider-select" style="flex:1;min-width:0;margin-bottom:0;padding:0.4rem 0.5rem;background:#161b22;border:1px solid #30363d;color:#e6e6e6;border-radius:4px;font-size:0.85rem;">
+                <option value="groq">Groq — Free (Llama 3.1, Mixtral)</option>
+                <option value="gemini">Google Gemini — Free (Gemini 1.5 Flash)</option>
+                <option value="openrouter">OpenRouter — Free models available</option>
+                <option value="openai">OpenAI (GPT-4o Mini, etc.)</option>
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="ollama">Ollama — Local (no API key)</option>
+                <option value="custom">Custom OpenAI-compatible</option>
+              </select>
+            </div>
+            <div class="ai-settings-row" id="ai-apikey-row">
+              <label class="ai-settings-label">API Key</label>
+              <input type="password" id="ai-apikey-input" placeholder="Paste your API key…" style="flex:1;min-width:0;margin-bottom:0;" maxlength="512" autocomplete="off" />
+              <button id="ai-apikey-show-btn" class="btn btn-small btn-secondary" style="flex:none;min-width:0;padding:0.3rem 0.5rem;" title="Show/hide key">👁</button>
+            </div>
+            <div class="ai-settings-row" id="ai-baseurl-row" style="display:none;">
+              <label class="ai-settings-label">Base URL</label>
+              <input type="text" id="ai-baseurl-input" placeholder="http://localhost:11434" style="flex:1;min-width:0;margin-bottom:0;" maxlength="256" />
+            </div>
+            <div class="ai-settings-row">
+              <label class="ai-settings-label">Model</label>
+              <input type="text" id="ai-model-input" placeholder="Leave blank for default" style="flex:1;min-width:0;margin-bottom:0;" maxlength="128" />
+            </div>
+            <div style="margin-bottom:0.5rem;">
+              <label class="ai-settings-label" style="display:block;margin-bottom:0.3rem;">System Prompt</label>
+              <textarea id="ai-system-prompt" rows="3" style="margin-bottom:0;font-size:0.8rem;resize:vertical;" placeholder="You are a D&D 5e DM assistant…"></textarea>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+              <button id="ai-save-config-btn" class="btn btn-primary btn-small" style="flex:none;">💾 Save Settings</button>
+              <span id="ai-save-status" style="font-size:0.75rem;color:#4ade80;display:none;">✓ Saved</span>
+              <div id="ai-provider-hint" style="margin-left:auto;font-size:0.72rem;color:#666;"></div>
+            </div>
+          </div>
+
+          <!-- Main AI panel -->
+          <div id="ai-main-panel">
+            <!-- Status bar -->
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem;flex-wrap:wrap;">
+              <span id="ai-provider-badge" style="font-size:0.72rem;background:#1c2128;border:1px solid #30363d;border-radius:4px;padding:0.15rem 0.5rem;color:#888;">No provider set</span>
+              <button id="ai-settings-toggle-btn" class="btn btn-small btn-secondary" style="flex:none;padding:0.25rem 0.5rem;min-width:0;">⚙️ Settings</button>
+            </div>
+
+            <!-- Quick prompts -->
+            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.07em;color:#555;margin-bottom:0.3rem;">Quick Prompts</div>
+            <div id="ai-quick-btns" style="display:flex;flex-wrap:wrap;gap:0.3rem;margin-bottom:0.6rem;">
+              <button class="btn btn-small btn-secondary ai-chip" data-prompt="Create a compelling D&D 5e plot hook involving ">📖 Plot Hook</button>
+              <button class="btn btn-small btn-secondary ai-chip" data-prompt="Create a memorable NPC for my D&D 5e campaign. Include: name, race, brief appearance, one personality trait, a secret they're hiding, and a distinctive mannerism or speech pattern.">👤 NPC</button>
+              <button class="btn btn-small btn-secondary ai-chip" data-prompt="Describe a vivid D&D location called ">🗺️ Location</button>
+              <button class="btn btn-small btn-secondary ai-chip" data-prompt="Design a D&D 5e encounter for ">🐉 Encounter</button>
+              <button class="btn btn-small btn-secondary ai-chip" data-prompt="Generate interesting loot for ">💰 Loot</button>
+              <button class="btn btn-small btn-secondary ai-chip" data-prompt="Write memorable in-character dialogue for ">💬 Dialogue</button>
+              <button class="btn btn-small btn-secondary ai-chip" data-prompt="Give me an unexpected D&D plot twist or revelation for a session involving ">⚡ Twist</button>
+            </div>
+
+            <!-- Input area -->
+            <textarea id="ai-prompt-input" rows="3" placeholder="Ask anything — plot hooks, NPC names, descriptions, encounter ideas, lore…" style="margin-bottom:0.4rem;resize:vertical;"></textarea>
+            <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.4rem;flex-wrap:wrap;">
+              <button id="ai-ask-btn" class="btn btn-primary" style="flex:none;">🤖 Ask AI</button>
+              <button id="ai-clear-btn" class="btn btn-small btn-secondary" style="flex:none;min-width:0;" title="Clear prompt and response">✕ Clear</button>
+              <button id="ai-ctx-toggle-btn" class="btn btn-small btn-secondary" style="flex:none;min-width:0;font-size:0.7rem;" title="Preview the session context being sent to the AI">👁 Context</button>
+              <span id="ai-loading" style="font-size:0.8rem;color:#888;display:none;">⏳ Thinking…</span>
+            </div>
+            <div id="ai-ctx-preview" style="display:none;background:#0a0e17;border:1px solid #21262d;border-radius:5px;padding:0.6rem 0.75rem;font-size:0.72rem;color:#666;white-space:pre-wrap;max-height:160px;overflow-y:auto;margin-bottom:0.5rem;font-family:monospace;"></div>
+
+            <!-- Response area -->
+            <div id="ai-response-wrap" style="display:none;">
+              <div id="ai-response-box" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:0.75rem;white-space:pre-wrap;font-size:0.85rem;line-height:1.6;max-height:320px;overflow-y:auto;color:#d1d5db;"></div>
+              <div style="display:flex;gap:0.4rem;margin-top:0.4rem;">
+                <button id="ai-copy-btn" class="btn btn-small btn-secondary" style="flex:none;">📋 Copy</button>
+                <button id="ai-send-players-btn" class="btn btn-small btn-secondary" style="flex:none;" title="Send response as text overlay to all players">📜 Send to Players</button>
+              </div>
+            </div>
+            <div id="ai-error-box" style="display:none;background:#2d0f0f;border:1px solid #7f1d1d;border-radius:6px;padding:0.6rem 0.75rem;font-size:0.82rem;color:#fca5a5;"></div>
+          </div>
+
+        </div>
+      </details>
+    </section>
+
     </div><!-- end panel-grid -->
     </main>
     <aside class="sidebar-right" id="sidebar-right">

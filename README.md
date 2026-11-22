@@ -303,7 +303,103 @@ The Reference panel is a tabbed quick-reference hub for DMs, with live API looku
 
 > Reference lookup data (spells, items, feats) is provided by **[Open5e](https://open5e.com/)** — a community-maintained open-source API serving only OGL and Creative Commons licensed 5e content. All data is free to use. API endpoint: `https://api.open5e.com/v1/`. Feat fallback provided by the **[D&D 5e SRD API](https://www.dnd5eapi.co/)** at `https://www.dnd5eapi.co/api/`.
 
-### Token Overlay
+### AI Dungeon Master Assistant
+
+An in-panel AI assistant that knows your current session — party, monsters, map, initiative, HP, and conditions — and answers any question instantly.
+
+**Opening it:** Expand the **🤖 AI Assistant** panel at the bottom of the DM panel main content area.
+
+**First-time setup (⚙️ Settings):**
+
+| Provider | Cost | Speed | Get Key |
+|----------|------|-------|---------|
+| **Groq** | Free | Fastest | [console.groq.com](https://console.groq.com) |
+| **Google Gemini** | Free | Fast | [aistudio.google.com](https://aistudio.google.com) |
+| **OpenRouter** | Free models available | Good | [openrouter.ai](https://openrouter.ai) |
+| **OpenAI** | Paid | Fast | [platform.openai.com](https://platform.openai.com) |
+| **Anthropic** | Paid | Fast | [console.anthropic.com](https://console.anthropic.com) |
+| **Ollama** | Free (local) | Varies | [ollama.com](https://ollama.com) — no key needed |
+| **Custom** | — | — | Any OpenAI-compatible endpoint |
+
+Click **⚙️ Settings**, choose a provider, paste your API key, and click **💾 Save Settings**. The API key is stored server-side in `data/ai-config.json` (gitignored) — it never crosses the LAN to other clients.
+
+**Automatic session context:** Every question you ask automatically includes:
+- Active scene / map name
+- Full party list with class, level, HP, conditions (pulled from Character Sheets if available)
+- All enemies on the current map with type, HP, dead/hidden state
+- Full initiative order with whose turn it is
+
+This means you never have to explain your party or the current encounter — the AI already knows.
+
+**Quick prompt chips:** Pre-fill the textarea with a template for:
+📖 Plot Hook · 👤 NPC · 🗺️ Location · 🐉 Encounter · 💰 Loot · 💬 Dialogue · ⚡ Twist
+
+Customize the bracket portions and press **🤖 Ask AI** (or **Ctrl+Enter**).
+
+**👁 Context button:** Preview exactly what session context is being sent before submitting — useful for verifying the AI has the right information.
+
+**After a response:**
+- **📋 Copy** — copies the response to the clipboard
+- **📜 Send to Players** — sends the response as a text overlay to all player screens immediately
+
+The DM-configurable **System Prompt** (in Settings) lets you tailor the AI's style — e.g. add your campaign world name, lore restrictions, or tone guidelines.
+
+---
+
+### Character Sheets
+
+A dedicated character management screen at **`http://localhost:3000/characters`** (also accessible via the **📋 Characters** button in the DM panel header — opens in a new tab).
+
+**What's stored per character:**
+
+| Tab | Fields |
+|-----|--------|
+| 📋 Basics | Name, player's real name, race, class, subclass, level, background, alignment, XP, age |
+| 🎲 Stats | All 6 ability scores (modifier auto-calculated), Max HP, AC, speed, initiative bonus, proficiency bonus, hit dice, spell stats, saving throw profs, skill profs, languages |
+| 📖 Story | Backstory, personality traits, ideals, bonds, flaws, physical appearance |
+| 🎒 Gear & Abilities | Class features & racial traits, equipment & inventory, spells & spell slots |
+| 📝 Session Notes | Live notes updated during play + relationships/contacts |
+
+**Key behaviors:**
+- **Auto-saves** 1.2 seconds after any change — no manual save button needed
+- **📤 Export** — download any character as a `.json` file (for backup or sharing)
+- **📥 Import** — upload a `.json` file; generates a new ID automatically so imports never overwrite existing characters
+- **📄 Template** — downloads a fully filled-out example character (`character_template.json`) showing every available field with real D&D 5e values
+
+**Character names must match** the names used in the **Player Roster** and on map tokens for the AI to automatically link sheet data to initiative/token context.
+
+**AI integration:** When a character sheet is saved for a player in the party, the AI assistant automatically includes their full sheet data — ability scores, features, backstory, and session notes — in every request. The more complete the sheet, the richer the AI's context.
+
+**JSON import format:**
+
+```json
+{
+  "name": "Thorin Ironforge",
+  "player": "John",
+  "race": "Mountain Dwarf",
+  "class": "Fighter",
+  "subclass": "Battle Master",
+  "level": 5,
+  "background": "Soldier",
+  "alignment": "Lawful Good",
+  "str": 18, "dex": 10, "con": 16, "int": 10, "wis": 12, "cha": 8,
+  "hp": 35, "ac": 18, "speed": 25,
+  "saves": "STR, CON",
+  "skills": "Athletics, Intimidation, Perception",
+  "backstory": "Born in the mines of Mithral Hall...",
+  "personality": "I face problems head-on.",
+  "notes": "- Knows Klarg works for the Black Spider",
+  "relationships": "Sildar Hallwinter — Friendly"
+}
+```
+
+Download **📄 Template** from the Characters page for the complete field reference.
+
+Stored in `data/characters.json` (gitignored, persists restarts).
+
+---
+
+
 
 - **Combat targeting indicators on the map** — targeted mob tokens display a pulsing red ring and 🎯 crosshair badge:
   - On a **logged-in player screen**: only their own target pulses
@@ -518,6 +614,10 @@ Click the **🔒 Lock** button in the top-right of the DM panel header. This cle
 │   ├── index.html          # DM control panel UI
 │   ├── app.js              # DM panel logic (scenes, audio, fog, initiative, drag-drop layout)
 │   └── styles.css          # DM panel styles
+├── characters/
+│   ├── index.html          # Character sheet manager UI
+│   ├── app.js              # Character sheet logic (CRUD, tabs, auto-save, import/export)
+│   └── template.json       # Fully filled example character for new DMs
 ├── map-builder/
 │   ├── index.html          # Map Builder UI (tools, palette, grid controls)
 │   ├── builder.js          # Map Builder logic (tile paint, fog, undo, save/send)
@@ -536,6 +636,8 @@ Click the **🔒 Lock** button in the top-right of the DM panel header. This cle
 ├── data/                   # Runtime state (auto-created, gitignored)
 │   ├── state.json          # Full server state snapshot
 │   ├── state.backup.json   # Previous snapshot (auto-rotated on every save)
+│   ├── ai-config.json      # AI provider + API key (never committed)
+│   ├── characters.json     # Character sheet data
 │   ├── sessions/           # Named session snapshots (.session.json)
 │   ├── encounters/         # Named encounter presets (.encounter.json)
 │   └── scene-bundles/      # Named scene bundles (.bundle.json)
@@ -601,6 +703,7 @@ Scenes are stored in `seeds/scenes.json`. Structure:
 |--------|-------|---------|
 | GET | `/` | DM control panel |
 | GET | `/map-builder` | Map Builder |
+| GET | `/characters` | Character sheet manager |
 | GET | `/remote/player` | Player screen |
 | GET | `/api/scenes` | Load all scenes |
 | POST | `/api/scenes` | Save all scenes |
@@ -615,6 +718,12 @@ Scenes are stored in `seeds/scenes.json`. Structure:
 | POST | `/api/stopaudio` | Stop audio on all players |
 | POST | `/api/blackout` | Toggle blackout overlay on players (solid black over everything) |
 | POST | `/api/clear` | Dismiss open popups on players (scene image is preserved) |
+| GET | `/api/characters` | List all character sheets |
+| POST | `/api/characters` | Create or update a character sheet (upsert by id) |
+| DELETE | `/api/characters/:id` | Delete a character sheet |
+| GET | `/api/ai-config` | Get current AI provider config (API key masked) |
+| POST | `/api/ai-config` | Save AI provider, model, key, and system prompt |
+| POST | `/api/ai-ask` | Send a prompt to the configured AI provider; returns `{ answer }` |
 | WS | `/ws` | Real-time sync channel |
 
 ### WebSocket Message Types
