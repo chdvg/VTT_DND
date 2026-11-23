@@ -1,0 +1,51 @@
+{
+  "name": "Dobby the Fat",
+  "player": "",
+  "race": "Weenie Dog (Dachshund)",
+  "class": "Animal Companion",
+  "subclass": null,
+  "level": 2,
+  "background": "Pet",
+  "alignment": "Chaotic Neutral",
+  "experience": 350,
+  "age": "Unknown (dog years)",
+
+  "str": 6,
+  "dex": 10,
+  "con": 16,
+  "int": 8,
+  "wis": 14,
+  "cha": 16,
+
+  "hp": 24,
+  "ac": 10,
+  "speed": 20,
+  "initiative": 0,
+  "profBonus": 2,
+  "hitDice": "2d4",
+  "passivePerc": 14,
+  "spellSaveDC": null,
+  "spellAtk": null,
+
+  "saves": "",
+  "skills": "Perception",
+  "languages": "Sylvan (occasionally — one word per long rest, source unknown)",
+  "proficiencies": "Keen Smell (Advantage on Perception checks involving scent)",
+
+  "backstory": "Dobby the Fat is a tiny dachshund of immense character and questionable intellect. His belly drags slightly on the grass, he is built like a sturdy bratwurst, and he knows exactly one command — \"sit\" — but only if ham is involved. He has somehow survived multiple encounters with passing carts, wagons, and at least one confused goat.",
+  "personality": "Manipulative puppy eyes that could disarm a dragon. Will absolutely betray the party for sausages. Naps aggressively.",
+  "ideals": "Food. All food. The concept of food. The memory of food.",
+  "bonds": "Pet Owner: Wood Elf Fighter. Dobby tolerates them in exchange for regular meals and belly rubs.",
+  "flaws": "Knows 'sit' only if there is ham. Prone (literally) after any cart accident. Has been known to store mysterious items in his neck crease.",
+  "appearance": "Tiny dachshund. Size: Tiny. Belly nearly grazes the ground. Low center of gravity, limited ground clearance. Neck crease of unusual depth and capacity.",
+
+  "features": "Calamity Magnet: Upon entering any new town or village, the DM rolls a d20. On a 1, Dobby is accidentally struck by a passing cart, wagon, or coach — takes 1d4 bludgeoning damage and is Prone until his owner uses an action to pick him up.\n\nThe Infinite Crease (Weird Feature): Dobby has a skin fold near his neck that functions like a Bag of Holding, but only for small, organic items. He can store up to 1 lb of food (sausages, acorns, or cheese) inside his rolls. Retrieving an item requires a DC 10 Sleight of Hand check or the retriever is covered in dog drool.\n\nDreamwalker Pup: During long rests, Dobby kicks his legs as if chasing celestial squirrels, whimpers at unseen cosmic mailmen, and occasionally speaks a single word in Sylvan. Nobody knows why.",
+
+  "equipment": "His own body (Tiny, formidable)\nNeck crease (Bag of Holding, food only, 1 lb capacity)",
+
+  "spells": "",
+
+  "notes": "- Senses: Passive Perception 14, Keen Smell\n- Natural Armor (AC 10)\n- STR -2: belly drags slightly on the grass\n- DEX +0: low center of gravity, limited ground clearance\n- CON +3: built like a sturdy bratwurst\n- INT -1: knows 'sit' (if there is ham)\n- WIS +2: can hear a cheese wrapper from 300 yards\n- CHA +3: manipulative puppy eyes",
+
+  "relationships": "Wood Elf Fighter — Pet owner. Provides food, belly rubs, and emergency pickup after cart accidents."
+}
