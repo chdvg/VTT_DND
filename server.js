@@ -1324,6 +1324,14 @@ function saveCharacters() {
 app.get('/characters', requireDm, (req, res) => res.sendFile(path.join(__dirname, 'characters', 'index.html')));
 app.use('/characters', requireDm, express.static(path.join(__dirname, 'characters')));
 
+app.post('/api/characters/reload', requireDm, (req, res) => {
+  try {
+    if (fs.existsSync(CHARACTERS_FILE)) characterSheets = JSON.parse(fs.readFileSync(CHARACTERS_FILE, 'utf8'));
+    else characterSheets = [];
+    res.json({ ok: true, count: characterSheets.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/characters', requireDm, (req, res) => res.json({ characters: characterSheets }));
 
 app.post('/api/characters', requireDm, express.json({ limit: '2mb' }), (req, res) => {
