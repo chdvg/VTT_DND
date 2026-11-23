@@ -263,4 +263,21 @@ document.addEventListener('DOMContentLoaded', function() {
     importChar(e.target.files[0]);
     this.value = '';
   });
+
+  document.getElementById('reload-chars-btn').addEventListener('click', function() {
+    var btn = this;
+    btn.textContent = '⏳';
+    btn.disabled = true;
+    fetch('/api/characters/reload', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        return fetch('/api/characters').then(function(r) { return r.json(); }).then(function(d) {
+          characters = d.characters || [];
+          renderList();
+          btn.textContent = '✅';
+          setTimeout(function() { btn.textContent = '🔄'; btn.disabled = false; }, 1200);
+        });
+      })
+      .catch(function() { btn.textContent = '❌'; setTimeout(function() { btn.textContent = '🔄'; btn.disabled = false; }, 1500); });
+  });
 });
