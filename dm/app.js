@@ -391,6 +391,9 @@ function connectWebSocket() {
       dmHpState = {};
       saveInitiative();
       renderInitiative();
+      refreshMapMobsSection();
+      var attackLogEl = document.getElementById('attack-log');
+      if (attackLogEl) attackLogEl.innerHTML = '';
       // Clear player roster/lock state (will be reloaded)
       playerRoster = [];
       playerLockState = {};
@@ -404,19 +407,20 @@ function connectWebSocket() {
       loadDmCharacterSheets();
       loadPlayerRoster();
       // Restore map/token/fog state from embedded payload (may be empty for a new campaign)
+      // Always reset tokenState first so old campaign's tokens don't bleed through
+      tokenState = {};
+      activeTokenMapKey = null;
+      activeTokenMapUrl = null;
+      dmMapFeatures = [];
+      dmMapMeta = null;
+      dmTriggeredFeat = {};
+      lastSceneViewPayload = null;
+      currentViewFogKey = null;
+      currentViewImageUrl = null;
       if (msg.sceneView) {
         restoreDmState(msg);
       } else {
         // No scene in this campaign — clear the map display
-        activeTokenMapKey = null;
-        activeTokenMapUrl = null;
-        tokenState = {};
-        dmMapFeatures = [];
-        dmMapMeta = null;
-        dmTriggeredFeat = {};
-        lastSceneViewPayload = null;
-        currentViewFogKey = null;
-        currentViewImageUrl = null;
         var mapControlGrid  = document.getElementById('map-control-grid');
         var mapControlTitle = document.getElementById('map-control-title');
         if (mapControlGrid)  mapControlGrid.style.display = 'none';

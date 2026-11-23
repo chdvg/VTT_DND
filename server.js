@@ -250,6 +250,10 @@ function switchCampaign(name) {
     }
   }
   broadcastClientCount();
+  // Push new campaign state to all connected player screens
+  for (const c of clients) {
+    if (!dmClients.has(c) && c.readyState === WebSocket.OPEN) sendFullState(c);
+  }
   log('campaign-switch', { campaign: name || 'default' });
 }
 

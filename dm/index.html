@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DM Control Panel</title>
-  <link rel="stylesheet" href="/dm/styles.css?v=3.8.8" />
+  <meta name="version" content="3.9.0" />
+  <link rel="stylesheet" href="/dm/styles.css?v=3.9.9" />
 </head>
 <body>
   <header>
@@ -365,9 +366,9 @@
           <span id="ev-count-badge" style="font-size:0.65rem;font-weight:normal;color:#888;margin-left:0.4rem;"></span>
           <span class="sb-chevron">▶</span>
         </summary>
-        <div style="margin-top:0.75rem;">
+        <div style="margin-top:0.75rem;display:flex;flex-direction:column;min-height:0;">
           <!-- Type filter chips -->
-          <div id="ev-filter-chips" style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-bottom:0.4rem;">
+          <div id="ev-filter-chips" style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-bottom:0.4rem;flex-shrink:0;">
             <button class="ev-chip active" data-type="all">All</button>
             <button class="ev-chip" data-type="location">🗺️</button>
             <button class="ev-chip" data-type="combat">⚔️</button>
@@ -378,7 +379,7 @@
             <button class="ev-chip" data-type="feature">✨</button>
           </div>
           <!-- Search + action bar -->
-          <div style="display:flex;gap:0.3rem;margin-bottom:0.5rem;align-items:center;">
+          <div style="display:flex;gap:0.3rem;margin-bottom:0.5rem;align-items:center;flex-shrink:0;">
             <input type="text" id="ev-search" placeholder="🔍 Search log…" autocomplete="off"
               style="flex:1;min-width:0;margin-bottom:0;font-size:0.82rem;padding:0.3rem 0.5rem;" />
             <button id="ev-add-note-btn" class="btn btn-small btn-secondary" title="Add a session note">📝</button>
@@ -386,8 +387,10 @@
             <button id="ev-refresh-btn" class="btn btn-small btn-secondary" title="Refresh">🔄</button>
             <button id="ev-clear-btn" class="btn btn-small btn-danger" title="Clear entire log">🗑️</button>
           </div>
+          <!-- Scrollable area: forms + entries -->
+          <div style="overflow-y:auto;max-height:460px;display:flex;flex-direction:column;gap:0.3rem;">
           <!-- Quick note form -->
-          <div id="ev-note-form" class="ev-inline-form" style="display:none;">
+          <div id="ev-note-form" class="ev-inline-form" style="display:none;flex-shrink:0;">
             <div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.35rem;">
               <span style="font-size:0.7rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;">Quick Note</span>
               <select id="ev-note-type" style="margin-bottom:0;font-size:0.78rem;padding:0.2rem 0.4rem;background:#161b22;border:1px solid #30363d;color:#e6e6e6;border-radius:4px;">
@@ -398,19 +401,19 @@
                 <option value="item">🧰 Loot/Item</option>
               </select>
             </div>
-            <textarea id="ev-note-text" rows="2" placeholder="What happened?" style="margin-bottom:0.35rem;resize:vertical;font-size:0.82rem;min-height:44px;"></textarea>
+            <textarea id="ev-note-text" rows="2" placeholder="What happened?" style="margin-bottom:0.35rem;resize:none;font-size:0.82rem;min-height:44px;max-height:100px;"></textarea>
             <div style="display:flex;gap:0.3rem;">
               <button id="ev-note-save-btn" class="btn btn-small btn-primary">💾 Save</button>
               <button id="ev-note-cancel-btn" class="btn btn-small btn-secondary">✕</button>
             </div>
           </div>
           <!-- AI prompt form -->
-          <div id="ev-ai-form" class="ev-inline-form" style="display:none;">
+          <div id="ev-ai-form" class="ev-inline-form" style="display:none;flex-shrink:0;">
             <div style="font-size:0.7rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem;">Log AI Prompt + Options</div>
             <input type="text" id="ev-ai-title" placeholder="Summary (e.g. Goblin ambush encounter options)"
               style="margin-bottom:0.35rem;font-size:0.82rem;" maxlength="200" />
             <textarea id="ev-ai-prompt-txt" rows="2" placeholder="Your prompt (optional)…"
-              style="margin-bottom:0.35rem;resize:vertical;font-size:0.78rem;min-height:40px;"></textarea>
+              style="margin-bottom:0.35rem;resize:none;font-size:0.78rem;min-height:40px;max-height:80px;"></textarea>
             <div id="ev-ai-options-wrap" style="display:flex;flex-direction:column;gap:0.3rem;margin-bottom:0.35rem;"></div>
             <button id="ev-ai-add-opt-btn" class="btn btn-small btn-secondary" style="margin-bottom:0.35rem;">+ Add Option</button>
             <div style="display:flex;gap:0.3rem;">
@@ -419,10 +422,11 @@
             </div>
           </div>
           <!-- Event list -->
-          <div id="ev-list" style="max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:0.3rem;"></div>
+          <div id="ev-list" style="display:flex;flex-direction:column;gap:0.3rem;"></div>
           <div id="ev-empty-msg" style="text-align:center;color:#444;font-size:0.82rem;padding:1.5rem 0;display:none;">
             No events yet — play will fill this log automatically.
           </div>
+          </div><!-- end scrollable area -->
         </div>
       </details>
     </section>
@@ -620,6 +624,6 @@
       </section>
     </aside>
   </div><!-- end app-layout -->
-  <script src="/dm/app.js?v=3.9.7"></script>
+  <script src="/dm/app.js?v=3.9.9"></script>
 </body>
 </html>
