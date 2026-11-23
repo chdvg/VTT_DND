@@ -28,6 +28,7 @@ var currentViewFogKey   = null; // raw fogKey for current view, used by runtime 
 var currentViewImageUrl = null; // image URL for current view
 var lastSceneViewPayload = null; // cached for re-sync when server restarts
 var lastMapPayload       = null; // last actual map/scene (not Send Image)
+var evLogCache           = [];   // recent events for AI context injection
 var lastSceneWasSentImage = false; // true when Send Image (not a real map) was last sent
 
 // Token overlay state
@@ -375,6 +376,55 @@ function connectWebSocket() {
     }
     if (msg.type === 'DM_STATE_RESTORE') {
       restoreDmState(msg);
+      return;
+    }
+    if (msg.type === 'CAMPAIGN_SWITCHED') {
+      renderCampaignSection(msg.display || 'Default');
+      // Re-fetch the full campaign list and re-render
+      fetch('/api/campaigns')
+        .then(function(r) { return r.json(); })
+        .then(function(d) { renderCampaignList(d.active, d.campaigns); })
+        .catch(function() {});
+      // Clear initiative tracker (localStorage-only, not in server state)
+      initiative = [];
+      currentTurn = 0;
+      dmHpState = {};
+      saveInitiative();
+      renderInitiative();
+      // Clear player roster/lock state (will be reloaded)
+      playerRoster = [];
+      playerLockState = {};
+      allPlayersLockedDm = false;
+      evLogCache = [];
+      // Reload campaign-specific panels
+      renderScenesPanel();
+      initSessions();
+      initEncounters();
+      initBundles();
+      loadDmCharacterSheets();
+      loadPlayerRoster();
+      // Restore map/token/fog state from embedded payload (may be empty for a new campaign)
+      if (msg.sceneView) {
+        restoreDmState(msg);
+      } else {
+        // No scene in this campaign — clear the map display
+        activeTokenMapKey = null;
+        activeTokenMapUrl = null;
+        tokenState = {};
+        dmMapFeatures = [];
+        dmMapMeta = null;
+        dmTriggeredFeat = {};
+        lastSceneViewPayload = null;
+        currentViewFogKey = null;
+        currentViewImageUrl = null;
+        var mapControlGrid  = document.getElementById('map-control-grid');
+        var mapControlTitle = document.getElementById('map-control-title');
+        if (mapControlGrid)  mapControlGrid.style.display = 'none';
+        if (mapControlTitle) mapControlTitle.textContent = 'no map active';
+        var clearEls = ['fog-controls-container','token-controls-container','token-map-container','draw-controls-container','feature-controls-container'];
+        clearEls.forEach(function(id) { var el = document.getElementById(id); if (el) el.innerHTML = ''; });
+        if (typeof updateFogToggleBtn === 'function') updateFogToggleBtn();
+      }
       return;
     }
     if (msg.type === 'clients') {
@@ -3691,16 +3741,16 @@ function saveScene() {
 // ============================================================
 document.querySelectorAll('.btn-dice').forEach(function (btn) {
   btn.addEventListener('click', function () {
-    var die  = parseInt(btn.getAttribute('data-die'));
-    var roll = Math.floor(Math.random() * die) + 1;
-    diceResult.textContent = 'D' + die + ': ' + roll;
-    if (document.getElementById('dice-broadcast').checked) {
-      fetch('/api/dice-roll', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ die: die, result: roll })
-      });
-    }
+    var die       = parseInt(btn.getAttribute('data-die'));
+    var roll      = Math.floor(Math.random() * die) + 1;
+    var label     = (document.getElementById('dice-roll-label') || {}).value || '';
+    var broadcast = document.getElementById('dice-broadcast').checked;
+    diceResult.textContent = 'D' + die + ': ' + roll + (label ? ' (' + label + ')' : '');
+    fetch('/api/dice-roll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ die: die, result: roll, label: label || undefined, broadcast: broadcast })
+    });
   });
 });
 
@@ -3766,6 +3816,7 @@ function renderPlayerRoster() {
         var roll = parseInt(input.value);
         if (isNaN(roll)) { input.focus(); return; }
         addToInitiative(player.name, roll, true, player.cls);
+        dmLog('dice', 'initiative', player.name + ' initiative: ' + roll, { name: player.name, roll: roll });
         input.value = '';
       };
     })(p, rollInput);
@@ -3856,10 +3907,14 @@ document.getElementById('init-add-all-btn').addEventListener('click', function (
 
 document.getElementById('init-roll-all-btn').addEventListener('click', function () {
   if (!playerRoster.length) { alert('No players in roster.'); return; }
+  var rolls = [];
   playerRoster.forEach(function (p) {
     var roll = Math.floor(Math.random() * 20) + 1;
     addToInitiative(p.name, roll, true, p.cls);
+    rolls.push(p.name + ': ' + roll);
   });
+  dmLog('dice', 'initiative', 'Initiative rolled — ' + rolls.join(', '),
+    { rolls: playerRoster.map(function(p, i) { return { name: p.name, roll: parseInt(rolls[i].split(': ')[1]) }; }) });
 });
 
 // ── Round management ──────────────────────────────────────────
@@ -3894,6 +3949,7 @@ document.getElementById('init-add-btn').addEventListener('click', function () {
   var roll = parseInt(document.getElementById('init-roll').value);
   if (!name || isNaN(roll)) return;
   addToInitiative(name, roll);
+  dmLog('dice', 'initiative', name + ' initiative: ' + roll, { name: name, roll: roll });
   document.getElementById('init-name').value = '';
   document.getElementById('init-roll').value = '';
 });
@@ -4071,6 +4127,12 @@ function nextInitiativeTurn() {
   saveInitiative();
   renderInitiative();
   sendInitiative();
+  // Log turn advance
+  var nextEntry = initiative[currentTurn];
+  if (nextEntry) {
+    dmLog('combat', 'turn', 'Turn: ' + nextEntry.name + (nextEntry.isPlayer ? ' (player)' : ' (mob)'),
+      { name: nextEntry.name, isPlayer: !!nextEntry.isPlayer, turn: currentTurn });
+  }
   if (activeTokenMapKey) {
     // Rebuild map first so dots are fresh, then animate immediately (no WS roundtrip needed)
     renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
@@ -4141,10 +4203,21 @@ function sendHpUpdate(name, hp, maxHp) {
   wsSend({ action: 'update-hp', name: name, hp: hp, maxHp: maxHp });
 }
 
+// Lightweight client-side event logger — sends to /api/event-log
+function dmLog(type, subtype, summary, details) {
+  fetch('/api/event-log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: type, subtype: subtype || '', summary: summary, details: details || {} })
+  }).catch(function() {});
+}
+
 function applyHpDelta(idx, delta) {
   var entry = initiative[idx];
   if (entry == null || entry.maxHp == null) return;
-  entry.hp = Math.max(0, Math.min(entry.maxHp, (entry.hp || 0) + delta));
+  var prevHp = entry.hp || 0;
+  entry.hp = Math.max(0, Math.min(entry.maxHp, prevHp + delta));
+  if (entry.hp === prevHp) return;
   saveInitiative();
   sendHpUpdate(entry.name, entry.hp, entry.maxHp);
   checkHpDead(idx);
@@ -6259,6 +6332,14 @@ initEncounters();
 initBundles();
 loadDmCharacterSheets();
 initAiAssistant();
+initEventLog();
+initCampaigns();
+
+// Warm the event log cache on page load (background — no spinner)
+fetch('/api/event-log?limit=50')
+  .then(function(r) { return r.json(); })
+  .then(function(d) { evLogCache = (d.events || []).slice(0, 50); })
+  .catch(function() {});
 
 // ── Sidebar toggle + resize ───────────────────────────────────
 (function () {
@@ -6414,6 +6495,486 @@ initAiAssistant();
     document.body.style.userSelect = '';
   });
 }());
+
+// ============================================================
+// Session Event Log
+// ============================================================
+var evLogFilter = 'all';
+var evLogSearch = '';
+
+var EV_TYPE_META = {
+  location: { icon: '🗺️', label: 'Location', color: '#0ea5e9' },
+  combat:   { icon: '⚔️', label: 'Combat',   color: '#ef4444' },
+  player:   { icon: '👤', label: 'Player',   color: '#22c55e' },
+  ai:       { icon: '🤖', label: 'AI',       color: '#a855f7' },
+  note:     { icon: '📝', label: 'Note',     color: '#f59e0b' },
+  dice:     { icon: '🎲', label: 'Dice',     color: '#f97316' },
+  feature:  { icon: '✨', label: 'Feature',  color: '#06b6d4' },
+  item:     { icon: '🧰', label: 'Item',     color: '#d4af37' },
+  system:   { icon: '⚙️', label: 'System',   color: '#6b7280' },
+};
+
+function evFetchAndRender() {
+  var params = [];
+  if (evLogFilter !== 'all') params.push('type=' + encodeURIComponent(evLogFilter));
+  if (evLogSearch)           params.push('q='    + encodeURIComponent(evLogSearch));
+  fetch('/api/event-log' + (params.length ? '?' + params.join('&') : ''))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      evLogCache = (data.events || []).slice(0, 50); // keep cache warm
+      evRender(data.events || [], data.total || 0);
+    }).catch(function() {});
+}
+
+function evFmtTs(ts) {
+  try {
+    var d = new Date(ts);
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
+           ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch(_) { return ''; }
+}
+
+function evRender(events, total) {
+  var list  = document.getElementById('ev-list');
+  var empty = document.getElementById('ev-empty-msg');
+  var badge = document.getElementById('ev-count-badge');
+  if (!list) return;
+  if (badge) badge.textContent = total ? '(' + total + ')' : '';
+  list.innerHTML = '';
+  if (!events.length) { if (empty) empty.style.display = ''; return; }
+  if (empty) empty.style.display = 'none';
+
+  events.forEach(function(ev) {
+    var meta = EV_TYPE_META[ev.type] || { icon: '•', label: ev.type, color: '#888' };
+    var card = document.createElement('details');
+    card.className = 'ev-entry';
+
+    // Summary row
+    var sum = document.createElement('summary');
+    sum.className = 'ev-entry-sum';
+    var usedMark = (ev.usedOption !== null && ev.usedOption !== undefined)
+      ? ' <span class="ev-used-mark">★ Used</span>' : '';
+    sum.innerHTML =
+      '<span class="ev-badge" style="background:' + meta.color + '1a;color:' + meta.color + ';border-color:' + meta.color + '55;">' +
+        meta.icon + ' ' + meta.label +
+      '</span>' +
+      '<span class="ev-sum-txt">' + escHtml(ev.summary) + usedMark + '</span>' +
+      '<span class="ev-ts">' + evFmtTs(ev.ts) + '</span>';
+    card.appendChild(sum);
+
+    // Body
+    var body = document.createElement('div');
+    body.className = 'ev-body';
+
+    if (ev.type === 'ai' && ev.details && ev.details.response && !Array.isArray(ev.options)) {
+      // Quick-logged AI response
+      if (ev.details.prompt) {
+        var pr = document.createElement('div');
+        pr.className = 'ev-drow';
+        pr.innerHTML = '<span class="ev-dlbl">Prompt</span><span class="ev-dval">' +
+          escHtml(ev.details.prompt.slice(0, 300)) + (ev.details.prompt.length > 300 ? '…' : '') + '</span>';
+        body.appendChild(pr);
+      }
+      var rb = document.createElement('div');
+      rb.className = 'ev-ai-box';
+      rb.textContent = ev.details.response;
+      body.appendChild(rb);
+      var muBtn = document.createElement('button');
+      muBtn.className = 'btn btn-small ' + (ev.usedOption === 0 ? 'btn-primary' : 'btn-secondary') + ' ev-use-btn';
+      muBtn.style.marginTop = '0.3rem';
+      muBtn.textContent = ev.usedOption === 0 ? '★ Marked as Used' : '📌 Mark as Used';
+      (function(id, wasUsed) {
+        muBtn.addEventListener('click', function() { evPatchUsed(id, wasUsed === 0 ? null : 0); });
+      })(ev.id, ev.usedOption);
+      body.appendChild(muBtn);
+
+    } else if (Array.isArray(ev.options) && ev.options.length) {
+      // Manual AI entry with multiple options
+      if (ev.details && ev.details.prompt) {
+        var opr = document.createElement('div');
+        opr.className = 'ev-drow';
+        opr.innerHTML = '<span class="ev-dlbl">Prompt</span><span class="ev-dval">' + escHtml(ev.details.prompt.slice(0, 200)) + '</span>';
+        body.appendChild(opr);
+      }
+      ev.options.forEach(function(opt, idx) {
+        var ob = document.createElement('div');
+        ob.className = 'ev-option' + (ev.usedOption === idx ? ' ev-opt-used' : '');
+        var ub = document.createElement('button');
+        ub.className = 'btn btn-small ' + (ev.usedOption === idx ? 'btn-primary' : 'btn-secondary') + ' ev-use-btn';
+        ub.textContent = ev.usedOption === idx ? '★ Used' : 'Mark Used';
+        (function(id, i) {
+          ub.addEventListener('click', function() { evPatchUsed(id, ev.usedOption === i ? null : i); });
+        })(ev.id, idx);
+        ob.innerHTML = '<div class="ev-opt-lbl">Option ' + (idx + 1) + '</div>' +
+                       '<div class="ev-opt-txt">' + escHtml(opt) + '</div>';
+        ob.appendChild(ub);
+        body.appendChild(ob);
+      });
+
+    } else if (ev.details && Object.keys(ev.details).length) {
+      // Generic key/value details
+      Object.keys(ev.details).forEach(function(k) {
+        var dr = document.createElement('div');
+        dr.className = 'ev-drow';
+        dr.innerHTML = '<span class="ev-dlbl">' + escHtml(k) + '</span>' +
+                       '<span class="ev-dval">' + escHtml(String(ev.details[k])) + '</span>';
+        body.appendChild(dr);
+      });
+    }
+
+    // Inline DM note (auto-saves)
+    var nr = document.createElement('div');
+    nr.className = 'ev-note-row';
+    var ni = document.createElement('input');
+    ni.type = 'text';
+    ni.className = 'ev-note-input';
+    ni.placeholder = 'DM note…';
+    ni.maxLength = 300;
+    ni.value = ev.note || '';
+    var ntimer;
+    ni.addEventListener('input', (function(id) { return function() {
+      clearTimeout(ntimer);
+      var v = ni.value;
+      ntimer = setTimeout(function() {
+        fetch('/api/event-log/' + id, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note: v })
+        }).catch(function() {});
+      }, 700);
+    }; })(ev.id));
+    nr.appendChild(ni);
+    body.appendChild(nr);
+
+    card.appendChild(body);
+    list.appendChild(card);
+  });
+}
+
+function evPatchUsed(id, optIdx) {
+  fetch('/api/event-log/' + id, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ usedOption: optIdx })
+  }).then(function() { evFetchAndRender(); }).catch(function() {});
+}
+
+function initEventLog() {
+  var filterChips = document.getElementById('ev-filter-chips');
+  var searchEl    = document.getElementById('ev-search');
+  var addNoteBtn  = document.getElementById('ev-add-note-btn');
+  var addAiBtn    = document.getElementById('ev-add-ai-btn');
+  var refreshBtn  = document.getElementById('ev-refresh-btn');
+  var clearBtn    = document.getElementById('ev-clear-btn');
+  var noteForm    = document.getElementById('ev-note-form');
+  var aiForm      = document.getElementById('ev-ai-form');
+  if (!filterChips) return;
+
+  // Type filter chips
+  filterChips.addEventListener('click', function(e) {
+    var chip = e.target.closest('[data-type]');
+    if (!chip) return;
+    filterChips.querySelectorAll('.ev-chip').forEach(function(c) { c.classList.remove('active'); });
+    chip.classList.add('active');
+    evLogFilter = chip.dataset.type || 'all';
+    evFetchAndRender();
+  });
+
+  // Search (debounced 350ms)
+  var searchTimer;
+  searchEl.addEventListener('input', function() {
+    clearTimeout(searchTimer);
+    var v = searchEl.value;
+    searchTimer = setTimeout(function() { evLogSearch = v; evFetchAndRender(); }, 350);
+  });
+
+  refreshBtn.addEventListener('click', evFetchAndRender);
+
+  clearBtn.addEventListener('click', function() {
+    if (!confirm('Clear the entire session log? This cannot be undone.')) return;
+    fetch('/api/event-log', { method: 'DELETE' })
+      .then(function() { evLogCache = []; evFetchAndRender(); })
+      .catch(function() {});
+  });
+
+  // Quick Note form
+  addNoteBtn.addEventListener('click', function() {
+    var open = noteForm.style.display !== 'none';
+    noteForm.style.display = open ? 'none' : '';
+    aiForm.style.display   = 'none';
+    if (!open) document.getElementById('ev-note-text').focus();
+  });
+  document.getElementById('ev-note-cancel-btn').addEventListener('click', function() {
+    noteForm.style.display = 'none';
+  });
+  document.getElementById('ev-note-save-btn').addEventListener('click', function() {
+    var text = document.getElementById('ev-note-text').value.trim();
+    var type = document.getElementById('ev-note-type').value;
+    if (!text) { document.getElementById('ev-note-text').focus(); return; }
+    fetch('/api/event-log', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: type, subtype: 'manual', summary: text })
+    }).then(function() {
+      document.getElementById('ev-note-text').value = '';
+      noteForm.style.display = 'none';
+      evFetchAndRender();
+    }).catch(function() {});
+  });
+
+  // AI Prompt + Options form
+  addAiBtn.addEventListener('click', function() {
+    var open = aiForm.style.display !== 'none';
+    aiForm.style.display   = open ? 'none' : '';
+    noteForm.style.display = 'none';
+    if (!open) document.getElementById('ev-ai-title').focus();
+  });
+  document.getElementById('ev-ai-cancel-btn').addEventListener('click', function() {
+    aiForm.style.display = 'none';
+  });
+  document.getElementById('ev-ai-add-opt-btn').addEventListener('click', function() {
+    var wrap = document.getElementById('ev-ai-options-wrap');
+    var idx  = wrap.children.length;
+    var row  = document.createElement('div');
+    row.className = 'ev-ai-opt-row';
+    row.innerHTML =
+      '<span style="font-size:0.7rem;color:#888;min-width:46px;flex:none;padding-top:0.3rem;">Opt ' + (idx + 1) + '</span>' +
+      '<textarea rows="2" class="ev-ai-opt-ta" placeholder="Paste option ' + (idx + 1) + '…"' +
+        ' style="flex:1;resize:vertical;font-size:0.78rem;min-height:38px;margin-bottom:0;"></textarea>' +
+      '<button class="btn btn-small btn-secondary ev-ai-opt-rm" style="flex:none;min-width:0;padding:0.2rem 0.4rem;" title="Remove">✕</button>';
+    row.querySelector('.ev-ai-opt-rm').addEventListener('click', function() { row.remove(); });
+    wrap.appendChild(row);
+    row.querySelector('textarea').focus();
+  });
+  document.getElementById('ev-ai-save-btn').addEventListener('click', function() {
+    var title  = document.getElementById('ev-ai-title').value.trim();
+    var prompt = document.getElementById('ev-ai-prompt-txt').value.trim();
+    if (!title) { document.getElementById('ev-ai-title').focus(); return; }
+    var opts = Array.from(document.querySelectorAll('.ev-ai-opt-ta'))
+      .map(function(t) { return t.value.trim(); }).filter(Boolean);
+    var body = { type: 'ai', subtype: 'manual', summary: 'AI: ' + title, details: prompt ? { prompt: prompt } : {} };
+    if (opts.length) body.options = opts;
+    fetch('/api/event-log', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function() {
+      document.getElementById('ev-ai-title').value = '';
+      document.getElementById('ev-ai-prompt-txt').value = '';
+      document.getElementById('ev-ai-options-wrap').innerHTML = '';
+      aiForm.style.display = 'none';
+      evFetchAndRender();
+    }).catch(function() {});
+  });
+
+  // Load on panel open
+  var details = document.querySelector('#section-event-log details');
+  if (details) {
+    details.addEventListener('toggle', function() { if (details.open) evFetchAndRender(); });
+  }
+}
+
+// ============================================================
+// Campaign Management
+// ============================================================
+function renderCampaignSection(displayName) {
+  var badge = document.getElementById('campaign-active-badge');
+  if (badge) badge.textContent = displayName || '';
+}
+
+function renderCampaignList(active, campaigns) {
+  var list = document.getElementById('campaign-list');
+  if (!list) return;
+  list.innerHTML = '';
+  (campaigns || []).forEach(function(name) {
+    var isActive = name === active;
+    var row = document.createElement('div');
+    row.className = 'campaign-row' + (isActive ? ' campaign-active' : '');
+    var btns = isActive ? '' :
+      '<div style="display:flex;gap:3px;flex:none;">' +
+      '<button class="btn btn-secondary campaign-switch-btn" data-name="' + escHtml(name) + '" title="Switch to ' + escHtml(name) + '" style="padding:0;width:22px;height:22px;min-width:0;font-size:0.7rem;line-height:22px;text-align:center;text-transform:none;letter-spacing:0;flex:none;">\u25B6\uFE0E</button>' +
+      '<button class="btn btn-danger campaign-del-btn" data-name="' + escHtml(name) + '" title="Delete campaign" style="padding:0;width:22px;height:22px;min-width:0;font-size:0.7rem;line-height:22px;text-align:center;text-transform:none;letter-spacing:0;flex:none;">\u2715</button>' +
+      '</div>';
+    row.innerHTML = '<span class="campaign-name">' + (isActive ? '★ ' : '') + escHtml(name) + '</span>' + btns;
+    list.appendChild(row);
+  });
+  renderCampaignSection(active || '');
+}
+
+function showCampaignGate(campaigns) {
+  var hasCampaigns = campaigns && campaigns.length > 0;
+  var overlay = document.createElement('div');
+  overlay.id = 'campaign-gate';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(13,17,23,0.97);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+  overlay.innerHTML =
+    '<div style="background:#161b22;border:1px solid #d4af37;border-radius:12px;padding:2rem 2.5rem;width:400px;">' +
+    '<div style="text-align:center;margin-bottom:1.5rem;">' +
+    '<div style="font-size:2rem;">⚔️</div>' +
+    '<h2 style="color:#d4af37;margin:0.25rem 0 0.3rem;">' + (hasCampaigns ? 'Choose a Campaign' : 'Welcome, Dungeon Master') + '</h2>' +
+    '<p style="color:#555;font-size:0.8rem;margin:0;">Each campaign keeps its own maps, tokens, roster, and event log.</p>' +
+    '</div>' +
+
+    (hasCampaigns ?
+      // Searchable dropdown for existing campaigns
+      '<label style="display:block;color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.35rem;">Open existing campaign</label>' +
+      '<div style="position:relative;margin-bottom:0.5rem;">' +
+      '<input type="text" id="gate-search" placeholder="Search campaigns…" autocomplete="off" ' +
+      'style="width:100%;padding:0.55rem 0.8rem;background:#0d1117;border:1px solid #444;border-radius:5px 5px 0 0;color:#e6e6e6;font-size:0.9rem;box-sizing:border-box;" />' +
+      '<div id="gate-dropdown" style="max-height:180px;overflow-y:auto;border:1px solid #444;border-top:none;border-radius:0 0 5px 5px;background:#0d1117;"></div>' +
+      '</div>' +
+      '<button id="gate-open-btn" class="btn btn-secondary" style="width:100%;flex:none;margin-bottom:1.25rem;" disabled>Open Campaign</button>' +
+      '<div style="border-top:1px solid #21262d;padding-top:1rem;">' +
+      '<label style="display:block;color:#555;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.35rem;">— or create a new campaign —</label>'
+    : '') +
+
+    '<input type="text" id="gate-new-input" placeholder="New campaign name…" maxlength="80" ' +
+    'style="width:100%;padding:0.55rem 0.8rem;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6e6e6;font-size:0.9rem;margin-bottom:0.6rem;box-sizing:border-box;" />' +
+    '<button id="gate-create-btn" class="btn btn-primary" style="width:100%;flex:none;">' + (hasCampaigns ? '+ Create New' : 'Create Campaign &amp; Start') + '</button>' +
+    '<p id="gate-err" style="color:#ef4444;font-size:0.8rem;margin-top:0.5rem;min-height:1rem;"></p>' +
+    (hasCampaigns ? '</div>' : '') +
+    '</div>';
+
+  document.body.appendChild(overlay);
+
+  var err        = document.getElementById('gate-err');
+  var newInput   = document.getElementById('gate-new-input');
+  var createBtn  = document.getElementById('gate-create-btn');
+
+  function doSwitch(name) {
+    fetch('/api/campaigns/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name }) })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { overlay.remove(); renderCampaignList(d.active, d.campaigns); })
+      .catch(function() { err.textContent = 'Error opening campaign. Try again.'; });
+  }
+
+  function doCreate() {
+    var name = newInput.value.trim();
+    if (!name) { newInput.focus(); err.textContent = 'Please enter a campaign name.'; return; }
+    createBtn.disabled = true; err.textContent = '';
+    fetch('/api/campaigns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name }) })
+      .then(function(r) { return r.json(); })
+      .then(function() { return fetch('/api/campaigns/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name }) }); })
+      .then(function(r) { return r.json(); })
+      .then(function(d) { overlay.remove(); renderCampaignList(d.active, d.campaigns); })
+      .catch(function() { err.textContent = 'Error creating campaign. Try again.'; createBtn.disabled = false; });
+  }
+  createBtn.addEventListener('click', doCreate);
+  newInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') doCreate(); });
+
+  if (hasCampaigns) {
+    var searchInput = document.getElementById('gate-search');
+    var dropdown    = document.getElementById('gate-dropdown');
+    var openBtn     = document.getElementById('gate-open-btn');
+    var selected    = null;
+
+    function renderDropdown(filter) {
+      var q = (filter || '').toLowerCase();
+      var filtered = campaigns.filter(function(c) { return !q || c.toLowerCase().indexOf(q) >= 0; });
+      dropdown.innerHTML = '';
+      if (!filtered.length) {
+        dropdown.innerHTML = '<div style="padding:0.5rem 0.8rem;color:#555;font-size:0.85rem;">No matches</div>';
+        return;
+      }
+      filtered.forEach(function(c) {
+        var item = document.createElement('div');
+        item.textContent = c;
+        item.dataset.name = c;
+        item.style.cssText = 'padding:0.45rem 0.8rem;cursor:pointer;font-size:0.88rem;color:#ccc;border-bottom:1px solid #1a1f2e;';
+        item.addEventListener('mouseenter', function() { item.style.background = '#1a2030'; });
+        item.addEventListener('mouseleave', function() { item.style.background = selected === c ? '#1a2a1a' : ''; });
+        item.addEventListener('click', function() {
+          selected = c;
+          searchInput.value = c;
+          openBtn.disabled = false;
+          openBtn.textContent = 'Open "' + c + '"';
+          dropdown.innerHTML = '';
+        });
+        if (selected === c) item.style.background = '#1a2a1a';
+        dropdown.appendChild(item);
+      });
+    }
+
+    renderDropdown('');
+    searchInput.focus();
+
+    searchInput.addEventListener('input', function() {
+      selected = null;
+      openBtn.disabled = true;
+      openBtn.textContent = 'Open Campaign';
+      renderDropdown(searchInput.value);
+    });
+    searchInput.addEventListener('focus', function() {
+      if (!selected) renderDropdown(searchInput.value);
+    });
+    searchInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && selected) { doSwitch(selected); return; }
+      if (e.key === 'ArrowDown') {
+        var first = dropdown.querySelector('[data-name]');
+        if (first) { first.click(); first.focus(); }
+      }
+    });
+    openBtn.addEventListener('click', function() { if (selected) doSwitch(selected); });
+  } else {
+    newInput.focus();
+  }
+}
+
+function initCampaigns() {
+  fetch('/api/campaigns')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      renderCampaignList(d.active, d.campaigns);
+      if (!d.active) showCampaignGate(d.campaigns);
+    })
+    .catch(function() {});
+
+  var list      = document.getElementById('campaign-list');
+  var nameInput = document.getElementById('campaign-new-input');
+  var createBtn = document.getElementById('campaign-create-btn');
+  if (!list || !createBtn) return;
+
+  // Switch / Delete via event delegation
+  list.addEventListener('click', function(e) {
+    var sw  = e.target.closest('.campaign-switch-btn');
+    var del = e.target.closest('.campaign-del-btn');
+    if (sw) {
+      var name = sw.dataset.name;
+      if (!name) return;
+      if (!confirm('Switch to "' + name + '"? Unsaved changes will be preserved, but the map view will clear.')) return;
+      fetch('/api/campaigns/switch', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name })
+      }).then(function(r) { return r.json(); }).then(function(d) {
+        renderCampaignList(d.active, listFromServer(d));
+      }).catch(function() {});
+    }
+    if (del) {
+      var dname = del.dataset.name;
+      if (!confirm('Delete campaign "' + dname + '" and ALL its data? This cannot be undone.')) return;
+      fetch('/api/campaigns/' + encodeURIComponent(dname), { method: 'DELETE' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          fetch('/api/campaigns').then(function(r){return r.json();}).then(function(d2){ renderCampaignList(d2.active, d2.campaigns); });
+        }).catch(function(){});
+    }
+  });
+
+  createBtn.addEventListener('click', function() {
+    var name = nameInput.value.trim();
+    if (!name) { nameInput.focus(); return; }
+    fetch('/api/campaigns', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name })
+    }).then(function(r) { return r.json(); }).then(function() {
+      nameInput.value = '';
+      return fetch('/api/campaigns');
+    }).then(function(r) { return r.json(); }).then(function(d) {
+      renderCampaignList(d.active, d.campaigns);
+    }).catch(function() {});
+  });
+  nameInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') createBtn.click(); });
+}
+
+function listFromServer(d) { return d.campaigns || []; }
 
 // ============================================================
 // AI Dungeon Master Assistant
@@ -6661,16 +7222,76 @@ function initAiAssistant() {
       });
     }
 
+    // Recent session events (last 15 from cache — auto-injected so AI always has context)
+    var recentEvents = evLogCache.filter(function(e) { return e.type !== 'system'; }).slice(0, 15);
+    if (recentEvents.length) {
+      lines.push('');
+      lines.push('Recent Session Events (newest first):');
+      recentEvents.forEach(function(e) {
+        var ts = '';
+        try { ts = '[' + new Date(e.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '] '; } catch(_) {}
+        var line = ts + e.summary;
+        if (e.note) line += '  (DM note: ' + e.note + ')';
+        if (e.usedOption !== null && e.usedOption !== undefined && Array.isArray(e.options) && e.options[e.usedOption]) {
+          line += ' ★ Used: ' + e.options[e.usedOption].slice(0, 100);
+        }
+        lines.push('  ' + line);
+      });
+    }
+
     return lines.join('\n');
   }
 
   chips.forEach(function(chip) {
     chip.addEventListener('click', function() {
-      promptInput.value = chip.dataset.prompt || '';
+      var p = chip.dataset.prompt || '';
+      // Special: session recap — send directly to AI with full event log
+      if (p === '__session_recap__') {
+        doSessionRecap();
+        return;
+      }
+      promptInput.value = p;
       promptInput.focus();
       promptInput.setSelectionRange(promptInput.value.length, promptInput.value.length);
     });
   });
+
+  function doSessionRecap() {
+    if (!eventLog.length && !evLogCache.length) {
+      errorBox.textContent = '⚠️ Session log is empty — play a session first to generate events.';
+      errorBox.style.display = '';
+      return;
+    }
+    askBtn.disabled = true;
+    loadingSpan.style.display = '';
+    responseWrap.style.display = 'none';
+    errorBox.style.display = 'none';
+    var context = buildSessionContext();
+    var recapPrompt = context + '\n\nPlease write a narrative session recap based on the Session Event Log above. ' +
+      'Organize it chronologically, covering: locations visited, enemies encountered, notable dice rolls, features triggered, and any AI prompts the DM marked as used. ' +
+      'Write it as a brief adventure journal entry a DM could save for their notes. Keep it concise but capture the key moments.';
+    fetch('/api/ai-ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: recapPrompt, includeEventLog: true, eventLogLimit: 300 })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      askBtn.disabled = false;
+      loadingSpan.style.display = 'none';
+      if (data.error) {
+        errorBox.textContent = '⚠️ ' + data.error;
+        errorBox.style.display = '';
+      } else {
+        responseBox.textContent = data.answer || '(no response)';
+        responseWrap.style.display = '';
+        responseBox.scrollTop = 0;
+      }
+    }).catch(function(err) {
+      askBtn.disabled = false;
+      loadingSpan.style.display = 'none';
+      errorBox.textContent = '⚠️ Request failed: ' + (err.message || 'Network error');
+      errorBox.style.display = '';
+    });
+  }
 
   // Clear button
   clearBtn.addEventListener('click', function() {
@@ -6752,4 +7373,26 @@ function initAiAssistant() {
       setTimeout(function() { sendPlayersBtn.textContent = '📜 Send to Players'; }, 2000);
     }).catch(function() {});
   });
+
+  // Log AI response to Session Log
+  var aiLogBtn = document.getElementById('ai-log-btn');
+  if (aiLogBtn) {
+    aiLogBtn.addEventListener('click', function() {
+      var prompt   = promptInput.value.trim();
+      var response = responseBox.textContent || '';
+      if (!response) return;
+      var summary = 'AI: ' + (prompt.slice(0, 80) + (prompt.length > 80 ? '…' : ''));
+      fetch('/api/event-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'ai', subtype: 'quick-log', summary: summary, details: { prompt: prompt, response: response } })
+      }).then(function(r) { return r.json(); }).then(function(data) {
+        aiLogBtn.textContent = '✓ Logged!';
+        setTimeout(function() { aiLogBtn.textContent = '📌 Log'; }, 2000);
+        if (data.event) evLogCache.unshift(data.event);
+        var sec = document.getElementById('section-event-log');
+        if (sec) { var d = sec.querySelector('details'); if (d && d.open) evFetchAndRender(); }
+      }).catch(function() {});
+    });
+  }
 }
