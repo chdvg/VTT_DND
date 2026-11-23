@@ -1,0 +1,52 @@
+{
+  "_note": "Remove this _note field before importing. The 'id' field is auto-generated — leave it out when importing.",
+  "name": "Thorin Ironforge",
+  "player": "John",
+  "race": "Mountain Dwarf",
+  "class": "Fighter",
+  "subclass": "Battle Master",
+  "level": 5,
+  "background": "Soldier",
+  "alignment": "Lawful Good",
+  "experience": 6500,
+  "age": "45",
+
+  "str": 18,
+  "dex": 10,
+  "con": 16,
+  "int": 10,
+  "wis": 12,
+  "cha": 8,
+
+  "hp": 35,
+  "ac": 18,
+  "speed": 25,
+  "initiative": 2,
+  "profBonus": 3,
+  "hitDice": "5d10",
+  "passivePerc": 14,
+  "spellSaveDC": null,
+  "spellAtk": null,
+
+  "saves": "STR, CON",
+  "skills": "Athletics, Intimidation, Perception, Survival",
+  "languages": "Common, Dwarvish",
+  "proficiencies": "All armor, shields, simple and martial weapons, smith's tools",
+
+  "backstory": "Born in the mines of Mithral Hall, Thorin served 20 years in the Ironforge Guard before a goblin raid destroyed his village. He now travels seeking the Black Spider responsible for arming the goblins.",
+  "personality": "I face problems head-on. A scowl is my default expression and retreat is not in my vocabulary.",
+  "ideals": "Responsibility: I protect those who cannot protect themselves. That is my purpose.",
+  "bonds": "My old unit is my family. I would die for any one of them without hesitation.",
+  "flaws": "I have a weakness for strong dwarven ale and my temper gets me into trouble more than any enemy ever has.",
+  "appearance": "Stocky, 4'6\", braided auburn beard with iron clasps. A long scar crosses his left cheek from a goblin blade taken during the raid that cost him his home.",
+
+  "features": "Second Wind (1d10+5, 1/short rest)\nAction Surge (1/short rest)\nExtra Attack (attacks twice on Attack action)\nCombat Superiority — 4 superiority dice (d8)\nManeuvers: Disarming Attack, Precision Attack, Trip Attack",
+
+  "equipment": "Chain Mail +1 (AC 17)\nShield (AC +2 = AC 20 total)\nLongsword +1 (1d8+5 slashing, versatile 1d10)\n2× Handaxe (1d6+4 thrown, 20/60 ft)\nExplorer's Pack\n3× Potion of Healing (2d4+2)\n85 gp, 12 sp",
+
+  "spells": "",
+
+  "notes": "- Knows Klarg is working for the Black Spider\n- Owes Sildar Hallwinter a favour after the cave rescue\n- Has the Cragmaw Castle map — hasn't shown the party yet\n- Low on hit dice after the ambush",
+
+  "relationships": "Sildar Hallwinter — Friendly. Rescued him from Cragmaw Cave. Owes the party.\nGundren Rockseeker — Quest giver, currently missing somewhere in Cragmaw Castle.\nKlarg — Hostile. Bugbear bandit boss, working for the Black Spider.\nSister Garaele — Neutral/Friendly. Priestess of Tymora in Phandalin. Has a task for the party."
+}
