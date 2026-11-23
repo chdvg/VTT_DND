@@ -25,13 +25,6 @@ header h1 { font-size: 1.4rem; letter-spacing: 1px; }
 .col-start-5 { grid-column-start: 5; }
 .col-start-6 { grid-column-start: 6; }
 /* ── Section grid placement — main content area (4 cols) ─── */
-#section-map-control   { grid-column: 1 / -1; grid-row: 1; }
-#section-reference     { grid-column: 1 / 3;  grid-row: 2; }
-#section-monster       { grid-column: 3 / -1; grid-row: 2; }
-#section-send-text     { grid-column: 1 / 3;  grid-row: 3; }
-#section-send-image    { grid-column: 3 / -1; grid-row: 3; }
-#section-scene-builder { grid-column: 1 / -1; grid-row: 3; }
-#section-ai-assistant  { grid-column: 1 / -1; grid-row: 4; }
 /* Explicit row placement — add row-N to any panel or spacer */
 .row-1  { grid-row: 1; }
 .row-2  { grid-row: 2; }
