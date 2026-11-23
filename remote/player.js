@@ -1509,6 +1509,7 @@ function handleMessage(msg) {
         myHp    = msg.hp;
         myMaxHp = msg.maxHp;
         updateHpDisplay();
+        updateSheetHp(msg.hp, msg.maxHp);
       }
       break;
     case 'update':
@@ -1575,13 +1576,13 @@ function handleMessage(msg) {
       myPlayerCls  = msg.player.cls;
       sessionStorage.setItem('dnd_player_name', myPlayerName);
       sessionStorage.setItem('dnd_player_cls',  myPlayerCls);
-      // Restore any target this player had (may have been received before login from sendFullState)
       if (allTargets[myPlayerName]) myTarget = allTargets[myPlayerName];
-      resetLoginBtn(); // clear any pending timeout
+      resetLoginBtn();
       dismissTapOverlay();
       var hudEl = document.getElementById('player-hud');
       if (hudEl) hudEl.style.display = 'flex';
       if (currentTokens.length) renderTokenOverlay(currentTokens);
+      fetchCharacterSheet(myPlayerName);
       break;
     case 'PLAYER_LOGIN_ERR': {
       var errEl2 = document.getElementById('login-error');
@@ -1798,4 +1799,149 @@ window.addEventListener('resize', function () {
       wsSend({ action: 'player-dice-roll', die: die, result: result });
     });
   });
+}());
+
+// ── Character Sheet ───────────────────────────────────────────
+var _charSheet = null;
+
+function fetchCharacterSheet(name) {
+  fetch('/api/character/' + encodeURIComponent(name))
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(d) { if (d && d.sheet) { _charSheet = d.sheet; renderCharacterSheet(d.sheet); } })
+    .catch(function() {});
+}
+
+function updateSheetHp(hp, maxHp) {
+  if (!_charSheet) return;
+  var hpEl = document.getElementById('cs-live-hp');
+  if (hpEl) hpEl.textContent = hp + ' / ' + maxHp;
+  var bar = document.getElementById('cs-hp-bar');
+  if (bar) {
+    var pct = maxHp > 0 ? Math.max(0, Math.min(100, hp / maxHp * 100)) : 0;
+    bar.style.width = pct + '%';
+    bar.style.background = pct > 50 ? '#4ade80' : pct > 25 ? '#fbbf24' : '#f87171';
+  }
+}
+
+function abilityMod(val) {
+  var m = Math.floor((val - 10) / 2);
+  return (m >= 0 ? '+' : '') + m;
+}
+
+function csSection(title, content) {
+  return '<div style="margin-bottom:14px;">' +
+    '<div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#d4af37;border-bottom:1px solid #d4af3733;padding-bottom:3px;margin-bottom:6px;">' + title + '</div>' +
+    content + '</div>';
+}
+
+function csRow(label, val) {
+  if (!val && val !== 0) return '';
+  return '<div style="display:flex;gap:6px;margin-bottom:3px;"><span style="color:#888;min-width:90px;flex:none;font-size:0.82rem;">' + label + '</span><span style="color:#e6e6e6;font-size:0.82rem;word-break:break-word;">' + String(val) + '</span></div>';
+}
+
+function csBlock(label, val) {
+  if (!val) return '';
+  return '<div style="margin-bottom:6px;"><div style="font-size:0.75rem;color:#888;margin-bottom:2px;">' + label + '</div>' +
+    '<div style="background:#0d1117;border:1px solid #21262d;border-radius:4px;padding:6px 8px;font-size:0.8rem;white-space:pre-wrap;color:#ccc;max-height:120px;overflow-y:auto;">' + val + '</div></div>';
+}
+
+function renderCharacterSheet(sheet) {
+  var nameEl = document.getElementById('cs-name');
+  var body   = document.getElementById('cs-body');
+  if (!nameEl || !body) return;
+
+  nameEl.textContent = (sheet.name || '') + (sheet.player && sheet.player !== sheet.name ? '  (' + sheet.player + ')' : '');
+
+  var curHp = sheet.currentHp !== undefined ? sheet.currentHp : sheet.hp;
+  var maxHp = sheet.maxHp || sheet.hp || 0;
+  var hpPct = maxHp > 0 ? Math.max(0, Math.min(100, curHp / maxHp * 100)) : 100;
+  var hpColor = hpPct > 50 ? '#4ade80' : hpPct > 25 ? '#fbbf24' : '#f87171';
+
+  var html = '';
+
+  // Core stats bar
+  html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">';
+  html += '<div style="flex:1;min-width:120px;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:8px 10px;">' +
+    '<div style="font-size:0.68rem;color:#888;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Hit Points</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;">' +
+    '<span id="cs-live-hp" style="font-size:1.3rem;font-weight:700;color:' + hpColor + ';">' + curHp + ' / ' + maxHp + '</span></div>' +
+    '<div style="height:5px;background:#21262d;border-radius:3px;margin-top:5px;overflow:hidden;">' +
+    '<div id="cs-hp-bar" style="height:100%;width:' + hpPct + '%;background:' + hpColor + ';border-radius:3px;transition:width .3s,background .3s;"></div></div></div>';
+
+  ['ac', 'speed', 'initiative', 'profBonus', 'passivePerc'].forEach(function(k) {
+    if (!sheet[k] && sheet[k] !== 0) return;
+    var labels = { ac: 'AC', speed: 'Speed', initiative: 'Initiative', profBonus: 'Prof. Bonus', passivePerc: 'Passive Perc.' };
+    html += '<div style="background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:8px 10px;min-width:70px;text-align:center;">' +
+      '<div style="font-size:1.1rem;font-weight:700;color:#e6e6e6;">' + sheet[k] + '</div>' +
+      '<div style="font-size:0.65rem;color:#888;text-transform:uppercase;letter-spacing:0.08em;">' + labels[k] + '</div></div>';
+  });
+  html += '</div>';
+
+  // Identity
+  var identity = [
+    sheet.race && sheet.class ? sheet.race + ' ' + sheet.class + (sheet.subclass ? ' (' + sheet.subclass + ')' : '') + (sheet.level ? ' — Level ' + sheet.level : '') : '',
+    sheet.background ? 'Background: ' + sheet.background : '',
+    sheet.alignment ? 'Alignment: ' + sheet.alignment : '',
+  ].filter(Boolean).join('<br>');
+  if (identity) html += csSection('Identity', '<div style="font-size:0.85rem;color:#ccc;line-height:1.6;">' + identity + '</div>');
+
+  // Ability scores
+  var abilities = ['str','dex','con','int','wis','cha'];
+  var abLabels  = ['STR','DEX','CON','INT','WIS','CHA'];
+  var hasAbils  = abilities.some(function(a) { return sheet[a]; });
+  if (hasAbils) {
+    html += csSection('Ability Scores',
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;">' +
+      abilities.map(function(ab, i) {
+        if (!sheet[ab]) return '';
+        return '<div style="background:#0d1117;border:1px solid #21262d;border-radius:5px;padding:5px 8px;text-align:center;min-width:52px;">' +
+          '<div style="font-size:0.65rem;color:#888;letter-spacing:0.08em;">' + abLabels[i] + '</div>' +
+          '<div style="font-size:1rem;font-weight:700;color:#e6e6e6;">' + sheet[ab] + '</div>' +
+          '<div style="font-size:0.75rem;color:#a78bfa;">' + abilityMod(sheet[ab]) + '</div></div>';
+      }).join('') + '</div>');
+  }
+
+  // Combat info
+  var combatRows = [
+    csRow('Saves', sheet.saves),
+    csRow('Skills', sheet.skills),
+    csRow('Languages', sheet.languages),
+    csRow('Proficiencies', sheet.proficiencies),
+    csRow('Hit Dice', sheet.hitDice),
+    csRow('Spell Save DC', sheet.spellSaveDC),
+    csRow('Spell Attack', sheet.spellAtk ? '+' + sheet.spellAtk : ''),
+  ].filter(Boolean).join('');
+  if (combatRows) html += csSection('Skills & Proficiencies', combatRows);
+
+  // Features, Spells, Equipment, Backstory
+  if (sheet.features)  html += csSection('Features & Abilities', csBlock('', sheet.features));
+  if (sheet.spells)    html += csSection('Spells', csBlock('', sheet.spells));
+  if (sheet.equipment) html += csSection('Equipment', csBlock('', sheet.equipment));
+  if (sheet.personality || sheet.ideals || sheet.bonds || sheet.flaws) {
+    html += csSection('Personality',
+      csRow('Personality', sheet.personality) +
+      csRow('Ideals', sheet.ideals) +
+      csRow('Bonds', sheet.bonds) +
+      csRow('Flaws', sheet.flaws));
+  }
+  if (sheet.backstory) html += csSection('Backstory', csBlock('', sheet.backstory));
+  if (sheet.appearance) html += csSection('Appearance', csBlock('', sheet.appearance));
+  if (sheet.notes)     html += csSection('Session Notes', csBlock('', sheet.notes));
+
+  body.innerHTML = html;
+}
+
+// Sheet open / close
+(function () {
+  var overlay   = document.getElementById('char-sheet-overlay');
+  var openBtn   = document.getElementById('sheet-btn');
+  var closeBtn  = document.getElementById('sheet-close-btn');
+  if (!overlay || !openBtn) return;
+  openBtn.addEventListener('click', function() {
+    if (!_charSheet && myPlayerName) fetchCharacterSheet(myPlayerName);
+    overlay.style.display = overlay.style.display === 'none' ? 'block' : 'none';
+  });
+  if (closeBtn) closeBtn.addEventListener('click', function() { overlay.style.display = 'none'; });
+  // Close on backdrop (outside the content card)
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.style.display = 'none'; });
 }());
