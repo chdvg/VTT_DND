@@ -10,11 +10,19 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });
 
 // ── Persistence ───────────────────────────────────────────────
-const DATA_DIR   = process.env.DATA_DIR ? require('path').resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
-const STATE_FILE = path.join(DATA_DIR, 'state.json');
-const STATE_TMP  = path.join(DATA_DIR, 'state.tmp.json');
-const STATE_BACK = path.join(DATA_DIR, 'state.backup.json');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+let DATA_DIR     = process.env.DATA_DIR ? require('path').resolve(process.env.DATA_DIR) : path.join(__dirname, 'data');
+const BASE_DATA_DIR     = DATA_DIR;
+const CAMPAIGNS_DIR     = path.join(BASE_DATA_DIR, 'campaigns');
+const CAMPAIGN_META_FILE = path.join(BASE_DATA_DIR, 'campaigns.json');
+let STATE_FILE   = path.join(DATA_DIR, 'state.json');
+let STATE_TMP    = path.join(DATA_DIR, 'state.tmp.json');
+let STATE_BACK       = path.join(DATA_DIR, 'state.backup.json');
+let EVENT_LOG_FILE   = path.join(DATA_DIR, 'event-log.json');
+const EVENT_LOG_MAX  = 2000;
+let eventLog = [];
+let activeCampaign   = null; // null = default data/ dir
+if (!fs.existsSync(DATA_DIR))      fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!fs.existsSync(CAMPAIGNS_DIR)) fs.mkdirSync(CAMPAIGNS_DIR, { recursive: true });
 
 function saveState() {
   try {
@@ -84,6 +92,169 @@ let _saveTimer = null;
 function scheduleSave() {
   if (_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(() => { _saveTimer = null; saveState(); }, 1000);
+}
+
+// ── Event Log ─────────────────────────────────────────────────
+function loadEventLog() {
+  try {
+    if (!fs.existsSync(EVENT_LOG_FILE)) return;
+    const data = JSON.parse(fs.readFileSync(EVENT_LOG_FILE, 'utf8'));
+    if (Array.isArray(data)) { eventLog = data; console.log('Event log restored: ' + eventLog.length + ' entries.'); }
+  } catch (e) { console.error('loadEventLog error:', e.message); }
+}
+
+function saveEventLog() {
+  try { fs.writeFileSync(EVENT_LOG_FILE, JSON.stringify(eventLog)); }
+  catch (e) { console.error('saveEventLog error:', e.message); }
+}
+
+function appendEvent(type, subtype, summary, details = {}) {
+  const entry = {
+    id:      Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+    ts:      new Date().toISOString(),
+    type,
+    subtype: subtype || '',
+    summary: String(summary).slice(0, 500),
+    details,
+  };
+  eventLog.push(entry);
+  if (eventLog.length > EVENT_LOG_MAX) eventLog = eventLog.slice(-EVENT_LOG_MAX);
+  saveEventLog();
+  return entry;
+}
+
+// ── Campaign Management ───────────────────────────────────────
+function toCampaignSlug(name) {
+  return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'campaign';
+}
+
+// Update all dynamic path variables to point at a new data dir.
+// Called at startup (loadCampaignMeta) and on campaign switch.
+function setDataDir(dir) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  DATA_DIR        = dir;
+  STATE_FILE      = path.join(dir, 'state.json');
+  STATE_TMP       = path.join(dir, 'state.tmp.json');
+  STATE_BACK      = path.join(dir, 'state.backup.json');
+  EVENT_LOG_FILE  = path.join(dir, 'event-log.json');
+  // SESSIONS_DIR, ENCOUNTERS_DIR, BUNDLES_DIR, CHARACTERS_FILE are
+  // declared later in the file — updated here at runtime (after full init)
+  if (typeof SESSIONS_DIR   !== 'undefined') { SESSIONS_DIR    = path.join(dir, 'sessions');      if (!fs.existsSync(SESSIONS_DIR))   fs.mkdirSync(SESSIONS_DIR, { recursive: true }); }
+  if (typeof ENCOUNTERS_DIR !== 'undefined') { ENCOUNTERS_DIR  = path.join(dir, 'encounters');    if (!fs.existsSync(ENCOUNTERS_DIR)) fs.mkdirSync(ENCOUNTERS_DIR, { recursive: true }); }
+  if (typeof BUNDLES_DIR    !== 'undefined') { BUNDLES_DIR     = path.join(dir, 'scene-bundles'); if (!fs.existsSync(BUNDLES_DIR))    fs.mkdirSync(BUNDLES_DIR, { recursive: true }); }
+  if (typeof ROSTER_FILE     !== 'undefined') ROSTER_FILE      = path.join(dir, 'players.json');
+}
+
+function listCampaigns() {
+  try {
+    if (!fs.existsSync(CAMPAIGN_META_FILE)) return [];
+    return JSON.parse(fs.readFileSync(CAMPAIGN_META_FILE, 'utf8')).campaigns || [];
+  } catch (_) { return []; }
+}
+
+function saveCampaignMeta(campaignNames) {
+  try { fs.writeFileSync(CAMPAIGN_META_FILE, JSON.stringify({ active: activeCampaign, campaigns: campaignNames || listCampaigns() })); }
+  catch (e) { console.error('saveCampaignMeta error:', e.message); }
+}
+
+function loadCampaignMeta() {
+  try {
+    if (!fs.existsSync(CAMPAIGN_META_FILE)) return;
+    const meta = JSON.parse(fs.readFileSync(CAMPAIGN_META_FILE, 'utf8'));
+    const campaigns = meta.campaigns || [];
+    // If a campaign is active, switch to its directory
+    if (meta.active && campaigns.includes(meta.active)) {
+      const dir = path.join(CAMPAIGNS_DIR, toCampaignSlug(meta.active));
+      setDataDir(dir);
+      activeCampaign = meta.active;
+      console.log('Campaign restored: ' + activeCampaign);
+    } else if (!meta.active && campaigns.length > 0) {
+      // No active set but campaigns exist — auto-activate the first one
+      const first = campaigns[0];
+      const dir = path.join(CAMPAIGNS_DIR, toCampaignSlug(first));
+      setDataDir(dir);
+      activeCampaign = first;
+      saveCampaignMeta(campaigns);
+      console.log('Campaign auto-activated: ' + activeCampaign);
+    }
+  } catch (e) { console.error('loadCampaignMeta error:', e.message); }
+}
+
+function resetServerState() {
+  currentSceneView        = null;
+  currentFogStates        = {};
+  currentTokens           = [];
+  currentTokensMapKey     = null;
+  currentTokensShowRings  = true;
+  currentDrawing          = [];
+  currentDrawingMapKey    = null;
+  currentFeatures         = [];
+  currentFeatureStates    = {};
+  currentMapMeta          = null;
+  currentTargets          = {};
+  gridEnabled             = false;
+  allPlayersLocked        = false;
+  currentState.blackout   = false;
+  allTokenStates          = {};
+  currentObjectDefs       = [];
+  currentObjectStates     = {};
+  currentHpState          = {};
+  currentAudio            = null;
+  eventLog                = [];
+  loggedInPlayers.clear();
+  lockedPlayers.clear();
+}
+
+function switchCampaign(name) {
+  // Save before switching
+  saveState(); saveEventLog(); saveCharacters();
+  const newDir = name ? path.join(CAMPAIGNS_DIR, toCampaignSlug(name)) : BASE_DATA_DIR;
+  setDataDir(newDir);
+  activeCampaign = name || null;
+  // Persist campaign list + active
+  const campaigns = listCampaigns();
+  if (name && !campaigns.includes(name)) campaigns.push(name);
+  saveCampaignMeta(campaigns);
+  // Reset + reload
+  resetServerState();
+  loadState(); loadEventLog(); loadCharacters();
+  appendEvent('system', 'campaign-switch', 'Switched to campaign: ' + (name || 'Default'));
+  // Notify clients — send full DM state embedded in CAMPAIGN_SWITCHED
+  broadcast({ type: 'CLEAR_SCENE' });
+  // Send cleared logged-in players list to DM
+  const emptyRosterMsg = JSON.stringify({ type: 'LOGGED_IN_PLAYERS', players: [] });
+  for (const dm of dmClients) {
+    if (dm.readyState === WebSocket.OPEN) {
+      dm.send(emptyRosterMsg);
+      dm.send(JSON.stringify({
+        type: 'CAMPAIGN_SWITCHED',
+        campaign: name || null,
+        display: name || 'Default',
+        // Full state so DM panel can restore map/tokens/fog immediately
+        sceneView:    currentSceneView,
+        fogStates:    currentFogStates,
+        tokens:       currentTokens,
+        tokensMapKey: currentTokensMapKey,
+        drawing:      currentDrawing,
+        drawingMapKey: currentDrawingMapKey,
+        features:     currentFeatures,
+        featureStates: currentFeatureStates,
+        blackout:     currentState.blackout,
+        loggedInPlayers: [...loggedInPlayers.keys()],
+        lockedPlayers:   [...lockedPlayers],
+        allPlayersLocked: allPlayersLocked,
+        currentTargets: currentTargets,
+        gridEnabled:   gridEnabled,
+        allTokenStates: allTokenStates,
+      }));
+    }
+  }
+  broadcastClientCount();
+  // Push new campaign state to all connected player screens
+  for (const c of clients) {
+    if (!dmClients.has(c) && c.readyState === WebSocket.OPEN) sendFullState(c);
+  }
+  log('campaign-switch', { campaign: name || 'default' });
 }
 
 function log(event, details = {}) {
@@ -251,7 +422,9 @@ const dmClients = new Set();
 let guestCounter = 0;  // increments for each non-DM connection
 
 // Restore persisted state before starting
+loadCampaignMeta(); // sets DATA_DIR to active campaign dir if one is set
 loadState();
+loadEventLog();
 
 let _lastClientSnapshot = '';
 
@@ -451,6 +624,7 @@ wss.on('connection', (ws, req) => {
           currentSceneView = sceneViewMsg;
           currentAudio = message.audio ? { url: message.audio, loop: message.audioLoop !== false } : null;
           log('scene-show', { mapKey: message.mapKey, label: message.label || '' });
+          appendEvent('location', 'scene-change', 'Scene: ' + (message.label || message.mapKey || '(unknown)'), { mapKey: message.mapKey || null, label: message.label || null });
           broadcast(sceneViewMsg);
           broadcast({ type: 'UPDATE_TOKENS', tokens: [], mapKey: currentTokensMapKey });
           broadcast({ type: 'UPDATE_DRAWING', strokes: [], mapKey: currentDrawingMapKey });
@@ -548,6 +722,7 @@ wss.on('connection', (ws, req) => {
                 mapKey: message.mapKey || currentTokensMapKey,
                 mapMeta: (currentSceneView && currentSceneView.mapMeta) || currentMapMeta || null,
               });
+              appendEvent('feature', feat.type || 'trigger', 'Feature triggered: ' + feat.name, { feature: feat.name, type: feat.type || 'trigger' });
             }
           } break;
         case 'reset-feature':
@@ -706,6 +881,7 @@ wss.on('connection', (ws, req) => {
             for (const dm of dmClients) { if (dm.readyState === WebSocket.OPEN) dm.send(loggedInMsg); }
             broadcastClientCount();
             log('player-login', { name: player.name, cls: loginCls });
+            appendEvent('player', 'login', player.name + ' joined as ' + loginCls, { name: player.name, cls: loginCls });
           } catch (e) {
             console.error('player-login error:', e);
             ws.send(JSON.stringify({ type: 'PLAYER_LOGIN_ERR', error: 'Server error during login.' }));
@@ -781,6 +957,17 @@ wss.on('connection', (ws, req) => {
           for (const c of clients) {
             if (c !== ws && c.readyState === WebSocket.OPEN) c.send(anonRollMsg);
           }
+          {
+            let diceSubtype = 'roll';
+            if (pdie >= 20 && presult === pdie) diceSubtype = 'nat-max';
+            else if (pdie >= 20 && presult === 1) diceSubtype = 'nat-1';
+            const diceSummary = diceSubtype === 'nat-max'
+              ? ws.playerName + ' 🎯 Natural ' + pdie + '! on d' + pdie
+              : diceSubtype === 'nat-1'
+                ? ws.playerName + ' 💀 Natural 1! on d' + pdie
+                : ws.playerName + ' rolled d' + pdie + ': ' + presult;
+            appendEvent('dice', diceSubtype, diceSummary, { player: ws.playerName, die: pdie, result: presult });
+          }
           break;
         }
         case 'update-hp': {
@@ -788,6 +975,16 @@ wss.on('connection', (ws, req) => {
           const hpCur  = typeof message.hp    === 'number' ? Math.round(message.hp)    : null;
           const hpMax  = typeof message.maxHp === 'number' ? Math.round(message.maxHp) : null;
           if (!hpName || hpCur === null || hpMax === null) break;
+          const prevHpEntry = currentHpState[hpName];
+          const prevHp = prevHpEntry ? prevHpEntry.hp : hpMax;
+          const delta = hpCur - prevHp;
+          if (hpCur <= 0 && (!prevHpEntry || prevHpEntry.hp > 0)) {
+            appendEvent('combat', 'ko', hpName + ' is KO / down! (0/' + hpMax + ' HP)', { name: hpName, maxHp: hpMax });
+          } else if (delta < 0) {
+            appendEvent('combat', 'damage', hpName + ' took ' + Math.abs(delta) + ' damage (' + hpCur + '/' + hpMax + ' HP)', { name: hpName, hp: hpCur, maxHp: hpMax, delta });
+          } else if (delta > 0) {
+            appendEvent('combat', 'heal', hpName + ' healed ' + delta + ' HP (' + hpCur + '/' + hpMax + ' HP)', { name: hpName, hp: hpCur, maxHp: hpMax, delta });
+          }
           currentHpState[hpName] = { hp: hpCur, maxHp: hpMax };
           broadcast({ type: 'HP_UPDATE', name: hpName, hp: hpCur, maxHp: hpMax });
           saveState();
@@ -805,6 +1002,7 @@ wss.on('connection', (ws, req) => {
       for (const dm of dmClients) { if (dm.readyState === WebSocket.OPEN) dm.send(loggedInMsg); }
     }
     log('disconnect', { player: ws.playerName || null, total: clients.size });
+    if (ws.playerName) appendEvent('player', 'logout', ws.playerName + ' left the session', { name: ws.playerName });
     broadcastClientCount();
   });
 });
@@ -825,7 +1023,18 @@ app.post('/api/overlay', requireDm, express.json({ limit: '1mb' }), (req, res) =
 app.post('/api/dice-roll', requireDm, express.json({ limit: '1mb' }), (req, res) => {
   const die    = parseInt(req.body.die)    || 20;
   const result = parseInt(req.body.result) || 1;
-  broadcast({ type: 'DICE_ROLL', die, result });
+  const label  = String(req.body.label || '').slice(0, 64) || null;
+  if (req.body.broadcast !== false) broadcast({ type: 'DICE_ROLL', die, result });
+  let subtype = 'roll';
+  if (die >= 20 && result === die) subtype = 'nat-max';
+  else if (die >= 20 && result === 1) subtype = 'nat-1';
+  const who = label ? 'DM (for ' + label + ')' : 'DM';
+  const summary = subtype === 'nat-max'
+    ? who + ' 🎯 Natural ' + die + '! on d' + die
+    : subtype === 'nat-1'
+      ? who + ' 💀 Natural 1! on d' + die
+      : who + ' rolled d' + die + ': ' + result;
+  appendEvent('dice', subtype, summary, { player: 'DM', label: label || undefined, die, result });
   res.json({ ok: true });
 });
 
@@ -865,6 +1074,7 @@ app.post('/api/clear', requireDm, (req, res) => {
   broadcast({ type: 'CLEAR' });
   saveState();
   log('clear', { via: 'rest' });
+  appendEvent('system', 'clear', 'Scene cleared — all tokens, fog, and drawing reset');
   res.json({ ok: true });
 });
 
@@ -889,7 +1099,7 @@ app.post('/api/clear-scene', requireDm, (req, res) => {
 app.get('/api/state', (req, res) => { res.json(currentState); });
 
 // ── Session snapshots ─────────────────────────────────────────
-const SESSIONS_DIR = path.join(DATA_DIR, 'sessions');
+let SESSIONS_DIR = path.join(DATA_DIR, 'sessions');
 if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
 function sessionFileName(name) {
@@ -1004,7 +1214,7 @@ app.delete('/api/sessions/:name', requireDm, (req, res) => {
 });
 
 // ── Encounter presets ─────────────────────────────────────────
-const ENCOUNTERS_DIR = path.join(DATA_DIR, 'encounters');
+let ENCOUNTERS_DIR = path.join(DATA_DIR, 'encounters');
 if (!fs.existsSync(ENCOUNTERS_DIR)) fs.mkdirSync(ENCOUNTERS_DIR, { recursive: true });
 
 function encounterFileName(name) {
@@ -1059,6 +1269,7 @@ app.post('/api/encounters/deploy', requireDm, express.json({ limit: '1mb' }), (r
     broadcast({ type: 'UPDATE_TOKENS', tokens: currentTokens, mapKey: currentTokensMapKey, showRings: currentTokensShowRings });
     saveState();
     log('encounter-deploy', { name, count: deployed.length });
+    appendEvent('combat', 'encounter-deploy', 'Encounter deployed: ' + name + ' (' + deployed.length + ' tokens)', { name, count: deployed.length });
     res.json({ ok: true, deployed: deployed.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1076,7 +1287,7 @@ app.delete('/api/encounters/:name', requireDm, (req, res) => {
 });
 
 // ── Scene bundles ─────────────────────────────────────────────
-const BUNDLES_DIR = path.join(DATA_DIR, 'scene-bundles');
+let BUNDLES_DIR = path.join(DATA_DIR, 'scene-bundles');
 if (!fs.existsSync(BUNDLES_DIR)) fs.mkdirSync(BUNDLES_DIR, { recursive: true });
 
 function bundleFileName(name) {
@@ -1236,9 +1447,12 @@ app.post('/api/scenes', requireDm, express.json({ limit: '1mb' }), (req, res) =>
 });
 
 // ── Players roster ────────────────────────────────────────────
+// Auth players (global, used for WS login lookup) stays in seeds/players.json.
+// DM roster (campaign-specific) lives in DATA_DIR/players.json.
 const PLAYERS_FILE = path.join(__dirname, 'seeds', 'players.json');
+let ROSTER_FILE = path.join(DATA_DIR, 'players.json');
 function loadPlayers() {
-  try { return JSON.parse(fs.readFileSync(PLAYERS_FILE, 'utf8')); } catch { return []; }
+  try { return JSON.parse(fs.readFileSync(ROSTER_FILE, 'utf8')); } catch { return []; }
 }
 app.get('/api/players', (req, res) => {
   res.json({ players: loadPlayers() });
@@ -1247,7 +1461,7 @@ app.post('/api/players', requireDm, express.json({ limit: '64kb' }), (req, res) 
   try {
     const players = req.body.players;
     if (!Array.isArray(players)) return res.status(400).json({ error: 'players must be an array' });
-    fs.writeFileSync(PLAYERS_FILE, JSON.stringify(players, null, 2), 'utf8');
+    fs.writeFileSync(ROSTER_FILE, JSON.stringify(players, null, 2), 'utf8');
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed to save players.json' });
@@ -1307,14 +1521,17 @@ app.get('/api/map-builder/state', requireDm, (req, res) => {
 });
 
 // ── Character Sheets ──────────────────────────────────────────
-const CHARACTERS_FILE = path.join(DATA_DIR, 'characters.json');
+const CHARACTERS_FILE = path.join(BASE_DATA_DIR, 'characters.json'); // global — shared across all campaigns
 let characterSheets = [];
 
-(function loadCharacters() {
+function loadCharacters() {
   try {
-    if (fs.existsSync(CHARACTERS_FILE)) characterSheets = JSON.parse(fs.readFileSync(CHARACTERS_FILE, 'utf8'));
+    characterSheets = fs.existsSync(CHARACTERS_FILE)
+      ? JSON.parse(fs.readFileSync(CHARACTERS_FILE, 'utf8'))
+      : [];
   } catch (e) { console.error('loadCharacters error:', e.message); }
-})();
+}
+loadCharacters();
 
 function saveCharacters() {
   try { fs.writeFileSync(CHARACTERS_FILE, JSON.stringify(characterSheets, null, 2)); }
@@ -1354,7 +1571,7 @@ app.delete('/api/characters/:id', requireDm, (req, res) => {
 });
 
 // ── AI Dungeon Master Assistant ───────────────────────────────
-const AI_CONFIG_FILE = path.join(DATA_DIR, 'ai-config.json');
+const AI_CONFIG_FILE = path.join(BASE_DATA_DIR, 'ai-config.json'); // shared across campaigns
 let aiConfig = {
   provider: 'groq',
   apiKey: '',
@@ -1394,13 +1611,28 @@ app.post('/api/ai-config', requireDm, express.json({ limit: '64kb' }), (req, res
   res.json({ ok: true });
 });
 
-app.post('/api/ai-ask', requireDm, express.json({ limit: '64kb' }), (req, res) => {
-  const { prompt } = req.body || {};
+app.post('/api/ai-ask', requireDm, express.json({ limit: '128kb' }), (req, res) => {
+  const { prompt, includeEventLog, eventLogLimit } = req.body || {};
   if (!prompt || typeof prompt !== 'string') return res.status(400).json({ error: 'prompt required' });
   if (!aiConfig.apiKey && aiConfig.provider !== 'ollama') {
     return res.status(400).json({ error: 'No API key configured. Click ⚙️ Settings in the AI Assistant panel to add one.' });
   }
-  makeAiRequest(prompt).then(answer => res.json({ answer }))
+  let finalPrompt = prompt;
+  if (includeEventLog && eventLog.length) {
+    const lim     = Math.min(parseInt(eventLogLimit) || 150, 500);
+    const entries = eventLog.slice(-lim);
+    const logText = entries.map(e => {
+      const ts = new Date(e.ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      let line = '[' + ts + '] ' + e.summary;
+      if (e.note) line += '  (DM note: ' + e.note + ')';
+      if (e.usedOption !== null && e.usedOption !== undefined && Array.isArray(e.options) && e.options[e.usedOption]) {
+        line += '\n    ★ Used: ' + e.options[e.usedOption].slice(0, 200);
+      }
+      return line;
+    }).join('\n');
+    finalPrompt = '=== Session Event Log (' + entries.length + ' events) ===\n' + logText + '\n\n' + prompt;
+  }
+  makeAiRequest(finalPrompt).then(answer => res.json({ answer }))
     .catch(err => res.status(500).json({ error: err.message || 'AI request failed' }));
 });
 
@@ -1542,6 +1774,109 @@ function anthropicRequest(apiKey, model, system, userPrompt) {
     req.end();
   });
 }
+
+// ── Campaign Management REST API ─────────────────────────────
+app.get('/api/campaigns', requireDm, (req, res) => {
+  res.json({ active: activeCampaign, display: activeCampaign || 'Default', campaigns: listCampaigns() });
+});
+
+app.post('/api/campaigns', requireDm, express.json({ limit: '4kb' }), (req, res) => {
+  const name = String(req.body.name || '').trim().slice(0, 80);
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const campaigns = listCampaigns();
+  if (!campaigns.includes(name)) {
+    campaigns.push(name);
+    if (!fs.existsSync(path.join(CAMPAIGNS_DIR, toCampaignSlug(name))))
+      fs.mkdirSync(path.join(CAMPAIGNS_DIR, toCampaignSlug(name)), { recursive: true });
+    saveCampaignMeta(campaigns);
+  }
+  res.json({ ok: true, campaigns });
+});
+
+app.post('/api/campaigns/switch', requireDm, express.json({ limit: '4kb' }), (req, res) => {
+  const name = req.body && req.body.name ? String(req.body.name).trim().slice(0, 80) : null;
+  switchCampaign(name);
+  res.json({ ok: true, active: activeCampaign, display: activeCampaign || 'Default', campaigns: listCampaigns() });
+});
+
+app.delete('/api/campaigns/:name', requireDm, (req, res) => {
+  const name = decodeURIComponent(req.params.name || '');
+  if (name === activeCampaign) return res.status(400).json({ error: 'Cannot delete active campaign. Switch first.' });
+  const campaigns = listCampaigns().filter(c => c !== name);
+  saveCampaignMeta(campaigns);
+  const dir = path.join(CAMPAIGNS_DIR, toCampaignSlug(name));
+  if (fs.existsSync(dir)) { try { fs.rmSync(dir, { recursive: true }); } catch (e) { return res.status(500).json({ error: e.message }); } }
+  res.json({ ok: true, campaigns });
+});
+
+// Public (no auth) — player fetches own character sheet by name
+app.get('/api/character/:name', (req, res) => {
+  const name = decodeURIComponent(req.params.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const sheet = characterSheets.find(c =>
+    (c.name  && c.name.toLowerCase()   === name.toLowerCase()) ||
+    (c.player && c.player.toLowerCase() === name.toLowerCase())
+  );
+  if (!sheet) return res.status(404).json({ error: 'Character not found' });
+  const liveHp = currentHpState[sheet.name];
+  const result = Object.assign({}, sheet);
+  if (liveHp) { result.currentHp = liveHp.hp; result.maxHp = liveHp.maxHp; }
+  else result.currentHp = sheet.hp;
+  res.json({ sheet: result });
+});
+
+// ── Event Log REST API ────────────────────────────────────────
+app.get('/api/event-log', requireDm, (req, res) => {
+  let result = [...eventLog];
+  const { type, q, limit } = req.query;
+  if (type && type !== 'all') result = result.filter(e => e.type === type);
+  if (q) {
+    const lq = q.toLowerCase();
+    result = result.filter(e =>
+      e.summary.toLowerCase().includes(lq) ||
+      (e.note && e.note.toLowerCase().includes(lq)) ||
+      (e.details && JSON.stringify(e.details).toLowerCase().includes(lq)) ||
+      (Array.isArray(e.options) && e.options.some(o => o.toLowerCase().includes(lq)))
+    );
+  }
+  const lim = Math.min(parseInt(limit) || 300, 2000);
+  result = result.slice(-lim).reverse(); // newest first
+  res.json({ events: result, total: eventLog.length });
+});
+
+app.post('/api/event-log', requireDm, express.json({ limit: '128kb' }), (req, res) => {
+  const { type, subtype, summary, details, options, note } = req.body || {};
+  if (!type || !summary) return res.status(400).json({ error: 'type and summary required' });
+  const validTypes = ['location','combat','player','ai','note','dice','feature','item','system'];
+  if (!validTypes.includes(type)) return res.status(400).json({ error: 'invalid type' });
+  const entry = appendEvent(type, subtype || '', String(summary).slice(0, 500), details || {});
+  if (Array.isArray(options) && options.length) {
+    entry.options    = options.map(o => String(o).slice(0, 2000));
+    entry.usedOption = null;
+  }
+  if (note) entry.note = String(note).slice(0, 500);
+  saveEventLog();
+  res.json({ event: entry });
+});
+
+app.patch('/api/event-log/:id', requireDm, express.json({ limit: '64kb' }), (req, res) => {
+  const entry = eventLog.find(e => e.id === req.params.id);
+  if (!entry) return res.status(404).json({ error: 'not found' });
+  const { usedOption, note, summary } = req.body || {};
+  if (usedOption !== undefined) entry.usedOption = usedOption === null ? null : Number(usedOption);
+  if (note     !== undefined) entry.note    = String(note).slice(0, 500);
+  if (summary  !== undefined) entry.summary = String(summary).slice(0, 500);
+  saveEventLog();
+  res.json({ event: entry });
+});
+
+app.delete('/api/event-log', requireDm, (req, res) => {
+  const count = eventLog.length;
+  eventLog = [];
+  log('event-log-clear', { count });
+  appendEvent('system', 'log-cleared', 'Event log cleared (' + count + ' entries removed)');
+  res.json({ ok: true });
+});
 
 app.get('/', requireDm, (req, res) => { res.sendFile(path.join(__dirname, 'dm', 'index.html')); });
 app.use('/dm', requireDm);

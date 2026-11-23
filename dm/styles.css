@@ -384,3 +384,45 @@ details > .panel-summary + * { margin-top:1rem; }
 #send-text-popup textarea { min-height: 0; }
 #send-image-popup select { width: 100%; padding: 0.45rem 0.6rem; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6e6e6; font-size: 0.82rem; font-family: inherit; }
 #send-image-popup select:focus { outline: none; border-color: #d4af37; }
+
+/* ── Session Event Log ──────────────────────────────────────── */
+.ev-chip { padding:0.18rem 0.5rem; font-size:0.72rem; border:1px solid #30363d; background:#161b22; color:#888; border-radius:3px; cursor:pointer; transition:all 0.15s; white-space:nowrap; }
+.ev-chip:hover { border-color:#555; color:#ccc; }
+.ev-chip.active { border-color:#d4af37; color:#d4af37; background:#1a1a00; }
+
+.ev-inline-form { background:#0d1117; border:1px solid #30363d; border-radius:5px; padding:0.6rem; margin-bottom:0.5rem; }
+
+.ev-entry { border:1px solid #21262d; border-radius:5px; overflow:hidden; font-size:0.82rem; }
+.ev-entry-sum { display:flex; align-items:flex-start; gap:0.4rem; padding:0.4rem 0.5rem; cursor:pointer; list-style:none; user-select:none; }
+.ev-entry-sum::-webkit-details-marker { display:none; }
+.ev-entry-sum:hover { background:#0d1117; }
+.ev-badge { font-size:0.62rem; font-weight:700; letter-spacing:0.04em; padding:0.1rem 0.4rem; border-radius:3px; border:1px solid; white-space:nowrap; flex:none; }
+.ev-sum-txt { flex:1; color:#ccc; line-height:1.4; min-width:0; word-break:break-word; }
+.ev-used-mark { font-size:0.68rem; color:#4ade80; font-weight:600; margin-left:0.3rem; }
+.ev-ts { font-size:0.66rem; color:#555; white-space:nowrap; flex:none; padding-top:0.1rem; }
+
+.ev-body { padding:0.45rem 0.55rem 0.5rem; border-top:1px solid #21262d; background:#0a0e17; display:flex; flex-direction:column; gap:0.4rem; }
+.ev-drow { display:flex; gap:0.5rem; font-size:0.76rem; }
+.ev-dlbl { color:#666; min-width:52px; flex:none; text-transform:capitalize; padding-top:0.05rem; }
+.ev-dval { color:#bbb; word-break:break-word; min-width:0; }
+
+.ev-ai-box { background:#0d1117; border:1px solid #21262d; border-radius:4px; padding:0.4rem 0.5rem; font-size:0.76rem; color:#ccc; white-space:pre-wrap; max-height:140px; overflow-y:auto; }
+
+.ev-option { border:1px solid #2a2f3a; border-radius:4px; padding:0.4rem 0.5rem; background:#0d1117; margin-bottom:0.3rem; }
+.ev-opt-used { border-color:#166534 !important; background:#0a1a0e !important; }
+.ev-opt-lbl { font-size:0.65rem; color:#666; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:0.2rem; }
+.ev-opt-txt { font-size:0.76rem; color:#ccc; white-space:pre-wrap; max-height:80px; overflow-y:auto; margin-bottom:0.4rem; word-break:break-word; }
+.ev-use-btn { font-size:0.68rem; padding:0.1rem 0.5rem; min-width:0; }
+
+.ev-note-row { margin-top:0.1rem; }
+.ev-note-input { width:100%; font-size:0.73rem; padding:0.22rem 0.4rem; background:#0d1117; border:1px solid #21262d; border-radius:3px; color:#666; margin-bottom:0; }
+.ev-note-input:focus { border-color:#30363d; color:#aaa; outline:none; }
+.ev-note-input::placeholder { color:#3a3a3a; }
+
+.ev-ai-opt-row { display:flex; align-items:flex-start; gap:0.35rem; margin-bottom:0.3rem; }
+
+/* ── Campaign Selector ──────────────────────────────────────── */
+.campaign-row { display:flex; align-items:center; gap:0.3rem; padding:0.25rem 0.1rem; border-radius:3px; }
+.campaign-row.campaign-active { background:rgba(212,175,55,0.08); border-radius:4px; padding:0.25rem 0.4rem; }
+.campaign-name { flex:1; font-size:0.8rem; color:#ccc; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.campaign-row.campaign-active .campaign-name { color:#d4af37; font-weight:600; }

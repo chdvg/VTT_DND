@@ -1,4 +1,4 @@
-# D&D VTT Control Console (v3.8.0 — Web Edition)
+# D&D VTT Control Console (v3.9 — Web Edition)
 
 A browser-based virtual tabletop (VTT) for Dungeons & Dragons. The DM runs a Node.js server on their machine; everyone else — players, a projector, a tablet — connects via any web browser on the local network. No Electron, no installs on client devices.
 
@@ -133,7 +133,7 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
 ### Player Screen
 - **Tap-to-begin overlay** — full-screen overlay on first load; dismissing it unlocks browser audio autoplay
 - **Player Login** — on the tap overlay, players choose between *▶ Tap to Begin* (guest / audio-unlock only) or *⚔ Login as Character*:
-  - Login shows a dropdown populated from the **Player Roster** (`seeds/players.json`) — the DM controls who appears in the list
+  - Login shows a dropdown populated from the **Player Roster** (`data/campaigns/<slug>/players.json`) — the DM controls who appears in the list per campaign
   - Selecting a name and clicking *Enter Session* binds that player to their roster character and closes the overlay
   - Login is persisted in `sessionStorage` so a page refresh silently re-binds without prompting again
   - **⚔ Log Off** button appears in the bottom-left corner after login; clicking it releases the binding and returns to the tap overlay
@@ -153,6 +153,11 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
   - Rolling triggers the full 3D dice animation on the rolling player's screen
   - The same anonymous roll animation plays on every other connected player screen (including the tap-to-enter screen) simultaneously
   - The DM sees a named entry in the **🎲 Player Rolls** log beneath the Initiative Tracker: who rolled, which die, and the result — color-coded green for nat-20 crits and red for nat-1 fails, auto-clearing after 20 seconds
+- **📋 Character Sheet** — a **📋 Sheet** button appears in the HUD alongside Log Off after login:
+  - Tap to open a full-screen character sheet overlay showing the character's full stat block: name, race/class/level, live HP bar, AC, speed, all 6 ability scores with modifiers, saving throws, skills, features, spells, equipment, backstory, and session notes
+  - HP updates live during play whenever the DM adjusts it via the initiative tracker
+  - Tap **✕** or tap outside the panel to close and return to the map
+  - Sheet data is fetched from the server using the character name set at login (matches on character name or player name)
 
 ### Map Control Panel
 - **⬛ BLACKOUT** — toggles a solid black overlay that covers the *entire* player screen including any popups. Click again to reveal. Audio stops on blackout.
@@ -341,12 +346,90 @@ Customize the bracket portions and press **🤖 Ask AI** (or **Ctrl+Enter**).
 **After a response:**
 - **📋 Copy** — copies the response to the clipboard
 - **📜 Send to Players** — sends the response as a text overlay to all player screens immediately
+- **📌 Log** — saves the prompt + full response to the Session Event Log for future reference; a **★ Mark as Used** button appears on the saved entry so you can flag which response you actually ran with
+
+**📖 Session Recap chip:** Sends the entire session event log (up to 300 entries) to the AI along with current party/encounter context and asks it to write a narrative adventure journal entry — ready to copy and save as your session notes.
+
+**Automatic event context:** Every query automatically includes the last 15 recent session events so the AI always knows what happened recently (last scene change, encounters started, features triggered, notable dice rolls) without you having to explain it.
 
 The DM-configurable **System Prompt** (in Settings) lets you tailor the AI's style — e.g. add your campaign world name, lore restrictions, or tone guidelines.
 
 ---
 
-### Character Sheets
+### Session Event Log
+
+A persistent session chronicle that automatically records everything that happens during play and lets the AI summarize it.
+
+**Automatically logged (zero effort):**
+| Event | Trigger |
+|-------|---------|
+| 🗺️ Scene changed | Any map/view shown |
+| 👤 Player joined / left | Player login or disconnect |
+| ⚔️ Encounter deployed | "Deploy" from encounters sidebar |
+| ✨ Feature triggered | Traps, puzzles, reveals, effects |
+| 💀 KO event | First time a combatant's HP hits 0 |
+| ❤️ Damage / Healing | Every HP change via initiative tracker |
+| 🎲 All player dice rolls | Any die rolled on the player screen (nat 20/1 highlighted) |
+| 🎲 All DM dice rolls | Every click on the DM dice panel (optional "For:" label) |
+| ⚔️ Initiative set | Quick Roll D20 for All, individual arrow-button rolls, mob adds |
+| ➡️ Turn advance | Every Next Turn click (logs who's up) |
+| ⚙️ Scene cleared | CLEAR or CLEAR SCENE |
+| 🎲 Campaign switch | Switching to a different campaign |
+
+**Manual entries:**
+- **📝 Note** — quick typed note; choose type (Note / Combat / Location / Player / Loot)
+- **🤖 AI Entry** — log a prompt with 1–N option text boxes; tap **★ Mark Used** on the one you ran with
+
+**AI prompt flagging:** When AI gives you multiple options, log them with the 🤖 button in the Session Log panel, paste each option into its own box, then mark which one you actually used. The whole history of "what I asked and what I chose" is preserved per session.
+
+**AI integration:** Every AI query automatically includes the 15 most recent log entries. The **📖 Session Recap** quick prompt chip sends the full log (up to 300 entries) and asks the AI to write a narrative adventure journal entry.
+
+**Panel:** Expand the **📒 Session Log** panel in the DM panel main area.
+- Filter chips: All / 🗺️ / ⚔️ / 👤 / 🤖 / 📝 / 🎲 / ✨
+- Search box (searches summaries, details, notes, and option text)
+- Inline **DM note** field on every entry — auto-saves as you type
+- **🗑️ Clear** button with confirmation
+
+Stored in `data/event-log.json` (or `data/campaigns/<slug>/event-log.json` per campaign). Max 2,000 entries — oldest entries are dropped when the limit is reached.
+
+---
+
+### Multi-Campaign Support
+
+Run multiple separate campaigns from one installation. Each campaign has its own completely isolated data directory — different scene history, event log, player roster, encounters, session snapshots, and scene bundles.
+
+**Campaign selection on startup** — when the DM loads the panel, a full-screen gate appears (bypassed automatically if a campaign was already active on the last run):
+- **Searchable dropdown** — type any part of a campaign name to filter the list; click to select; press Enter or click **Open Campaign** to enter
+- **Create New** — type a fresh name at the bottom and click **+ Create New** to create and immediately switch
+- A campaign must be selected before the DM panel is accessible
+
+**Campaign section** in the top of the left sidebar:
+
+| Action | How |
+|--------|-----|
+| Create a campaign | Type a name in the input → **+ Create** |
+| Switch campaigns | Click ▶ next to any inactive campaign |
+| Delete a campaign | Click ✕ (cannot delete the active one) |
+
+**On switch:** current state is saved → all client-side state clears (map, tokens, initiative, HP, roster) → new campaign loads and restores its saved state → player screens receive a clear → DM panel reloads its scenes, encounters, sessions, bundles, and roster.
+
+**What is isolated per campaign** (stored in `data/campaigns/<slug>/`):
+- `state.json` — tokens, fog, drawing, HP, scene view
+- `event-log.json` — session event history
+- `players.json` — player roster for this campaign's party
+- `sessions/` — named session snapshots
+- `encounters/` — saved encounter presets
+- `scene-bundles/` — saved scene bundles
+
+**What is shared across all campaigns:**
+- `data/ai-config.json` — AI provider API key (set once, works everywhere)
+- `data/characters.json` — full character library (global; any campaign can use any character)
+- `public/assets/` — all map images and audio files
+- `seeds/` — player auth list, scene definitions
+
+Campaign selection persists across server restarts (`data/campaigns.json`). The server auto-activates the most recently active campaign on startup.
+
+---
 
 A dedicated character management screen at **`http://localhost:3000/characters`** (also accessible via the **📋 Characters** button in the DM panel header — opens in a new tab).
 
@@ -634,13 +717,19 @@ Click the **🔒 Lock** button in the top-right of the DM panel header. This cle
 ├── test/
 │   └── server.test.js      # 20 integration tests (node:test, no extra deps)
 ├── data/                   # Runtime state (auto-created, gitignored)
-│   ├── state.json          # Full server state snapshot
+│   ├── state.json          # Full server state snapshot (default / legacy)
 │   ├── state.backup.json   # Previous snapshot (auto-rotated on every save)
-│   ├── ai-config.json      # AI provider + API key (never committed)
-│   ├── characters.json     # Character sheet data
-│   ├── sessions/           # Named session snapshots (.session.json)
-│   ├── encounters/         # Named encounter presets (.encounter.json)
-│   └── scene-bundles/      # Named scene bundles (.bundle.json)
+│   ├── ai-config.json      # AI provider + API key (never committed, shared across campaigns)
+│   ├── characters.json     # Character library — global, shared across all campaigns
+│   ├── campaigns.json      # Active campaign name + campaign list
+│   └── campaigns/          # Per-campaign isolated data directories
+│       └── <slug>/         # e.g. data/campaigns/phandalin-the-mighty-4/
+│           ├── state.json
+│           ├── event-log.json
+│           ├── players.json    # Player roster for this campaign
+│           ├── sessions/
+│           ├── encounters/
+│           └── scene-bundles/
 └── shared/types/           # Shared TypeScript type definitions
 ```
 
@@ -714,16 +803,25 @@ Scenes are stored in `seeds/scenes.json`. Structure:
 | POST | `/api/map-builder/save` | Export map PNG + save editable `.map.json` state |
 | GET | `/api/map-builder/states` | List maps with an editable state file |
 | GET | `/api/map-builder/state?name=` | Load editable state for a named map |
+| POST | `/api/dice-roll` | Broadcast a DM dice roll to players; always logs to event log; `{ die, result, label?, broadcast? }` |
 | POST | `/api/overlay` | Push timed overlay (title, html, duration ms) to players |
-| POST | `/api/stopaudio` | Stop audio on all players |
 | POST | `/api/blackout` | Toggle blackout overlay on players (solid black over everything) |
 | POST | `/api/clear` | Dismiss open popups on players (scene image is preserved) |
 | GET | `/api/characters` | List all character sheets |
 | POST | `/api/characters` | Create or update a character sheet (upsert by id) |
 | DELETE | `/api/characters/:id` | Delete a character sheet |
+| GET | `/api/character/:name` | Get a single character sheet by name or player name (no auth — used by player view) |
+| GET | `/api/campaigns` | List campaigns and active campaign |
+| POST | `/api/campaigns` | Create a new named campaign |
+| POST | `/api/campaigns/switch` | Switch active campaign (saves current state, reloads new campaign) |
+| DELETE | `/api/campaigns/:name` | Delete a campaign and its data directory |
+| GET | `/api/event-log` | List session events (query: `type`, `q`, `limit`) |
+| POST | `/api/event-log` | Add a manual event entry |
+| PATCH | `/api/event-log/:id` | Update an entry (set `usedOption`, `note`, or `summary`) |
+| DELETE | `/api/event-log` | Clear the entire session log |
 | GET | `/api/ai-config` | Get current AI provider config (API key masked) |
 | POST | `/api/ai-config` | Save AI provider, model, key, and system prompt |
-| POST | `/api/ai-ask` | Send a prompt to the configured AI provider; returns `{ answer }` |
+| POST | `/api/ai-ask` | Send a prompt to the configured AI provider; supports `includeEventLog: true` to inject full session log |
 | WS | `/ws` | Real-time sync channel |
 
 ### WebSocket Message Types
@@ -749,9 +847,8 @@ Scenes are stored in `seeds/scenes.json`. Structure:
 | `SET_FOG_KEY` | server → player | `{ fogKey }` — activates or clears fog overlay on player screens at runtime |
 | `UPDATE_OBJECTS` | server → all | `{ objects[], objectStates{} }` — full object definitions + current states |
 | `OBJECT_STATE_CHANGE` | server → all | `{ objId, state }` — single object state update after an interaction or DM drag |
-| `HP_UPDATE` | server → all | `{ name, hp, maxHp }` — HP change for a named combatant; replayed to reconnecting clients |
-| `HP_UPDATE` | server → all | `{ name, hp, maxHp }` — HP change for a named combatant; replayed to reconnecting clients |
 | `HP_UPDATE` | server → all | `{ name, hp, maxHp }` — HP change for a named combatant; replayed on reconnect |
+| `CAMPAIGN_SWITCHED` | server → DM | `{ campaign, display, sceneView, tokens, fogStates, … }` — full state for new campaign embedded |
 
 **DM → Server additional actions:**
 

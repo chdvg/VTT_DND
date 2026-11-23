@@ -1,14 +1,14 @@
 [
   {
-    "name": "Benny Silvertongue",
-    "cls": "Rogue"
+    "name": "Tonnaya",
+    "cls": "Spirit Guardian"
   },
   {
-    "name": "DragOn",
-    "cls": "Druid"
-  },
-  {
-    "name": "RateTestPlayer",
+    "name": "Kat of the Grey Towers",
     "cls": "Fighter"
+  },
+  {
+    "name": "Dobby the Fat",
+    "cls": "Animal Companion"
   }
 ]
