@@ -72,8 +72,30 @@ var dmCharacterSheets = [];  // full character sheet objects
 function loadDmCharacterSheets() {
   fetch('/api/characters')
     .then(function(r) { return r.json(); })
-    .then(function(d) { dmCharacterSheets = d.characters || []; })
+    .then(function(d) { dmCharacterSheets = d.characters || []; renderCharSheetPicker(); })
     .catch(function() {});
+}
+
+function renderCharSheetPicker() {
+  var sel = document.getElementById('init-player-name-select');
+  if (!sel) return;
+  var prev = sel.value;
+  sel.innerHTML = '<option value="">— select character —</option>';
+  var inRoster = playerRoster.map(function(p) { return p.name; });
+  dmCharacterSheets.forEach(function(s) {
+    if (!s.name) return;
+    var opt = document.createElement('option');
+    opt.value = s.name;
+    var already = inRoster.indexOf(s.name) >= 0 ? ' ✓' : '';
+    opt.textContent = s.name + (s.class ? ' — ' + s.class + (s.level ? ' Lv' + s.level : '') : '') + already;
+    if (already) opt.style.color = '#555';
+    sel.appendChild(opt);
+  });
+  var custom = document.createElement('option');
+  custom.value = '__custom__';
+  custom.textContent = '✏️ Custom player...';
+  sel.appendChild(custom);
+  if (prev) sel.value = prev;
 }
 
 // Item token state
@@ -3760,6 +3782,7 @@ function renderPlayerRoster() {
         playerRoster.splice(i, 1);
         savePlayerRoster();
         renderPlayerRoster();
+        renderCharSheetPicker();
         // Refresh token controls if a map is currently showing
         if (activeTokenMapKey && activeTokenMapUrl) {
           renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
@@ -3772,19 +3795,49 @@ function renderPlayerRoster() {
   });
 }
 
+// Player name select — auto-fill class from sheet, show custom input when needed
+(function() {
+  var sel       = document.getElementById('init-player-name-select');
+  var customInp = document.getElementById('init-player-name');
+  var clsInp    = document.getElementById('init-player-class');
+  if (!sel) return;
+  sel.addEventListener('change', function() {
+    var val = sel.value;
+    if (val === '__custom__') {
+      customInp.style.display = '';
+      customInp.focus();
+      clsInp.value = '';
+    } else {
+      customInp.style.display = 'none';
+      customInp.value = '';
+      var sheet = dmCharacterSheets.find(function(s) { return s.name === val; });
+      clsInp.value = sheet && sheet.class ? sheet.class : '';
+    }
+  });
+})();
+
 document.getElementById('init-player-add-btn').addEventListener('click', function () {
-  var name = document.getElementById('init-player-name').value.trim();
-  var cls  = document.getElementById('init-player-class').value.trim();
+  var sel       = document.getElementById('init-player-name-select');
+  var customInp = document.getElementById('init-player-name');
+  var clsInp    = document.getElementById('init-player-class');
+  var name, cls;
+  if (sel.value === '__custom__') {
+    name = customInp.value.trim();
+    cls  = clsInp.value.trim();
+  } else {
+    name = sel.value;
+    cls  = clsInp.value.trim();
+  }
   if (!name) return;
   playerRoster.push({ name: name, cls: cls });
   savePlayerRoster();
   renderPlayerRoster();
-  // Refresh token controls if a map is active
-  if (activeTokenMapKey && activeTokenMapUrl) {
-    renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
-  }
-  document.getElementById('init-player-name').value = '';
-  document.getElementById('init-player-class').value = '';
+  renderCharSheetPicker();
+  if (activeTokenMapKey && activeTokenMapUrl) renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+  sel.value = '';
+  customInp.style.display = 'none';
+  customInp.value = '';
+  clsInp.value = '';
 });
 
 document.getElementById('init-add-all-btn').addEventListener('click', function () {

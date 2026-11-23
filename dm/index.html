@@ -496,7 +496,11 @@
           <summary style="cursor:pointer;color:#d4af37;font-size:0.82rem;user-select:none;">👥 Player Roster</summary>
           <div id="init-player-list" style="margin-top:0.5rem;"></div>
           <div class="init-add" style="margin-top:0.5rem;">
-            <input type="text" id="init-player-name" placeholder="Player name" />
+            <select id="init-player-name-select" style="width:100%;padding:0.3rem 0.4rem;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6e6e6;font-size:0.82rem;margin-bottom:0.4rem;">
+              <option value="">— select character —</option>
+              <option value="__custom__">✏️ Custom player...</option>
+            </select>
+            <input type="text" id="init-player-name" placeholder="Player name" style="display:none;" />
             <input type="text" id="init-player-class" placeholder="Class (e.g. Fighter)" />
             <button id="init-player-add-btn" class="btn btn-small btn-secondary">+ Add Player</button>
           </div>
