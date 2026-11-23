@@ -66,6 +66,38 @@ var dmTargets  = {};  // playerName -> targetLabel
 var dmHpState  = {};  // tokenLabel -> { hp, maxHp }
 var gridEnabled = false; // DM-toggled grid overlay
 
+// Character sheets (loaded from server for AI context)
+var dmCharacterSheets = [];  // full character sheet objects
+
+function loadDmCharacterSheets() {
+  fetch('/api/characters')
+    .then(function(r) { return r.json(); })
+    .then(function(d) { dmCharacterSheets = d.characters || []; renderCharSheetPicker(); })
+    .catch(function() {});
+}
+
+function renderCharSheetPicker() {
+  var sel = document.getElementById('init-player-name-select');
+  if (!sel) return;
+  var prev = sel.value;
+  sel.innerHTML = '<option value="">— select character —</option>';
+  var inRoster = playerRoster.map(function(p) { return p.name; });
+  dmCharacterSheets.forEach(function(s) {
+    if (!s.name) return;
+    var opt = document.createElement('option');
+    opt.value = s.name;
+    var already = inRoster.indexOf(s.name) >= 0 ? ' ✓' : '';
+    opt.textContent = s.name + (s.class ? ' — ' + s.class + (s.level ? ' Lv' + s.level : '') : '') + already;
+    if (already) opt.style.color = '#555';
+    sel.appendChild(opt);
+  });
+  var custom = document.createElement('option');
+  custom.value = '__custom__';
+  custom.textContent = '✏️ Custom player...';
+  sel.appendChild(custom);
+  if (prev) sel.value = prev;
+}
+
 // Item token state
 var selectedItemType = 'Chest'; // current item type for placement
 
@@ -3750,6 +3782,7 @@ function renderPlayerRoster() {
         playerRoster.splice(i, 1);
         savePlayerRoster();
         renderPlayerRoster();
+        renderCharSheetPicker();
         // Refresh token controls if a map is currently showing
         if (activeTokenMapKey && activeTokenMapUrl) {
           renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
@@ -3762,19 +3795,49 @@ function renderPlayerRoster() {
   });
 }
 
+// Player name select — auto-fill class from sheet, show custom input when needed
+(function() {
+  var sel       = document.getElementById('init-player-name-select');
+  var customInp = document.getElementById('init-player-name');
+  var clsInp    = document.getElementById('init-player-class');
+  if (!sel) return;
+  sel.addEventListener('change', function() {
+    var val = sel.value;
+    if (val === '__custom__') {
+      customInp.style.display = '';
+      customInp.focus();
+      clsInp.value = '';
+    } else {
+      customInp.style.display = 'none';
+      customInp.value = '';
+      var sheet = dmCharacterSheets.find(function(s) { return s.name === val; });
+      clsInp.value = sheet && sheet.class ? sheet.class : '';
+    }
+  });
+})();
+
 document.getElementById('init-player-add-btn').addEventListener('click', function () {
-  var name = document.getElementById('init-player-name').value.trim();
-  var cls  = document.getElementById('init-player-class').value.trim();
+  var sel       = document.getElementById('init-player-name-select');
+  var customInp = document.getElementById('init-player-name');
+  var clsInp    = document.getElementById('init-player-class');
+  var name, cls;
+  if (sel.value === '__custom__') {
+    name = customInp.value.trim();
+    cls  = clsInp.value.trim();
+  } else {
+    name = sel.value;
+    cls  = clsInp.value.trim();
+  }
   if (!name) return;
   playerRoster.push({ name: name, cls: cls });
   savePlayerRoster();
   renderPlayerRoster();
-  // Refresh token controls if a map is active
-  if (activeTokenMapKey && activeTokenMapUrl) {
-    renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
-  }
-  document.getElementById('init-player-name').value = '';
-  document.getElementById('init-player-class').value = '';
+  renderCharSheetPicker();
+  if (activeTokenMapKey && activeTokenMapUrl) renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+  sel.value = '';
+  customInp.style.display = 'none';
+  customInp.value = '';
+  clsInp.value = '';
 });
 
 document.getElementById('init-add-all-btn').addEventListener('click', function () {
@@ -6194,6 +6257,8 @@ renderInitiative();
 initSessions();
 initEncounters();
 initBundles();
+loadDmCharacterSheets();
+initAiAssistant();
 
 // ── Sidebar toggle + resize ───────────────────────────────────
 (function () {
@@ -6349,3 +6414,342 @@ initBundles();
     document.body.style.userSelect = '';
   });
 }());
+
+// ============================================================
+// AI Dungeon Master Assistant
+// ============================================================
+var AI_PROVIDER_HINTS = {
+  groq:       'Free API key: <a href="https://console.groq.com" target="_blank" style="color:#d4af37;">console.groq.com</a>',
+  gemini:     'Free API key: <a href="https://aistudio.google.com" target="_blank" style="color:#d4af37;">aistudio.google.com</a>',
+  openrouter: 'Free models: <a href="https://openrouter.ai" target="_blank" style="color:#d4af37;">openrouter.ai</a>',
+  openai:     'API key: <a href="https://platform.openai.com" target="_blank" style="color:#d4af37;">platform.openai.com</a>',
+  anthropic:  'API key: <a href="https://console.anthropic.com" target="_blank" style="color:#d4af37;">console.anthropic.com</a>',
+  ollama:     'No API key needed — runs locally. Base URL e.g. <code>http://localhost:11434</code>',
+  custom:     'Enter Base URL for any OpenAI-compatible API (e.g. LM Studio, etc.)'
+};
+
+var AI_DEFAULT_MODELS = {
+  groq:       'qwen/qwen3.8-27b',
+  gemini:     'gemini-1.5-flash',
+  openrouter: 'meta-llama/llama-3.1-8b-instruct:free',
+  openai:     'gpt-4o-mini',
+  anthropic:  'claude-3-haiku-20240307',
+  ollama:     'llama3',
+  custom:     ''
+};
+
+function initAiAssistant() {
+  var providerSelect   = document.getElementById('ai-provider-select');
+  var apiKeyInput      = document.getElementById('ai-apikey-input');
+  var apiKeyShowBtn    = document.getElementById('ai-apikey-show-btn');
+  var baseUrlInput     = document.getElementById('ai-baseurl-input');
+  var baseUrlRow       = document.getElementById('ai-baseurl-row');
+  var apiKeyRow        = document.getElementById('ai-apikey-row');
+  var modelInput       = document.getElementById('ai-model-input');
+  var systemPrompt     = document.getElementById('ai-system-prompt');
+  var saveConfigBtn    = document.getElementById('ai-save-config-btn');
+  var saveStatus       = document.getElementById('ai-save-status');
+  var providerHint     = document.getElementById('ai-provider-hint');
+  var settingsToggle   = document.getElementById('ai-settings-toggle-btn');
+  var settingsPanel    = document.getElementById('ai-settings-panel');
+  var providerBadge    = document.getElementById('ai-provider-badge');
+  var promptInput      = document.getElementById('ai-prompt-input');
+  var askBtn           = document.getElementById('ai-ask-btn');
+  var clearBtn         = document.getElementById('ai-clear-btn');
+  var ctxToggleBtn     = document.getElementById('ai-ctx-toggle-btn');
+  var ctxPreview       = document.getElementById('ai-ctx-preview');
+  var loadingSpan      = document.getElementById('ai-loading');
+  var responseWrap     = document.getElementById('ai-response-wrap');
+  var responseBox      = document.getElementById('ai-response-box');
+  var copyBtn          = document.getElementById('ai-copy-btn');
+  var sendPlayersBtn   = document.getElementById('ai-send-players-btn');
+  var errorBox         = document.getElementById('ai-error-box');
+  var chips            = document.querySelectorAll('.ai-chip');
+
+  if (!providerSelect) return;
+
+  // Load config from server
+  fetch('/api/ai-config').then(function(r) { return r.json(); }).then(function(cfg) {
+    if (cfg.provider) providerSelect.value = cfg.provider;
+    _aiKeyIsSet = !!cfg.apiKey;
+    apiKeyInput.value       = '';
+    apiKeyInput.placeholder = cfg.apiKey ? 'Key set (' + cfg.apiKey + ') — paste new key to change' : 'Paste your API key…';
+    modelInput.value      = cfg.model      || '';
+    systemPrompt.value    = cfg.systemPrompt || '';
+    if (cfg.baseUrl) baseUrlInput.value = cfg.baseUrl;
+    updateProviderUI();
+  }).catch(function() {});
+
+  var _aiKeyIsSet = false; // tracks whether server has a key saved
+
+  function updateProviderUI() {
+    var p = providerSelect.value;
+    var needsKey = p !== 'ollama';
+    apiKeyRow.style.display    = needsKey ? '' : 'none';
+    var needsUrl = p === 'ollama' || p === 'custom';
+    baseUrlRow.style.display   = needsUrl ? '' : 'none';
+    providerHint.innerHTML     = AI_PROVIDER_HINTS[p] || '';
+    var modelHint = AI_DEFAULT_MODELS[p] || '';
+    modelInput.placeholder     = modelHint ? 'Default: ' + modelHint : 'Enter model name';
+    // Update the badge
+    var labels = {
+      groq: 'Groq (Free)', gemini: 'Gemini (Free)', openrouter: 'OpenRouter',
+      openai: 'OpenAI', anthropic: 'Anthropic', ollama: 'Ollama (Local)', custom: 'Custom'
+    };
+    var keyReady = _aiKeyIsSet || !!apiKeyInput.value || p === 'ollama';
+    providerBadge.textContent   = '🤖 ' + (labels[p] || p);
+    providerBadge.style.borderColor = keyReady ? '#4ade80' : '#555';
+    providerBadge.style.color   = keyReady ? '#4ade80' : '#888';
+  }
+
+  providerSelect.addEventListener('change', updateProviderUI);
+  apiKeyInput.addEventListener('input', updateProviderUI);
+
+  // Show/hide API key
+  apiKeyShowBtn.addEventListener('click', function() {
+    apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
+  });
+
+  // Settings toggle
+  settingsToggle.addEventListener('click', function() {
+    var open = settingsPanel.style.display !== 'none';
+    settingsPanel.style.display = open ? 'none' : '';
+    settingsToggle.textContent  = open ? '⚙️ Settings' : '✕ Settings';
+  });
+
+  // Save config
+  saveConfigBtn.addEventListener('click', function() {
+    var key = apiKeyInput.value;
+    var body = {
+      provider:     providerSelect.value,
+      model:        modelInput.value,
+      systemPrompt: systemPrompt.value,
+      baseUrl:      baseUrlInput.value
+    };
+    if (key && !key.startsWith('***')) body.apiKey = key;
+    fetch('/api/ai-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function(r) { return r.json(); }).then(function(res) {
+      if (res.ok) {
+        saveStatus.style.display = '';
+        setTimeout(function() { saveStatus.style.display = 'none'; }, 2500);
+        updateProviderUI();
+        settingsPanel.style.display = 'none';
+        settingsToggle.textContent = '⚙️ Settings';
+      }
+    }).catch(function() {});
+  });
+
+  // Context preview toggle
+  if (ctxToggleBtn) {
+    ctxToggleBtn.addEventListener('click', function() {
+      var open = ctxPreview.style.display !== 'none';
+      if (open) {
+        ctxPreview.style.display = 'none';
+        ctxToggleBtn.textContent = '👁 Context';
+      } else {
+        ctxPreview.textContent   = buildSessionContext();
+        ctxPreview.style.display = '';
+        ctxToggleBtn.textContent = '✕ Context';
+      }
+    });
+  }
+
+  // Quick prompt chips
+  // Build a context string from current game state so the AI knows who's at the table
+  function buildSessionContext() {
+    var lines = ['=== Current D&D Session Context ==='];
+
+    // Active map / scene
+    var sceneLabel = '';
+    if (lastSceneViewPayload) sceneLabel = lastSceneViewPayload.label || lastSceneViewPayload.mapKey || '';
+    if (!sceneLabel && activeTokenMapKey) sceneLabel = activeTokenMapKey;
+    if (sceneLabel) lines.push('Active Scene: ' + sceneLabel);
+
+    // Build character sheet lookup by name
+    var sheetByName = {};
+    dmCharacterSheets.forEach(function(s) {
+      if (s.name) sheetByName[s.name] = s;
+    });
+
+    // Party — merge playerRoster + initiative entries + character sheets
+    var rosterMap = {};
+    playerRoster.forEach(function(p) { rosterMap[p.name] = p; });
+    var seen = {};
+    var partyLines = [];
+
+    function buildPlayerLine(name, cls, sheet) {
+      var hp = dmHpState[name];
+      var hpStr = hp ? ' (HP: ' + hp.hp + '/' + hp.maxHp + ')' : (sheet && sheet.hp ? ' (Max HP: ' + sheet.hp + ')' : '');
+      var clsStr = cls || (sheet && sheet.class ? sheet.class + (sheet.level ? ' ' + sheet.level : '') : '');
+      var raceStr = sheet && sheet.race ? sheet.race + ' ' : '';
+      var subStr = sheet && sheet.subclass ? ' (' + sheet.subclass + ')' : '';
+      var online = loggedInPlayersList.indexOf(name) >= 0 ? '' : ' (offline)';
+      var line = '• ' + name + ' — ' + raceStr + clsStr + subStr + hpStr + online;
+      var details = [];
+      if (sheet) {
+        if (sheet.ac)    details.push('AC:' + sheet.ac);
+        if (sheet.speed) details.push('Speed:' + sheet.speed + 'ft');
+        var abilities = [];
+        ['str','dex','con','int','wis','cha'].forEach(function(ab) {
+          if (sheet[ab]) {
+            var mod = Math.floor((sheet[ab] - 10) / 2);
+            abilities.push(ab.toUpperCase() + (mod >= 0 ? '+' : '') + mod);
+          }
+        });
+        if (abilities.length) details.push('Stats: ' + abilities.join(' '));
+        if (sheet.saves)  details.push('Saves: ' + sheet.saves);
+        if (sheet.skills) details.push('Skills: ' + sheet.skills);
+        if (sheet.features && sheet.features.length > 10) details.push('Features: ' + sheet.features.slice(0, 200) + (sheet.features.length > 200 ? '…' : ''));
+        if (sheet.backstory && sheet.backstory.length > 10) details.push('Backstory: ' + sheet.backstory.slice(0, 300) + (sheet.backstory.length > 300 ? '…' : ''));
+        if (sheet.personality) details.push('Personality: ' + sheet.personality.slice(0, 120));
+        if (sheet.notes && sheet.notes.length > 5) details.push('Session Notes: ' + sheet.notes.slice(0, 300) + (sheet.notes.length > 300 ? '…' : ''));
+      }
+      var initEntry = initiative.find(function(e) { return e.name === name; });
+      if (initEntry) {
+        var conds = (initEntry.conditions || []).map(function(c) { return c.name; });
+        if (conds.length) details.push('Conditions: ' + conds.join(', '));
+      }
+      return line + (details.length ? '\n    ' + details.join('\n    ') : '');
+    }
+
+    initiative.filter(function(e) { return e.isPlayer; }).forEach(function(e) {
+      seen[e.name] = true;
+      partyLines.push(buildPlayerLine(e.name, e.cls, sheetByName[e.name]));
+    });
+    playerRoster.forEach(function(p) {
+      if (seen[p.name]) return;
+      partyLines.push(buildPlayerLine(p.name, p.cls, sheetByName[p.name]));
+    });
+
+    if (partyLines.length) {
+      lines.push('');
+      lines.push('Party (' + partyLines.length + ' player' + (partyLines.length !== 1 ? 's' : '') + '):');
+      partyLines.forEach(function(l) { lines.push(l); });
+    }
+
+    // Enemies on the current map
+    var mapToks = (activeTokenMapKey && tokenState[activeTokenMapKey]) ? tokenState[activeTokenMapKey] : [];
+    var mobs = mapToks.filter(function(t) { return t.type === 'mob'; });
+    if (mobs.length) {
+      lines.push('');
+      lines.push('Enemies on Map (' + mobs.length + '):');
+      mobs.forEach(function(t) {
+        var hp = dmHpState[t.label];
+        var hpStr = hp ? ' (HP: ' + hp.hp + '/' + hp.maxHp + ')' : '';
+        var conds = (t.conditions || []).map(function(c) { return c.name; });
+        var condStr = conds.length ? ' [' + conds.join(', ') + ']' : '';
+        var statusStr = t.dead ? ' [DEAD]' : (t.hidden ? ' [hidden]' : '');
+        var typeStr = t.mobType ? ' — ' + t.mobType : '';
+        lines.push('• ' + t.label + typeStr + hpStr + statusStr + condStr);
+      });
+    }
+
+    // Initiative order if combat is running
+    if (initiative.length) {
+      lines.push('');
+      lines.push('Initiative Order (turn ' + (currentTurn + 1) + ' of ' + initiative.length + '):');
+      initiative.forEach(function(e, i) {
+        var arrow = i === currentTurn ? '→ ' : '  ';
+        var hp = dmHpState[e.name];
+        var hpStr = hp ? ' HP:' + hp.hp + '/' + hp.maxHp : '';
+        var conds = (e.conditions || []).map(function(c) { return c.name; });
+        var condStr = conds.length ? ' [' + conds.join(', ') + ']' : '';
+        lines.push((i + 1) + '. ' + arrow + e.name + (e.cls ? ' (' + e.cls + ')' : '') + hpStr + condStr);
+      });
+    }
+
+    return lines.join('\n');
+  }
+
+  chips.forEach(function(chip) {
+    chip.addEventListener('click', function() {
+      promptInput.value = chip.dataset.prompt || '';
+      promptInput.focus();
+      promptInput.setSelectionRange(promptInput.value.length, promptInput.value.length);
+    });
+  });
+
+  // Clear button
+  clearBtn.addEventListener('click', function() {
+    promptInput.value = '';
+    responseWrap.style.display = 'none';
+    errorBox.style.display = 'none';
+    responseBox.textContent = '';
+    promptInput.focus();
+  });
+
+  // Ask AI
+  function doAsk() {
+    var prompt = promptInput.value.trim();
+    if (!prompt) { promptInput.focus(); return; }
+    askBtn.disabled    = true;
+    loadingSpan.style.display = '';
+    responseWrap.style.display = 'none';
+    errorBox.style.display = 'none';
+
+    var context = buildSessionContext();
+    fetch('/api/ai-ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: context + '\n\n' + prompt })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      askBtn.disabled = false;
+      loadingSpan.style.display = 'none';
+      if (data.error) {
+        errorBox.textContent   = '⚠️ ' + data.error;
+        errorBox.style.display = '';
+      } else {
+        responseBox.textContent    = data.answer || '(no response)';
+        responseWrap.style.display = '';
+        responseBox.scrollTop = 0;
+      }
+    }).catch(function(err) {
+      askBtn.disabled = false;
+      loadingSpan.style.display = 'none';
+      errorBox.textContent   = '⚠️ Request failed: ' + (err.message || 'Network error');
+      errorBox.style.display = '';
+    });
+  }
+
+  askBtn.addEventListener('click', doAsk);
+  promptInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); doAsk(); }
+  });
+
+  // Copy response
+  copyBtn.addEventListener('click', function() {
+    var text = responseBox.textContent || '';
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(function() {
+      copyBtn.textContent = '✓ Copied!';
+      setTimeout(function() { copyBtn.textContent = '📋 Copy'; }, 1800);
+    }).catch(function() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      copyBtn.textContent = '✓ Copied!';
+      setTimeout(function() { copyBtn.textContent = '📋 Copy'; }, 1800);
+    });
+  });
+
+  // Send to Players via text overlay
+  sendPlayersBtn.addEventListener('click', function() {
+    var text = responseBox.textContent || '';
+    if (!text) return;
+    fetch('/api/overlay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'text', label: '📖 Lore', content: text })
+    }).then(function() {
+      sendPlayersBtn.textContent = '✓ Sent!';
+      setTimeout(function() { sendPlayersBtn.textContent = '📜 Send to Players'; }, 2000);
+    }).catch(function() {});
+  });
+}

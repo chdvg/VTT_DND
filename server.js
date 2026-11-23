@@ -1306,6 +1306,235 @@ app.get('/api/map-builder/state', requireDm, (req, res) => {
   }
 });
 
+// ── Character Sheets ──────────────────────────────────────────
+const CHARACTERS_FILE = path.join(DATA_DIR, 'characters.json');
+let characterSheets = [];
+
+(function loadCharacters() {
+  try {
+    if (fs.existsSync(CHARACTERS_FILE)) characterSheets = JSON.parse(fs.readFileSync(CHARACTERS_FILE, 'utf8'));
+  } catch (e) { console.error('loadCharacters error:', e.message); }
+})();
+
+function saveCharacters() {
+  try { fs.writeFileSync(CHARACTERS_FILE, JSON.stringify(characterSheets, null, 2)); }
+  catch (e) { console.error('saveCharacters error:', e.message); }
+}
+
+app.get('/characters', requireDm, (req, res) => res.sendFile(path.join(__dirname, 'characters', 'index.html')));
+app.use('/characters', requireDm, express.static(path.join(__dirname, 'characters')));
+
+app.get('/api/characters', requireDm, (req, res) => res.json({ characters: characterSheets }));
+
+app.post('/api/characters', requireDm, express.json({ limit: '2mb' }), (req, res) => {
+  const char = req.body;
+  if (!char || !char.name) return res.status(400).json({ error: 'name required' });
+  char.id = char.id || Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  char.updatedAt = new Date().toISOString();
+  const idx = characterSheets.findIndex(c => c.id === char.id);
+  if (idx >= 0) characterSheets[idx] = char;
+  else characterSheets.push(char);
+  saveCharacters();
+  res.json({ ok: true, id: char.id });
+});
+
+app.delete('/api/characters/:id', requireDm, (req, res) => {
+  const before = characterSheets.length;
+  characterSheets = characterSheets.filter(c => c.id !== req.params.id);
+  if (characterSheets.length < before) saveCharacters();
+  res.json({ ok: true });
+});
+
+// ── AI Dungeon Master Assistant ───────────────────────────────
+const AI_CONFIG_FILE = path.join(DATA_DIR, 'ai-config.json');
+let aiConfig = {
+  provider: 'groq',
+  apiKey: '',
+  model: '',
+  systemPrompt: 'You are a creative and experienced Dungeon Master assistant for D&D 5e. Provide concise, evocative, and immediately usable answers. Keep responses focused and practical for use at the game table. Avoid lengthy preambles — get straight to the content.',
+  baseUrl: ''
+};
+
+(function loadAiConfig() {
+  try {
+    if (fs.existsSync(AI_CONFIG_FILE)) {
+      const saved = JSON.parse(fs.readFileSync(AI_CONFIG_FILE, 'utf8'));
+      Object.assign(aiConfig, saved);
+    }
+  } catch (e) { console.error('loadAiConfig error:', e.message); }
+})();
+
+function saveAiConfig() {
+  try { fs.writeFileSync(AI_CONFIG_FILE, JSON.stringify(aiConfig, null, 2)); }
+  catch (e) { console.error('saveAiConfig error:', e.message); }
+}
+
+app.get('/api/ai-config', requireDm, (req, res) => {
+  const cfg = { ...aiConfig };
+  if (cfg.apiKey) cfg.apiKey = '***' + cfg.apiKey.slice(-4);
+  res.json(cfg);
+});
+
+app.post('/api/ai-config', requireDm, express.json({ limit: '64kb' }), (req, res) => {
+  const { provider, apiKey, model, systemPrompt, baseUrl } = req.body || {};
+  if (provider !== undefined) aiConfig.provider = String(provider).slice(0, 64);
+  if (apiKey && !apiKey.startsWith('***')) aiConfig.apiKey = String(apiKey).slice(0, 512);
+  if (model !== undefined) aiConfig.model = String(model || '').slice(0, 128);
+  if (systemPrompt !== undefined) aiConfig.systemPrompt = String(systemPrompt).slice(0, 2000);
+  if (baseUrl !== undefined) aiConfig.baseUrl = String(baseUrl || '').slice(0, 256);
+  saveAiConfig();
+  res.json({ ok: true });
+});
+
+app.post('/api/ai-ask', requireDm, express.json({ limit: '64kb' }), (req, res) => {
+  const { prompt } = req.body || {};
+  if (!prompt || typeof prompt !== 'string') return res.status(400).json({ error: 'prompt required' });
+  if (!aiConfig.apiKey && aiConfig.provider !== 'ollama') {
+    return res.status(400).json({ error: 'No API key configured. Click ⚙️ Settings in the AI Assistant panel to add one.' });
+  }
+  makeAiRequest(prompt).then(answer => res.json({ answer }))
+    .catch(err => res.status(500).json({ error: err.message || 'AI request failed' }));
+});
+
+function makeAiRequest(prompt) {
+  const provider = aiConfig.provider;
+  const apiKey   = aiConfig.apiKey;
+  const system   = aiConfig.systemPrompt || 'You are a D&D 5e Dungeon Master assistant.';
+  if (provider === 'groq') {
+    return openAiCompatRequest('https://api.groq.com/openai/v1/chat/completions', apiKey, aiConfig.model || 'qwen/qwen3.8-27b', system, prompt);
+  }
+  if (provider === 'openai') {
+    return openAiCompatRequest('https://api.openai.com/v1/chat/completions', apiKey, aiConfig.model || 'gpt-4o-mini', system, prompt);
+  }
+  if (provider === 'openrouter') {
+    return openAiCompatRequest('https://openrouter.ai/api/v1/chat/completions', apiKey, aiConfig.model || 'meta-llama/llama-3.1-8b-instruct:free', system, prompt);
+  }
+  if (provider === 'gemini') {
+    return geminiRequest(apiKey, aiConfig.model || 'gemini-1.5-flash', system, prompt);
+  }
+  if (provider === 'anthropic') {
+    return anthropicRequest(apiKey, aiConfig.model || 'claude-3-haiku-20240307', system, prompt);
+  }
+  if (provider === 'ollama') {
+    const base = (aiConfig.baseUrl || 'http://localhost:11434').replace(/\/$/, '');
+    return openAiCompatRequest(base + '/v1/chat/completions', null, aiConfig.model || 'llama3', system, prompt, true);
+  }
+  if (provider === 'custom') {
+    const base = (aiConfig.baseUrl || '').replace(/\/$/, '');
+    if (!base) return Promise.reject(new Error('Custom provider requires a Base URL'));
+    return openAiCompatRequest(base + '/chat/completions', apiKey, aiConfig.model || 'gpt-3.5-turbo', system, prompt, base.startsWith('http://'));
+  }
+  return Promise.reject(new Error('Unknown provider: ' + provider));
+}
+
+function openAiCompatRequest(url, apiKey, model, system, userPrompt, useHttp) {
+  const lib = useHttp ? require('http') : https;
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      model,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: userPrompt }],
+      max_tokens: 1024,
+      temperature: 0.8
+    });
+    let urlObj;
+    try { urlObj = new URL(url); } catch (e) { return reject(new Error('Invalid URL: ' + url)); }
+    const options = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || (useHttp ? 80 : 443),
+      path: urlObj.pathname + (urlObj.search || ''),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+    };
+    if (apiKey) options.headers['Authorization'] = 'Bearer ' + apiKey;
+    const req = lib.request(options, (response) => {
+      let data = '';
+      response.on('data', c => data += c);
+      response.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) return reject(new Error(parsed.error.message || JSON.stringify(parsed.error)));
+          const content = parsed.choices && parsed.choices[0] && parsed.choices[0].message && parsed.choices[0].message.content;
+          if (!content) return reject(new Error('Empty response from AI. Status: ' + response.statusCode));
+          resolve(content.trim());
+        } catch (_) { reject(new Error('Failed to parse response (HTTP ' + response.statusCode + '): ' + data.slice(0, 300))); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(45000, () => { req.destroy(new Error('AI request timed out after 45 seconds')); });
+    req.write(body);
+    req.end();
+  });
+}
+
+function geminiRequest(apiKey, model, system, userPrompt) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      system_instruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+      generationConfig: { maxOutputTokens: 1024, temperature: 0.8 }
+    });
+    const options = {
+      hostname: 'generativelanguage.googleapis.com',
+      port: 443,
+      path: '/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+    };
+    const req = https.request(options, (response) => {
+      let data = '';
+      response.on('data', c => data += c);
+      response.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) return reject(new Error(parsed.error.message || JSON.stringify(parsed.error)));
+          const content = parsed.candidates && parsed.candidates[0] && parsed.candidates[0].content && parsed.candidates[0].content.parts && parsed.candidates[0].content.parts[0] && parsed.candidates[0].content.parts[0].text;
+          if (!content) return reject(new Error('Empty Gemini response (HTTP ' + response.statusCode + ')'));
+          resolve(content.trim());
+        } catch (_) { reject(new Error('Failed to parse Gemini response: ' + data.slice(0, 300))); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(45000, () => { req.destroy(new Error('Gemini request timed out')); });
+    req.write(body);
+    req.end();
+  });
+}
+
+function anthropicRequest(apiKey, model, system, userPrompt) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({ model, system, messages: [{ role: 'user', content: userPrompt }], max_tokens: 1024 });
+    const options = {
+      hostname: 'api.anthropic.com',
+      port: 443,
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      }
+    };
+    const req = https.request(options, (response) => {
+      let data = '';
+      response.on('data', c => data += c);
+      response.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) return reject(new Error(parsed.error.message || JSON.stringify(parsed.error)));
+          const content = parsed.content && parsed.content[0] && parsed.content[0].text;
+          if (!content) return reject(new Error('Empty Anthropic response (HTTP ' + response.statusCode + ')'));
+          resolve(content.trim());
+        } catch (_) { reject(new Error('Failed to parse Anthropic response: ' + data.slice(0, 300))); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(45000, () => { req.destroy(new Error('Anthropic request timed out')); });
+    req.write(body);
+    req.end();
+  });
+}
+
 app.get('/', requireDm, (req, res) => { res.sendFile(path.join(__dirname, 'dm', 'index.html')); });
 app.use('/dm', requireDm);
 app.get('/remote/player', (req, res) => { res.sendFile(path.join(__dirname, 'remote', 'player.html')); });
