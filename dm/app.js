@@ -1264,28 +1264,95 @@ function renderScenesPanel() {
         });
         if (pinnedScenes.length) {
           var pinnedHdr = document.createElement('div');
-          pinnedHdr.style.cssText = 'font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#d4af37;padding:0.3rem 0.1rem 0.25rem;border-bottom:1px solid #d4af3733;margin-bottom:0.3rem;';
+          pinnedHdr.style.cssText = 'font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#d4af37;padding:0.3rem 0.1rem 0.25rem;border-bottom:1px solid #d4af3733;margin-bottom:0.4rem;';
           pinnedHdr.textContent = '📌 ' + activeCampaignName;
           mapList.appendChild(pinnedHdr);
+
+          // Render as compact flat list — one row per view, grouped by scene with a small label
           pinnedScenes.forEach(function (scene) {
             var sIdx = sceneData.indexOf(scene);
-            renderSceneGroup(mapList, scene, sIdx);
             pinnedIds.add(scene.id);
+            if (!scene.views || !scene.views.length) return;
+
+            // Scene sub-label (only if more than one view)
+            if (scene.views.length > 1) {
+              var subHdr = document.createElement('div');
+              subHdr.style.cssText = 'font-size:0.68rem;color:#555;padding:0.2rem 0.3rem 0.1rem;font-weight:600;';
+              subHdr.textContent = scene.label || scene.tab;
+              mapList.appendChild(subHdr);
+            }
+
+            scene.views.forEach(function (view, vIdx) {
+              var row = document.createElement('div');
+              row.className = 'view-row';
+              var rowTop = document.createElement('div');
+              rowTop.className = 'view-row-top';
+
+              var thumb = document.createElement('img');
+              thumb.src = view.image;
+              thumb.className = 'view-thumb';
+              rowTop.appendChild(thumb);
+
+              var lbl = document.createElement('span');
+              lbl.className = 'view-label';
+              // If only one view in scene, show scene name; otherwise show view name
+              lbl.textContent = scene.views.length === 1 ? (scene.label || view.label) : view.label;
+              rowTop.appendChild(lbl);
+
+              if (view.fog) {
+                var fogIcon = document.createElement('span');
+                fogIcon.textContent = '🌫️';
+                fogIcon.style.cssText = 'flex:none;font-size:0.85rem;';
+                rowTop.appendChild(fogIcon);
+              }
+              row.appendChild(rowTop);
+
+              var rowBtns = document.createElement('div');
+              rowBtns.className = 'view-row-btns';
+              var showBtn = document.createElement('button');
+              showBtn.textContent = '▶ Show';
+              showBtn.className = 'btn btn-primary btn-small';
+              showBtn.onclick = (function (si, vi) {
+                return function () { showSceneView(si, vi); };
+              })(sIdx, vIdx);
+              rowBtns.appendChild(showBtn);
+              row.appendChild(rowBtns);
+              mapList.appendChild(row);
+            });
           });
+
           var divider = document.createElement('div');
           divider.style.cssText = 'border-top:1px solid #21262d;margin:0.5rem 0;';
           mapList.appendChild(divider);
+
+          // "Browse all scenes" collapsible fallback for non-pinned scenes
+          var remainingScenes = sceneData.filter(function (s) { return !pinnedIds.has(s.id); });
+          if (remainingScenes.length) {
+            var browseDetails = document.createElement('details');
+            var browseSummary = document.createElement('summary');
+            browseSummary.style.cssText = 'font-size:0.72rem;color:#444;cursor:pointer;padding:0.2rem 0.1rem;list-style:none;user-select:none;';
+            browseSummary.textContent = '▾ Browse all scenes (' + remainingScenes.length + ')';
+            browseDetails.appendChild(browseSummary);
+            var browseWrap = document.createElement('div');
+            browseWrap.style.marginTop = '0.4rem';
+            remainingScenes.forEach(function (scene) {
+              renderSceneGroup(browseWrap, scene, sceneData.indexOf(scene));
+            });
+            browseDetails.appendChild(browseWrap);
+            mapList.appendChild(browseDetails);
+          }
+          return; // done — no tab view needed when campaign scenes are pinned
         }
       }
 
-      // ── Normal tab mode (excludes scenes already shown in pinned section) ──
-      var tabScenes = sceneData.filter(function (s) { return !pinnedIds.has(s.id); });
+      // ── No pinned scenes: show full tab view ──
+      var tabScenes = sceneData;
       var tabs = [];
       tabScenes.forEach(function (s) {
         var t = s.tab || s.label;
         if (tabs.indexOf(t) === -1) tabs.push(t);
       });
-      if (!tabs.length) return; // all scenes are pinned, nothing left to show
+      if (!tabs.length) return;
       if (!currentTab || tabs.indexOf(currentTab) === -1) currentTab = tabs[0];
 
       var tabBar = document.createElement('div');
@@ -1326,7 +1393,7 @@ function renderScenesPanel() {
       });
       mapList.appendChild(tabBar);
 
-      tabScenes.forEach(function (scene, sIdx) {
+      tabScenes.forEach(function (scene) {
         if ((scene.tab || scene.label) !== currentTab) return;
         renderSceneGroup(mapList, scene, sceneData.indexOf(scene));
       });
