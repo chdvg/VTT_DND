@@ -1253,6 +1253,29 @@ function renderScenesPanel() {
         return;
       }
 
+      // ── Pinned: scenes assigned to the active campaign or All Campaigns ──
+      if (activeCampaignName) {
+        var pinnedScenes = sceneData.filter(function (s) {
+          return Array.isArray(s.campaigns) && (
+            s.campaigns.indexOf('__all__') >= 0 ||
+            s.campaigns.indexOf(activeCampaignName) >= 0
+          );
+        });
+        if (pinnedScenes.length) {
+          var pinnedHdr = document.createElement('div');
+          pinnedHdr.style.cssText = 'font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#d4af37;padding:0.3rem 0.1rem 0.25rem;border-bottom:1px solid #d4af3733;margin-bottom:0.3rem;';
+          pinnedHdr.textContent = '📌 ' + activeCampaignName;
+          mapList.appendChild(pinnedHdr);
+          pinnedScenes.forEach(function (scene) {
+            var sIdx = sceneData.indexOf(scene);
+            renderSceneGroup(mapList, scene, sIdx);
+          });
+          var divider = document.createElement('div');
+          divider.style.cssText = 'border-top:1px solid #21262d;margin:0.5rem 0;';
+          mapList.appendChild(divider);
+        }
+      }
+
       // ── Normal tab mode ──
       var tabs = [];
       sceneData.forEach(function (s) {
