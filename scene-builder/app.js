@@ -6,6 +6,8 @@ var sbAudioList   = [];   // populated from /api/audio
 var sbEditingId   = null; // id of scene being edited, or null for new
 var sbAllScenes   = [];   // cached full scene list
 var sbSearchTerm  = '';
+var sbCampaigns   = [];   // all campaign names
+var sbSceneCampaigns = []; // campaigns assigned to current scene being edited
 
 // ── DOM refs ─────────────────────────────────────────────────
 var elSearch       = null;
@@ -41,14 +43,17 @@ document.addEventListener('DOMContentLoaded', function () {
     renderSidebarList();
   };
 
-  // Load audio and scene data in parallel
+  // Load audio, scenes, and campaigns in parallel
   Promise.all([
     fetch('/api/audio').then(function (r) { return r.json(); }),
-    fetch('/api/scenes').then(function (r) { return r.json(); })
+    fetch('/api/scenes').then(function (r) { return r.json(); }),
+    fetch('/api/campaigns').then(function (r) { return r.json(); })
   ]).then(function (results) {
-    sbAudioList  = results[0].audio      || [];
-    sbAllScenes  = results[1].scenes     || [];
+    sbAudioList  = results[0].audio   || [];
+    sbAllScenes  = results[1].scenes  || [];
+    sbCampaigns  = results[2].campaigns || [];
     renderSidebarList();
+    renderCampaignPicker();
 
     // Auto-load scene from URL param
     var params  = new URLSearchParams(window.location.search);
@@ -164,7 +169,9 @@ function clearForm() {
   sbViews = [];
   elTab.value        = '';
   elSceneLabel.value = '';
+  sbSceneCampaigns = [];
   elFormTitle.textContent = 'New Scene';
+  renderCampaignPicker();
   renderViewList();
 }
 
@@ -172,11 +179,13 @@ function loadSceneIntoForm(scene) {
   sbEditingId = scene.id;
   elTab.value        = scene.tab   || '';
   elSceneLabel.value = scene.label || '';
+  sbSceneCampaigns   = Array.isArray(scene.campaigns) ? scene.campaigns.slice() : [];
   elFormTitle.textContent = 'Editing: ' + (scene.label || scene.id);
   sbViews = scene.views.map(function (v) {
     return { label: v.label, image: v.image, audio: v.audio || null, fog: v.fog === true };
   });
   sbFocusedViewIdx = sbViews.length > 0 ? 0 : -1;
+  renderCampaignPicker();
   renderViewList();
   updatePreview(sbFocusedViewIdx);
   window.scrollTo(0, 0);
@@ -192,6 +201,62 @@ function startNewScene() {
   sbViews = [];
   renderViewList();
   addViewRow();
+}
+
+// ── Campaign picker ───────────────────────────────────────────
+function renderCampaignPicker() {
+  var wrap = document.getElementById('sb-campaigns-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  // "All Campaigns" chip — always first
+  var allActive = sbSceneCampaigns.indexOf('__all__') >= 0;
+  var allChip = document.createElement('button');
+  allChip.type = 'button';
+  allChip.textContent = (allActive ? '✓ ' : '') + '🌐 All Campaigns';
+  allChip.title = 'Pin to top for every campaign, including future ones';
+  allChip.style.cssText = 'padding:0.2rem 0.6rem;font-size:0.75rem;border-radius:4px;cursor:pointer;border:1px solid ' +
+    (allActive ? '#34d399' : '#30363d') + ';background:' +
+    (allActive ? 'rgba(52,211,153,0.1)' : '#0d1117') + ';color:' +
+    (allActive ? '#34d399' : '#888') + ';transition:all 0.15s;';
+  allChip.addEventListener('click', function () {
+    var idx = sbSceneCampaigns.indexOf('__all__');
+    if (idx >= 0) sbSceneCampaigns.splice(idx, 1);
+    else sbSceneCampaigns = ['__all__']; // __all__ is exclusive — clear others
+    renderCampaignPicker();
+  });
+  wrap.appendChild(allChip);
+
+  if (!sbCampaigns.length) {
+    var noC = document.createElement('span');
+    noC.style.cssText = 'color:#444;font-size:0.78rem;';
+    noC.textContent = 'No named campaigns yet.';
+    wrap.appendChild(noC);
+    return;
+  }
+
+  // Individual campaign chips (disabled when __all__ is active)
+  sbCampaigns.forEach(function (name) {
+    var active = !allActive && sbSceneCampaigns.indexOf(name) >= 0;
+    var chip = document.createElement('button');
+    chip.type = 'button';
+    chip.textContent = (active ? '✓ ' : '') + name;
+    chip.disabled = allActive;
+    chip.style.cssText = 'padding:0.2rem 0.6rem;font-size:0.75rem;border-radius:4px;cursor:' +
+      (allActive ? 'default' : 'pointer') + ';border:1px solid ' +
+      (active ? '#d4af37' : '#30363d') + ';background:' +
+      (active ? 'rgba(212,175,55,0.12)' : '#0d1117') + ';color:' +
+      (allActive ? '#333' : (active ? '#d4af37' : '#888')) + ';transition:all 0.15s;opacity:' +
+      (allActive ? '0.4' : '1') + ';';
+    chip.addEventListener('click', function () {
+      if (allActive) return;
+      var idx = sbSceneCampaigns.indexOf(name);
+      if (idx >= 0) sbSceneCampaigns.splice(idx, 1);
+      else sbSceneCampaigns.push(name);
+      renderCampaignPicker();
+    });
+    wrap.appendChild(chip);
+  });
 }
 
 // ── View rows ─────────────────────────────────────────────────
@@ -391,6 +456,7 @@ function saveScene() {
     label.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now());
   var newScene = {
     id: sceneId, tab: tab, label: label,
+    campaigns: sbSceneCampaigns.slice(),
     views: validViews.map(function (v, i) {
       return {
         id:    sceneId + '-view-' + i,
