@@ -1254,6 +1254,7 @@ function renderScenesPanel() {
       }
 
       // ── Pinned: scenes assigned to the active campaign or All Campaigns ──
+      var pinnedIds = new Set();
       if (activeCampaignName) {
         var pinnedScenes = sceneData.filter(function (s) {
           return Array.isArray(s.campaigns) && (
@@ -1269,6 +1270,7 @@ function renderScenesPanel() {
           pinnedScenes.forEach(function (scene) {
             var sIdx = sceneData.indexOf(scene);
             renderSceneGroup(mapList, scene, sIdx);
+            pinnedIds.add(scene.id);
           });
           var divider = document.createElement('div');
           divider.style.cssText = 'border-top:1px solid #21262d;margin:0.5rem 0;';
@@ -1276,19 +1278,21 @@ function renderScenesPanel() {
         }
       }
 
-      // ── Normal tab mode ──
+      // ── Normal tab mode (excludes scenes already shown in pinned section) ──
+      var tabScenes = sceneData.filter(function (s) { return !pinnedIds.has(s.id); });
       var tabs = [];
-      sceneData.forEach(function (s) {
+      tabScenes.forEach(function (s) {
         var t = s.tab || s.label;
         if (tabs.indexOf(t) === -1) tabs.push(t);
       });
+      if (!tabs.length) return; // all scenes are pinned, nothing left to show
       if (!currentTab || tabs.indexOf(currentTab) === -1) currentTab = tabs[0];
 
       var tabBar = document.createElement('div');
       tabBar.className = 'tab-bar';
       tabs.forEach(function (tab) {
         var firstImg = '';
-        sceneData.forEach(function (s) {
+        tabScenes.forEach(function (s) {
           if ((s.tab || s.label) === tab && !firstImg && s.views && s.views.length) firstImg = s.views[0].image;
         });
         var btn = document.createElement('button');
@@ -1322,9 +1326,9 @@ function renderScenesPanel() {
       });
       mapList.appendChild(tabBar);
 
-      sceneData.forEach(function (scene, sIdx) {
+      tabScenes.forEach(function (scene, sIdx) {
         if ((scene.tab || scene.label) !== currentTab) return;
-        renderSceneGroup(mapList, scene, sIdx);
+        renderSceneGroup(mapList, scene, sceneData.indexOf(scene));
       });
     })
     .catch(function (e) {
