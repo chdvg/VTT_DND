@@ -3594,7 +3594,7 @@ function renderTokenControls(mapUrl, mapKey) {
 function editScene(sceneIdx) {
   var scene = sceneData[sceneIdx];
   if (!scene) return;
-  window.open('/scene-builder?edit=' + encodeURIComponent(scene.id), '_blank');
+  location.href = '/scene-builder?edit=' + encodeURIComponent(scene.id);
 }
 
 // ── Section Drag & Drop — DOM reorder ──────────────────────────────────
