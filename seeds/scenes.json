@@ -16,7 +16,8 @@
         "label": "Tresandor_Manor",
         "image": "/assets/maps/tresandor_manor_exterior.webp",
         "audio": null,
-        "fog": false
+        "fog": false,
+        "fit": "contain"
       }
     ]
   },
@@ -53,7 +54,8 @@
         "label": "Alderleaf Farm",
         "image": "/assets/maps/Alderleaf.png",
         "audio": null,
-        "fog": false
+        "fog": false,
+        "fit": "contain"
       },
       {
         "id": "phandalin-orchard-1775350349884-view-4",
