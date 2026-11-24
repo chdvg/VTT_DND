@@ -27,7 +27,35 @@ The DM panel and player screen stay in sync via WebSocket. Everything the DM doe
 - **Live search** — Filter maps by area, scene, or map name; filter audio by category or track title
 - **Chain navigation** — Each map row has a dropdown to jump-to any other map in the same scene
 - **Image fit modes** — Per-map cycling button: 📐 Fit / 🔲 Cover / ⬜ Fill; setting is saved per map
-- **Scene Builder** — Create and edit scenes; assign per-map ambience audio, fog toggle, and fit mode; file picker auto-fills image URL
+- **Campaign-pinned sidebar** — When a campaign is active, only scenes assigned to that campaign appear in the sidebar (see Scene Builder); a collapsed *Browse all scenes* fallback is available for unassigned scenes
+
+### Scene Builder
+A dedicated prep tool at **`/scene-builder`** (link in the DM panel header — opens in the same tab).
+
+**Layout:**
+- **Left sidebar** — searchable list of all scenes grouped by Area; Edit and Delete buttons per scene
+- **Right form** — Area + Scene name inputs, view rows (each row = one map), Save button
+- **Preview panel** — live map image preview on the right; auto-previews the first map when you open a scene for editing; click **👁 Preview** on any row to switch
+
+**Building a scene:**
+1. Enter an Area (e.g. *Phandalin*) and Scene name (e.g. *Stonehill Inn*)
+2. Click **+ New Map** to add a view row; fill in the map label, pick an image file or paste a URL, choose optional ambience audio, and toggle Fog of War
+3. Add as many map rows as needed (e.g. Ground Floor, Upper Floor, Cellar)
+4. Assign to campaigns (see below)
+5. Click **💾 Save Scene**
+
+**Campaign assignment:**
+Each scene can be pinned to one or more campaigns so it appears at the top of the DM sidebar during that campaign's sessions:
+
+| Chip | Behaviour |
+|------|-----------|
+| 🌐 **All Campaigns** | Pins scene to top of sidebar for every campaign, including future ones — ideal for reusable scenes (generic tavern, forest ambush, camp) |
+| **Campaign name** | Pins to that campaign only; selecting *All Campaigns* disables individual chips |
+| *(none selected)* | Scene lives in the full tab view, accessible via *Browse all scenes* |
+
+**Drag-and-drop upload:** Drop any image file (JPG, PNG, WebP, GIF) anywhere on the Scene Builder page to upload it directly to `public/assets/maps/`. The dropped file fills the currently focused view row automatically.
+
+**Editing existing scenes:** Click **✏️ Edit** on any scene in the sidebar — the form loads immediately with the preview showing the first map. The URL updates to `/scene-builder?edit=SCENE_ID` so you can bookmark or share it.
 
 ### Map Builder
 A full tile-based map editor accessible at `/map-builder` from the DM machine (link in the DM panel header).
@@ -128,6 +156,7 @@ Procedural tiles render from canvas code — no external files. Kenney tiles are
 - **Loop** or **Once** buttons per track — sends with the correct loop flag to players
 - Per-map ambience with a 🔁/▶️ toggle saved on the scene
 - **Auto-stop** — audio stops automatically when switching to a new map view
+- **Now-playing indicator** — when a scene with ambience is active, the Map Control toolbar shows `🎵 trackname ⏹`; click ⏹ to stop immediately without scrolling to the audio panel
 - **⏹ Stop All Audio** — immediately silences both DM previews and all player screens
 
 ### Player Screen
@@ -897,19 +926,14 @@ localStorage.removeItem('dm-panel-order');
 ```
 
 Default order:
-1. Map Control *(active map, BLACKOUT, CLEAR, fog, tokens, drawing)*
-2. Initiative Tracker
-3. Reference *(Active Conditions · Condition Dictionary)*
-4. Dice Roller
-5. Send Text
-6. Send Image
-7. Monster Lookup
-8. Scene Builder
+1. Map Control *(active map, BLACKOUT, CLEAR, fog, tokens, drawing, now-playing audio indicator)*
+2. Reference *(Active Conditions · Condition Dictionary)*
+3. Session Log
+4. AI Assistant *(full width)*
+5. Monster Lookup
+6. Send Text / Send Image *(hidden, opened via Map Control buttons)*
 
-**Right sidebar** (fixed, non-reorderable):
-1. Character Quick Setup *(select characters → add to roster, map, initiative)*
-2. Dice Roller
-3. Initiative Tracker
+**↺ Layout** button in the DM header resets panel order and widths to these defaults (clears localStorage).
 
 ---
 
