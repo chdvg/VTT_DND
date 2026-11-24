@@ -2544,11 +2544,36 @@ function renderTokenControls(mapUrl, mapKey) {
   mapHeaderRow.appendChild(gridBtn);
 
   if (movePartyMode) {
+    // Type quick-select buttons
+    var typeGroups = [
+      { label: '🟢 Players', color: 'green',  title: 'Select all player tokens' },
+      { label: '🔴 Enemies', color: 'red',    title: 'Select all enemy tokens' },
+      { label: '🔵 Friends', color: 'blue',   title: 'Select all friend tokens' },
+      { label: '🟡 Unknown', color: 'yellow', title: 'Select all unknown tokens' },
+    ];
+    typeGroups.forEach(function(tg) {
+      var typeTokens = (tokenState[mapKey] || []).filter(function(t) { return t.color === tg.color; });
+      if (!typeTokens.length) return;
+      var allSel = typeTokens.every(function(t) { return selectedTokenIds.has(t.id); });
+      var btn = document.createElement('button');
+      btn.textContent = tg.label;
+      btn.title = tg.title + (allSel ? ' (click to deselect)' : '');
+      btn.style.cssText = 'font-size:0.68rem;padding:0.18rem 0.45rem;border-radius:4px;cursor:pointer;white-space:nowrap;border:1px solid ' +
+        (allSel ? '#facc15' : '#30363d') + ';background:' +
+        (allSel ? 'rgba(250,204,21,0.15)' : '#0d1117') + ';color:' +
+        (allSel ? '#facc15' : '#aaa') + ';';
+      btn.onclick = function () {
+        if (allSel) typeTokens.forEach(function(t) { selectedTokenIds.delete(t.id); });
+        else        typeTokens.forEach(function(t) { selectedTokenIds.add(t.id); });
+        renderTokenControls(mapUrl, mapKey);
+      };
+      mapHeaderRow.appendChild(btn);
+    });
+
     var selAllBtn = document.createElement('button');
-    selAllBtn.textContent = '☑ All Players';
-    selAllBtn.title = 'Select all player tokens';
-    selAllBtn.style.cssText = 'font-size:0.72rem;padding:0.18rem 0.5rem;border-radius:4px;cursor:pointer;white-space:nowrap;' +
-      'border:1px solid #30363d;background:#0d1117;color:#aaa;';
+    selAllBtn.textContent = '☑ All';
+    selAllBtn.title = 'Select all tokens';
+    selAllBtn.style.cssText = 'font-size:0.68rem;padding:0.18rem 0.45rem;border-radius:4px;cursor:pointer;white-space:nowrap;border:1px solid #30363d;background:#0d1117;color:#aaa;';
     selAllBtn.onclick = function () {
       (tokenState[mapKey] || []).forEach(function (t) { selectedTokenIds.add(t.id); });
       renderTokenControls(mapUrl, mapKey);
@@ -2558,8 +2583,7 @@ function renderTokenControls(mapUrl, mapKey) {
     var clearSelBtn = document.createElement('button');
     clearSelBtn.textContent = '✕ Clear';
     clearSelBtn.title = 'Clear selection';
-    clearSelBtn.style.cssText = 'font-size:0.72rem;padding:0.18rem 0.5rem;border-radius:4px;cursor:pointer;white-space:nowrap;' +
-      'border:1px solid #30363d;background:#0d1117;color:#aaa;';
+    clearSelBtn.style.cssText = 'font-size:0.68rem;padding:0.18rem 0.45rem;border-radius:4px;cursor:pointer;white-space:nowrap;border:1px solid #30363d;background:#0d1117;color:#aaa;';
     clearSelBtn.onclick = function () {
       selectedTokenIds.clear();
       renderTokenControls(mapUrl, mapKey);
