@@ -67,56 +67,80 @@ document.addEventListener('DOMContentLoaded', function () {
 // ── Sidebar list ─────────────────────────────────────────────
 function renderSidebarList() {
   if (!elSceneList) return;
+  elSceneList.innerHTML = '';
+
   if (!sbAllScenes.length) {
     elSceneList.innerHTML = '<div class="scene-list-empty">No scenes yet.<br>Use the form to create your first scene.</div>';
     return;
   }
 
+  var term = sbSearchTerm;
+
   // Group by tab/area
   var groups = {};
+  var groupOrder = [];
   sbAllScenes.forEach(function (s) {
     var area = s.tab || 'Uncategorized';
-    if (!groups[area]) groups[area] = [];
+    if (!groups[area]) { groups[area] = []; groupOrder.push(area); }
     groups[area].push(s);
   });
 
-  var term = sbSearchTerm;
-  var html = '';
-  Object.keys(groups).sort().forEach(function (area) {
+  var anyShown = false;
+  groupOrder.forEach(function (area) {
     var scenes = groups[area].filter(function (s) {
       if (!term) return true;
-      return (s.label || '').toLowerCase().includes(term) ||
-             (s.tab || '').toLowerCase().includes(term);
+      return (s.label || '').toLowerCase().indexOf(term) >= 0 ||
+             (s.tab   || '').toLowerCase().indexOf(term) >= 0;
     });
     if (!scenes.length) return;
-    html += '<div class="scene-group-hdr">' + escHtml(area) + '</div>';
+    anyShown = true;
+
+    var hdr = document.createElement('div');
+    hdr.className = 'scene-group-hdr';
+    hdr.textContent = area;
+    elSceneList.appendChild(hdr);
+
     scenes.forEach(function (s) {
-      html += '<div class="scene-item" data-id="' + escHtml(s.id) + '">' +
-        '<span class="scene-item-label" title="' + escHtml(s.label) + '">' + escHtml(s.label) + '</span>' +
-        '<button class="btn-edit" onclick="handleEditClick(' + JSON.stringify(s.id) + ')">✏️ Edit</button>' +
-        '<button class="btn-del" onclick="handleDeleteClick(' + JSON.stringify(s.id) + ')" title="Delete scene">✕</button>' +
-        '</div>';
+      var item = document.createElement('div');
+      item.className = 'scene-item';
+      item.dataset.id = s.id;
+
+      var lbl = document.createElement('span');
+      lbl.className = 'scene-item-label';
+      lbl.textContent = s.label || s.id;
+      lbl.title = s.label || s.id;
+      item.appendChild(lbl);
+
+      var editBtn = document.createElement('button');
+      editBtn.className = 'btn-edit';
+      editBtn.textContent = '✏️ Edit';
+      editBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        loadSceneIntoForm(s);
+      });
+      item.appendChild(editBtn);
+
+      var delBtn = document.createElement('button');
+      delBtn.className = 'btn-del';
+      delBtn.title = 'Delete scene';
+      delBtn.textContent = '✕';
+      delBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        handleDeleteById(s.id, s.label);
+      });
+      item.appendChild(delBtn);
+
+      elSceneList.appendChild(item);
     });
   });
 
-  if (!html) {
+  if (!anyShown) {
     elSceneList.innerHTML = '<div class="scene-list-empty">No matching scenes.</div>';
-    return;
   }
-  elSceneList.innerHTML = html;
 }
 
-function handleEditClick(sceneId) {
-  var scene = sbAllScenes.find(function (s) { return s.id === sceneId; });
-  if (!scene) return;
-  loadSceneIntoForm(scene);
-}
-
-function handleDeleteClick(sceneId) {
-  var scene = sbAllScenes.find(function (s) { return s.id === sceneId; });
-  if (!scene) return;
-  if (!confirm('Delete scene "' + scene.label + '"? This cannot be undone.')) return;
-
+function handleDeleteById(sceneId, sceneLabel) {
+  if (!confirm('Delete scene "' + (sceneLabel || sceneId) + '"? This cannot be undone.')) return;
   var updated = sbAllScenes.filter(function (s) { return s.id !== sceneId; });
   fetch('/api/scenes', {
     method: 'POST',
@@ -128,7 +152,6 @@ function handleDeleteClick(sceneId) {
       if (!resp.ok) { showStatus('Error deleting: ' + (resp.error || 'unknown'), 'err'); return; }
       sbAllScenes = updated;
       renderSidebarList();
-      // If we were editing this scene, clear the form
       if (sbEditingId === sceneId) clearForm();
       showStatus('Scene deleted.', 'ok');
     })
