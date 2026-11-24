@@ -20,6 +20,7 @@
       <a href="/scene-builder" class="dm-logout-btn" title="Scene Builder" style="color:#34d399;border-color:#34d399;">🎭 Scene Builder</a>
       <a href="/characters" class="dm-logout-btn" title="Character Sheets" style="color:#a78bfa;border-color:#a78bfa;">📋 Characters</a>
       <a href="/dm-logout" class="dm-logout-btn" title="Lock DM panel">🔒 Lock</a>
+      <button onclick="localStorage.removeItem('dm-panel-order');localStorage.removeItem('dm-panel-widths');location.reload();" class="dm-logout-btn" title="Reset panel layout to defaults" style="cursor:pointer;background:none;">↺ Layout</button>
     </div>
   </header>
   <div class="app-layout">
@@ -348,23 +349,6 @@
       </details>
     </section>
 
-    <!-- ── Monster Lookup ── -->
-    <section class="panel col-2" id="section-monster">
-      <details>
-        <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠇</span>🐉 Monster Lookup<span class="sb-chevron">▶</span></summary>
-        <div style="margin-top:0.75rem;">
-          <div class="monster-search-row">
-            <input type="text" id="monster-search-input" placeholder="Search monster name (e.g. Goblin)…" />
-            <button id="monster-search-btn" class="btn btn-secondary">🔍 Search</button>
-            <button id="monster-clear-btn" class="btn btn-warning btn-small" style="white-space:nowrap;">&times; Clear</button>
-          </div>
-
-          <div id="monster-results-list"></div>
-          <div id="monster-stat-block"></div>
-        </div>
-      </details>
-    </section>
-
     <!-- ── Session Event Log ── -->
     <section class="panel col-2" id="section-event-log">
       <details>
@@ -533,6 +517,22 @@
       </details>
     </section>
 
+    <!-- ── Monster Lookup ── -->
+    <section class="panel col-2" id="section-monster">
+      <details>
+        <summary class="panel-summary"><span class="drag-handle" title="Drag to reorder">⠇</span>🐉 Monster Lookup<span class="sb-chevron">▶</span></summary>
+        <div style="margin-top:0.75rem;">
+          <div class="monster-search-row">
+            <input type="text" id="monster-search-input" placeholder="Search monster name (e.g. Goblin)…" />
+            <button id="monster-search-btn" class="btn btn-secondary">🔍 Search</button>
+            <button id="monster-clear-btn" class="btn btn-warning btn-small" style="white-space:nowrap;">&times; Clear</button>
+          </div>
+          <div id="monster-results-list"></div>
+          <div id="monster-stat-block"></div>
+        </div>
+      </details>
+    </section>
+
     </div><!-- end panel-grid -->
     </main>
     <aside class="sidebar-right" id="sidebar-right">
@@ -635,7 +635,7 @@
       </section>
     </aside>
   </div><!-- end app-layout -->
-  <script src="/dm/app.js?v=3.9.17"></script>
+  <script src="/dm/app.js?v=3.9.18"></script>
   <div id="map-drop-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9998;align-items:center;justify-content:center;pointer-events:none;">
     <div style="border:3px dashed #d4af37;border-radius:16px;padding:3rem 4rem;text-align:center;color:#d4af37;">
       <div style="font-size:3rem;">🗺️</div>
