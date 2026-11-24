@@ -144,7 +144,8 @@
         "label": "road",
         "image": "/assets/maps/travel.webp",
         "audio": "/assets/audio/Atmosphere - BirdChirping.wav",
-        "fog": false
+        "fog": false,
+        "audioLoop": false
       }
     ]
   },
@@ -161,7 +162,8 @@
         "label": "Downstairs",
         "image": "/assets/maps/stonehill_ground.png",
         "audio": "/assets/audio/Atmosphere - tavern_ambience_inside_laughter.mp3",
-        "fog": false
+        "fog": false,
+        "audioLoop": false
       },
       {
         "id": "phandalin-stonehill-inn-1775357679767-view-1",
@@ -185,7 +187,8 @@
         "label": "campfire",
         "image": "/assets/maps/campfire2.jpg",
         "audio": "/assets/audio/Atmosphere - Campfire.mp3",
-        "fog": false
+        "fog": false,
+        "audioLoop": false
       }
     ]
   },
@@ -243,6 +246,9 @@
     "id": "new_old_owl_well-in-the-woods-1777983484934",
     "tab": "new_old_owl_well",
     "label": "in the woods",
+    "campaigns": [
+      "Old Owl Well"
+    ],
     "views": [
       {
         "id": "new_old_owl_well-in-the-woods-1777983484934-view-0",
@@ -255,13 +261,17 @@
   },
   {
     "id": "new_old_owl_well-1777984397518",
-    "label": "new_old_owl_well",
     "tab": "new_old_owl_well",
+    "label": "new_old_owl_well",
+    "campaigns": [
+      "Old Owl Well"
+    ],
     "views": [
       {
         "id": "new_old_owl_well-1777984397518-view-0",
         "label": "thewell",
         "image": "/assets/maps/looking_around.png",
+        "audio": null,
         "fog": true
       }
     ]
@@ -270,6 +280,9 @@
     "id": "the-nexus-island-view-1795559720392",
     "tab": "The Nexus",
     "label": "Island View",
+    "campaigns": [
+      "Nexus"
+    ],
     "views": [
       {
         "id": "the-nexus-island-view-1795559720392-view-0",
