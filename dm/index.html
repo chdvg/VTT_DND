@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DM Control Panel</title>
   <meta name="version" content="3.9.0" />
-  <link rel="stylesheet" href="/dm/styles.css?v=3.9.9" />
+  <link rel="stylesheet" href="/dm/styles.css?v=3.9.12" />
 </head>
 <body>
   <header>
-    <h1>DM Control Panel</h1>
+    <h1>DM Control Panel <span id="header-campaign-name" style="font-size:0.65rem;font-weight:400;color:#d4af37;letter-spacing:0.03em;margin-left:0.5rem;opacity:0.85;vertical-align:middle;"></span></h1>
     <div class="header-controls">
       <div id="client-count-wrap" style="position:relative;display:inline-block;cursor:default;">
         <span id="client-count">0 connected</span>
@@ -48,6 +48,7 @@
             <span class="sb-chev">▾</span>Maps
           </div>
           <div class="sb-section-body">
+            <div id="map-tag-filters" style="display:none;flex-wrap:wrap;gap:0.25rem;margin-bottom:0.4rem;"></div>
             <input type="text" id="map-search" class="sb-search" placeholder="🔍 Search maps…" />
             <div id="map-list"></div>
           </div>
@@ -646,6 +647,13 @@
       </section>
     </aside>
   </div><!-- end app-layout -->
-  <script src="/dm/app.js?v=3.9.11"></script>
+  <script src="/dm/app.js?v=3.9.12"></script>
+  <div id="map-drop-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9998;align-items:center;justify-content:center;pointer-events:none;">
+    <div style="border:3px dashed #d4af37;border-radius:16px;padding:3rem 4rem;text-align:center;color:#d4af37;">
+      <div style="font-size:3rem;">🗺️</div>
+      <div style="font-size:1.2rem;font-weight:600;margin-top:0.5rem;">Drop map image here</div>
+      <div style="font-size:0.85rem;color:#888;margin-top:0.3rem;">JPG, PNG, WebP, GIF</div>
+    </div>
+  </div>
 </body>
 </html>
