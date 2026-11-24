@@ -176,7 +176,9 @@ function loadSceneIntoForm(scene) {
   sbViews = scene.views.map(function (v) {
     return { label: v.label, image: v.image, audio: v.audio || null, fog: v.fog === true };
   });
+  sbFocusedViewIdx = sbViews.length > 0 ? 0 : -1;
   renderViewList();
+  updatePreview(sbFocusedViewIdx);
   window.scrollTo(0, 0);
 }
 
@@ -215,8 +217,19 @@ function renderViewList() {
   sbViews.forEach(function (view, idx) {
     var row = document.createElement('div');
     row.className = 'sb-view-row';
+    if (idx === sbFocusedViewIdx) row.style.borderColor = '#d4af37';
 
-    // Row header
+    // Click anywhere on row to preview it
+    row.addEventListener('click', function (e) {
+      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' ||
+          e.target.tagName === 'SELECT' || e.target.tagName === 'LABEL') return;
+      sbFocusedViewIdx = idx;
+      // Update highlight
+      container.querySelectorAll('.sb-view-row').forEach(function (r, i) {
+        r.style.borderColor = i === idx ? '#d4af37' : '';
+      });
+      updatePreview(idx);
+    });
     var rowHdr = document.createElement('div');
     rowHdr.className = 'sb-row-hdr';
     var rowNum = document.createElement('span');
@@ -230,6 +243,22 @@ function renderViewList() {
       return function () { sbViews.splice(i, 1); renderViewList(); };
     })(idx);
     rowHdr.appendChild(removeBtn);
+
+    var previewBtn = document.createElement('button');
+    previewBtn.textContent = idx === sbFocusedViewIdx ? '👁 Previewing' : '👁 Preview';
+    previewBtn.className = 'btn btn-small';
+    previewBtn.style.cssText = 'font-size:0.68rem;padding:0.15rem 0.4rem;background:' +
+      (idx === sbFocusedViewIdx ? 'rgba(212,175,55,0.15)' : 'transparent') +
+      ';border:1px solid ' + (idx === sbFocusedViewIdx ? '#d4af37' : '#30363d') +
+      ';color:' + (idx === sbFocusedViewIdx ? '#d4af37' : '#888') + ';';
+    (function(i) {
+      previewBtn.onclick = function () {
+        sbFocusedViewIdx = i;
+        renderViewList();
+        updatePreview(i);
+      };
+    })(idx);
+    rowHdr.appendChild(previewBtn);
     row.appendChild(rowHdr);
 
     // Line 1: label + image URL
