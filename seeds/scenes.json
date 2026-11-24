@@ -3,6 +3,9 @@
     "id": "phandalin/redbrand-hideout-1775400000000",
     "tab": "Phandalin",
     "label": "Redbrand Hideout",
+    "campaigns": [
+      "Phandalin- the mighty 4"
+    ],
     "views": [
       {
         "id": "phandalin/redbrand-hideout-1775400000000-view-0",
@@ -16,8 +19,7 @@
         "label": "Tresandor_Manor",
         "image": "/assets/maps/tresandor_manor_exterior.webp",
         "audio": null,
-        "fog": false,
-        "fit": "contain"
+        "fog": false
       }
     ]
   },
@@ -25,22 +27,23 @@
     "id": "phandalin-orchard-1775350349884",
     "tab": "Phandalin",
     "label": "Town",
+    "campaigns": [
+      "Phandalin- the mighty 4"
+    ],
     "views": [
       {
         "id": "phandalin-orchard-1775350349884-view-0",
         "label": "Orchard approach",
         "image": "/assets/maps/orchard_entry.jpg",
         "audio": "/assets/audio/Atmosphere - BirdChirping.wav",
-        "fog": false,
-        "audioLoop": false
+        "fog": false
       },
       {
         "id": "phandalin-orchard-1775350349884-view-1",
         "label": "Orchard",
         "image": "/assets/maps/orchard.jpg",
         "audio": null,
-        "fog": false,
-        "fit": "cover"
+        "fog": false
       },
       {
         "id": "phandalin-orchard-1775350349884-view-2",
@@ -54,8 +57,7 @@
         "label": "Alderleaf Farm",
         "image": "/assets/maps/Alderleaf.png",
         "audio": null,
-        "fog": false,
-        "fit": "contain"
+        "fog": false
       },
       {
         "id": "phandalin-orchard-1775350349884-view-4",
@@ -133,14 +135,16 @@
     "id": "travel-in-the-woods-1775354955380",
     "tab": "Travel",
     "label": "In the woods",
+    "campaigns": [
+      "__all__"
+    ],
     "views": [
       {
         "id": "travel-in-the-woods-1775354955380-view-0",
         "label": "road",
         "image": "/assets/maps/travel.webp",
         "audio": "/assets/audio/Atmosphere - BirdChirping.wav",
-        "fog": false,
-        "fit": "fill"
+        "fog": false
       }
     ]
   },
@@ -148,14 +152,16 @@
     "id": "phandalin-stonehill-inn-1775357679767",
     "tab": "Phandalin",
     "label": "StoneHill Inn",
+    "campaigns": [
+      "Phandalin- the mighty 4"
+    ],
     "views": [
       {
         "id": "phandalin-stonehill-inn-1775357679767-view-0",
         "label": "Downstairs",
         "image": "/assets/maps/stonehill_ground.png",
         "audio": "/assets/audio/Atmosphere - tavern_ambience_inside_laughter.mp3",
-        "fog": false,
-        "audioLoop": false
+        "fog": false
       },
       {
         "id": "phandalin-stonehill-inn-1775357679767-view-1",
@@ -170,14 +176,16 @@
     "id": "travel-camping-1775606145338",
     "tab": "Travel",
     "label": "Camping",
+    "campaigns": [
+      "__all__"
+    ],
     "views": [
       {
         "id": "travel-camping-1775606145338-view-0",
         "label": "campfire",
         "image": "/assets/maps/campfire2.jpg",
         "audio": "/assets/audio/Atmosphere - Campfire.mp3",
-        "fog": false,
-        "fit": "contain"
+        "fog": false
       }
     ]
   },
@@ -185,6 +193,9 @@
     "id": "forest-1776033570794",
     "tab": "Forest",
     "label": "Forest",
+    "campaigns": [
+      "__all__"
+    ],
     "views": [
       {
         "id": "forest-1776033570794-view-0",
@@ -194,9 +205,10 @@
         "fog": false
       },
       {
-        "id": "forest-1776088513695-view-0",
+        "id": "forest-1776033570794-view-1",
         "label": "Mountain Valley",
         "image": "/assets/maps/Hidden_Keep_2.png",
+        "audio": null,
         "fog": true
       }
     ]
