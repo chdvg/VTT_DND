@@ -549,8 +549,30 @@
     <aside class="sidebar-right" id="sidebar-right">
       <button class="sidebar-right-collapse-btn" id="sidebar-right-toggle" title="Toggle sidebar">›</button>
       <div class="sidebar-right-resize-handle" id="sidebar-right-resize"></div>
-      <section class="panel" id="section-dice">
-        <h2>🎲 Dice Roller</h2>
+
+      <!-- ── Character Quick-Pick ── -->
+      <section class="panel" id="section-characters">
+        <details>
+          <summary class="panel-summary" style="font-size:0.85rem;">
+            <span class="drag-handle" title="Drag to reorder">⠿</span>📋 Character Quick Setup
+            <span id="char-list-sel-count" style="font-size:0.68rem;color:#888;margin-left:0.3rem;font-weight:normal;"></span>
+            <span class="sb-chevron">▶</span>
+          </summary>
+          <div style="margin-top:0.5rem;">
+            <input type="text" id="char-list-search" placeholder="🔍 Filter…"
+              style="width:100%;font-size:0.78rem;padding:0.25rem 0.4rem;margin-bottom:0.4rem;box-sizing:border-box;" />
+            <!-- Action bar — shown when selection exists -->
+            <div id="char-list-actions" style="display:none;gap:0.3rem;margin-bottom:0.4rem;flex-wrap:wrap;">
+              <button id="char-act-roster" class="btn btn-small btn-secondary" style="flex:1;min-width:0;font-size:0.7rem;padding:0.2rem 0.4rem;text-transform:none;letter-spacing:0;" title="Add selected to Player Roster">+ Roster</button>
+              <button id="char-act-map"    class="btn btn-small btn-secondary" style="flex:1;min-width:0;font-size:0.7rem;padding:0.2rem 0.4rem;text-transform:none;letter-spacing:0;" title="Place tokens on current map">🗺️ Map</button>
+              <button id="char-act-init"   class="btn btn-small btn-secondary" style="flex:1;min-width:0;font-size:0.7rem;padding:0.2rem 0.4rem;text-transform:none;letter-spacing:0;" title="Add to initiative with random d20">⚔️ Init</button>
+            </div>
+            <div id="char-list-container" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:1px;"></div>
+            <div id="char-list-empty" style="font-size:0.75rem;color:#444;text-align:center;padding:0.75rem 0;display:none;">No characters found.</div>
+          </div>
+        </details>
+      </section>
+
         <div class="dice-buttons">
           <button class="btn-dice" data-die="4">d4</button>
           <button class="btn-dice" data-die="6">d6</button>
@@ -624,6 +646,6 @@
       </section>
     </aside>
   </div><!-- end app-layout -->
-  <script src="/dm/app.js?v=3.9.9"></script>
+  <script src="/dm/app.js?v=3.9.10"></script>
 </body>
 </html>

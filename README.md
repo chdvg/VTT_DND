@@ -431,7 +431,29 @@ Campaign selection persists across server restarts (`data/campaigns.json`). The 
 
 ---
 
-A dedicated character management screen at **`http://localhost:3000/characters`** (also accessible via the **📋 Characters** button in the DM panel header — opens in a new tab).
+### Character Quick Setup
+
+A fast-access panel in the **right sidebar** (above Dice Roller) that lets the DM select characters from the global library and add them to the current session in one or two clicks — without navigating to the character sheet manager.
+
+**How to use:**
+1. Expand **📋 Character Quick Setup** in the right sidebar
+2. Use the filter box to search by name, class, or player
+3. Click rows (or checkboxes) to select; characters already in the roster appear in **gold**
+4. Use the action bar or right-click for actions:
+
+| Action | Effect |
+|--------|--------|
+| **+ Roster** | Adds selected characters to the campaign's Player Roster |
+| **🗺️ Map** | Places player tokens for selected characters clustered at the center of the active map |
+| **⚔️ Init** | Rolls d20 initiative for each and adds them to the Initiative Tracker |
+| **📋 View Sheet** | Opens the character sheet in the Characters tab (right-click only) |
+
+- **Multi-select** — click to select one; Ctrl+click to toggle; Shift+click for range; checkbox on each row
+- **Right-click** any row for the full context menu
+- Roster gold highlights update instantly when roster changes
+- Panel refreshes automatically on campaign switch (each campaign has its own roster)
+
+--- **`http://localhost:3000/characters`** (also accessible via the **📋 Characters** button in the DM panel header — opens in a new tab).
 
 **What's stored per character:**
 
@@ -880,6 +902,11 @@ Default order:
 6. Send Image
 7. Monster Lookup
 8. Scene Builder
+
+**Right sidebar** (fixed, non-reorderable):
+1. Character Quick Setup *(select characters → add to roster, map, initiative)*
+2. Dice Roller
+3. Initiative Tracker
 
 ---
 
