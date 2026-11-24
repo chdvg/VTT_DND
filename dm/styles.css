@@ -400,6 +400,13 @@ details > .panel-summary + * { margin-top:1rem; }
 .ev-sum-txt { flex:1; color:#ccc; line-height:1.4; min-width:0; word-break:break-word; }
 .ev-used-mark { font-size:0.68rem; color:#4ade80; font-weight:600; margin-left:0.3rem; }
 .ev-ts { font-size:0.66rem; color:#555; white-space:nowrap; flex:none; padding-top:0.1rem; }
+.map-tag-chip { padding:0.15rem 0.45rem; font-size:0.68rem; border:1px solid #30363d; background:#0d1117; color:#666; border-radius:3px; cursor:pointer; white-space:nowrap; transition:all 0.15s; }
+.map-tag-chip:hover { border-color:#555; color:#ccc; }
+.map-tag-chip.active { border-color:#d4af37; color:#d4af37; background:rgba(212,175,55,0.08); }
+.map-note-preview { font-size:0.68rem; color:#d4af37; opacity:0.7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px; flex:none; }
+.map-note-area { padding:0.4rem 0.5rem; background:#0a0e17; border-top:1px solid #21262d; }
+.map-note-area textarea { width:100%; font-size:0.78rem; min-height:48px; max-height:80px; resize:none; background:#0d1117; border:1px solid #21262d; border-radius:3px; color:#ccc; padding:0.3rem 0.4rem; box-sizing:border-box; }
+.map-note-area textarea:focus { border-color:#30363d; outline:none; }
 
 .ev-body { padding:0.45rem 0.55rem 0.5rem; border-top:1px solid #21262d; background:#0a0e17; display:flex; flex-direction:column; gap:0.4rem; }
 .ev-drow { display:flex; gap:0.5rem; font-size:0.76rem; }

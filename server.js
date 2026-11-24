@@ -421,8 +421,24 @@ const clients = new Set();
 const dmClients = new Set();
 let guestCounter = 0;  // increments for each non-DM connection
 
+// ── Maps Metadata (global, shared across campaigns) ──────────
+const MAPS_META_FILE = path.join(BASE_DATA_DIR, 'maps-meta.json');
+let mapsMeta = {}; // { sceneId: { tags: [], note: "" } }
+
+function loadMapsMeta() {
+  try {
+    mapsMeta = fs.existsSync(MAPS_META_FILE) ? JSON.parse(fs.readFileSync(MAPS_META_FILE, 'utf8')) : {};
+  } catch (e) { console.error('loadMapsMeta error:', e.message); }
+}
+
+function saveMapsMeta() {
+  try { fs.writeFileSync(MAPS_META_FILE, JSON.stringify(mapsMeta, null, 2)); }
+  catch (e) { console.error('saveMapsMeta error:', e.message); }
+}
+
 // Restore persisted state before starting
 loadCampaignMeta(); // sets DATA_DIR to active campaign dir if one is set
+loadMapsMeta();
 loadState();
 loadEventLog();
 
@@ -1398,6 +1414,37 @@ app.get('/api/bestiary/:file', (req, res) => {
 app.get('/api/maps', (req, res) => {
   const maps = listFiles('public/assets/maps', ['.jpg', '.jpeg', '.png', '.webp']);
   res.json({ maps });
+});
+
+app.get('/api/maps-meta', requireDm, (req, res) => {
+  res.json({ meta: mapsMeta });
+});
+
+app.post('/api/maps-meta', requireDm, express.json({ limit: '64kb' }), (req, res) => {
+  const { id, tags, note } = req.body || {};
+  if (!id) return res.status(400).json({ error: 'id required' });
+  if (!mapsMeta[id]) mapsMeta[id] = { tags: [], note: '' };
+  if (Array.isArray(tags)) mapsMeta[id].tags = tags.map(String).slice(0, 20);
+  if (note !== undefined) mapsMeta[id].note = String(note).slice(0, 500);
+  saveMapsMeta();
+  res.json({ ok: true });
+});
+
+app.post('/api/maps/upload', requireDm, express.json({ limit: '20mb' }), (req, res) => {
+  try {
+    const { filename, data } = req.body || {};
+    if (!filename || !data) return res.status(400).json({ error: 'filename and data required' });
+    const safeName = path.basename(filename).replace(/[^a-zA-Z0-9._\- ]/g, '_').replace(/\s+/g, '_');
+    if (!safeName.match(/\.(jpe?g|png|webp|gif)$/i)) return res.status(400).json({ error: 'Only .jpg, .jpeg, .png, .webp, .gif allowed' });
+    const base64 = data.replace(/^data:image\/[a-zA-Z+]+;base64,/, '');
+    const buf = Buffer.from(base64, 'base64');
+    const destDir = path.join(__dirname, 'public', 'assets', 'maps');
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+    fs.writeFileSync(path.join(destDir, safeName), buf);
+    res.json({ ok: true, path: '/assets/maps/' + safeName });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get('/api/tiles', (req, res) => {
