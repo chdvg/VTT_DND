@@ -548,11 +548,14 @@ Stored in `data/characters.json` (gitignored, persists restarts).
   - Locks persist until the DM unlocks them or the server restarts
 - **🚫 Off mode (token placement)** — token placement starts in **Off** mode by default; no tokens are placed accidentally when loading a map. Click a color to activate placement; click the active color again (or the 🚫 Off button) to disable it. The mob and player type pickers are hidden while placement is off.
 - **👥 Move Party (group move)** — a **👥 Move Party** toggle button appears in the token header:
-  - While active, click any player token dot to select/deselect it (gold highlight)
-  - **☑ All Players** selects every player token at once; **✕ Clear** deselects all
-  - Lasso-drag on empty map space to box-select multiple tokens
+  - While active, click any token dot to select/deselect it (gold highlight)
+  - **Type quick-select buttons** appear for each token type present on the map — click to instantly select all of that type; click again to deselect:
+    - 🟢 Players · 🔴 Enemies · 🔵 Friends · 🟡 Unknown
+    - Combine types freely (e.g. click 🟢 Players then 🔴 Enemies to grab both groups at once)
+  - **☑ All** selects every token on the map; **✕ Clear** deselects all
+  - Lasso-drag on empty map space to box-select any custom group of tokens
   - Dragging any selected token moves the entire selection by the same delta, keeping relative positions intact
-  - The button label shows a count of currently selected tokens, e.g. *👥 Move Party (3)*
+  - The button label shows a count of currently selected tokens, e.g. *👥 Party Move (5)*
 - **Feature cell overlay on DM map** — when a map with builder features is loaded, feature cell boundaries are shown directly on both the fog map preview and the token map as dashed outlines in each feature's color; triggered features fill solid so the DM can see exactly what the players are seeing without needing a second screen
 - **Persistent token state** — all token positions across every map survive server restarts; the DM's full tokenState is synced to `data/state.json` on every update and restored automatically on reconnect
 
