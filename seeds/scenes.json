@@ -253,5 +253,19 @@
         "fog": true
       }
     ]
+  },
+  {
+    "id": "the-nexus-island-view-1795559720392",
+    "tab": "The Nexus",
+    "label": "Island View",
+    "views": [
+      {
+        "id": "the-nexus-island-view-1795559720392-view-0",
+        "label": "The whole map",
+        "image": "/assets/maps/Living Nexus.jpg",
+        "audio": "/assets/audio/Atmosphere - Mistery - Bad Memories.mp3",
+        "fog": false
+      }
+    ]
   }
 ]
