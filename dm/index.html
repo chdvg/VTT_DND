@@ -123,6 +123,11 @@
           <button id="reset-map-btn" class="btn btn-secondary" style="flex:none;">🗑 Reset Map</button>
           <button id="send-text-popup-btn" class="btn btn-secondary" style="flex:none;">📜 Text</button>
           <button id="send-image-popup-btn" class="btn btn-secondary" style="flex:none;">🖼 Image</button>
+          <div id="audio-now-playing" style="display:none;align-items:center;gap:0.4rem;background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:0.2rem 0.5rem 0.2rem 0.6rem;flex:none;">
+            <span style="font-size:0.85rem;">🎵</span>
+            <span id="audio-now-playing-name" style="font-size:0.72rem;color:#aaa;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+            <button id="audio-stop-btn" title="Stop audio" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:0.85rem;padding:0 0.1rem;line-height:1;">⏹</button>
+          </div>
         </div>
       </div>
       <div id="map-control-grid" style="display:none;grid-template-columns:2fr 1px 3fr;gap:0 1.25rem;">
@@ -630,7 +635,7 @@
       </section>
     </aside>
   </div><!-- end app-layout -->
-  <script src="/dm/app.js?v=3.9.16"></script>
+  <script src="/dm/app.js?v=3.9.17"></script>
   <div id="map-drop-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9998;align-items:center;justify-content:center;pointer-events:none;">
     <div style="border:3px dashed #d4af37;border-radius:16px;padding:3rem 4rem;text-align:center;color:#d4af37;">
       <div style="font-size:3rem;">🗺️</div>
