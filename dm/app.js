@@ -332,10 +332,7 @@ var drawModeActive       = false; // true = annotations canvas active on token m
 var tokenMapExpanded     = false; // true = token map shown at full height
 var fogMapExpanded       = false; // true = fog of war map shown at full height
 
-// Scene Builder working state
-var sbViews       = [];   // array of { label, image, audio }
-var sbAudioList   = [];   // populated from /api/audio
-var sbEditingId   = null; // id of scene being edited, or null for new
+// (Scene Builder moved to /scene-builder)
 
 // Search state
 var sceneSearchTerm = '';
@@ -1584,7 +1581,6 @@ function renderAudioPanel() {
   fetch('/api/audio')
     .then(function (r) { return r.json(); })
     .then(function (data) {
-      sbAudioList  = data.audio      || [];
       sbCategories = data.categories || [];
       applyAudioDisplay();
     })
@@ -3593,265 +3589,12 @@ function renderTokenControls(mapUrl, mapKey) {
 }
 
 
-// ============================================================
-// Scene Builder
-// ============================================================
-function initSceneBuilder() {
-  sbViews = [];
-  var newSceneBtn = document.getElementById('sb-new-scene-btn');
-  if (newSceneBtn) newSceneBtn.onclick = startNewScene;
-  renderSceneBuilderList();
-}
-
-function startNewScene() {
-  var tab   = document.getElementById('sb-tab').value.trim();
-  var label = document.getElementById('sb-scene-label').value.trim();
-  if (!tab || !label) {
-    alert('Please enter an Area name and a Scene label first.');
-    return;
-  }
-  sbViews = [];
-  renderSceneBuilderList();
-  // Immediately add first empty view row
-  addViewRow();
-}
-
-function renderSceneBuilderList() {
-  var container = document.getElementById('sb-scene-list');
-  container.innerHTML = '';
-
-  if (!sbViews.length) {
-    container.innerHTML = '<p style="color:#888;font-size:0.85rem;margin:0.5rem 0;">Enter an Area and Scene name above, then click <strong>+ New Scene</strong> to start adding maps.</p>';
-    return;
-  }
-
-  // Breadcrumb showing current area › scene
-  var tab   = document.getElementById('sb-tab').value.trim();
-  var label = document.getElementById('sb-scene-label').value.trim();
-  if (tab || label) {
-    var crumb = document.createElement('div');
-    crumb.style.cssText = 'font-size:0.78rem;color:#888;margin-bottom:0.5rem;';
-    crumb.innerHTML = '<span style="color:#d4af37">' + (tab || '…') + '</span> › <span style="color:#d4af37">' + (label || '…') + '</span> › Maps';
-    container.appendChild(crumb);
-  }
-
-  sbViews.forEach(function (view, idx) {
-    var row = document.createElement('div');
-    row.className = 'sb-view-row';
-
-    // ── Row header: Map N + remove ──────────────────────────
-    var rowHdr = document.createElement('div');
-    rowHdr.className = 'sb-row-hdr';
-    var rowNum = document.createElement('span');
-    rowNum.textContent = 'Map ' + (idx + 1);
-    rowNum.style.cssText = 'font-size:0.75rem;color:#d4af37;font-weight:bold;';
-    rowHdr.appendChild(rowNum);
-    var removeBtn = document.createElement('button');
-    removeBtn.textContent = '✕ Remove';
-    removeBtn.className = 'btn btn-danger btn-small';
-    removeBtn.onclick = (function (i) {
-      return function () { sbViews.splice(i, 1); renderSceneBuilderList(); };
-    })(idx);
-    rowHdr.appendChild(removeBtn);
-    row.appendChild(rowHdr);
-
-    // ── Line 1: label + image URL ───────────────────────────
-    var line1 = document.createElement('div');
-    line1.className = 'sb-row-line';
-
-    var labelInput = document.createElement('input');
-    labelInput.type = 'text';
-    labelInput.value = view.label || '';
-    labelInput.placeholder = 'Map label (e.g. Ground Floor)';
-    labelInput.className = 'sb-input';
-    labelInput.oninput = function () { sbViews[idx].label = labelInput.value; };
-    line1.appendChild(labelInput);
-
-    var imgInput = document.createElement('input');
-    imgInput.type = 'text';
-    imgInput.value = view.image || '';
-    imgInput.placeholder = 'Image URL (auto-filled below)';
-    imgInput.className = 'sb-input';
-    imgInput.oninput = function () { sbViews[idx].image = imgInput.value; };
-    line1.appendChild(imgInput);
-    row.appendChild(line1);
-
-    // ── Line 2: file picker + thumb + audio + fog ──────────
-    var line2 = document.createElement('div');
-    line2.className = 'sb-row-line';
-
-    var filePicker = document.createElement('input');
-    filePicker.type = 'file';
-    filePicker.accept = '.jpg,.jpeg,.png,.webp,.gif';
-    filePicker.className = 'sb-file-pick';
-    filePicker.onchange = function (e) {
-      var file = e.target.files[0];
-      if (!file) return;
-      var url = '/assets/maps/' + file.name;
-      imgInput.value     = url;
-      sbViews[idx].image = url;
-      thumb.src = URL.createObjectURL(file);
-    };
-    line2.appendChild(filePicker);
-
-    var thumb = document.createElement('img');
-    thumb.className = 'sb-thumb';
-    thumb.src = view.image || '';
-    line2.appendChild(thumb);
-
-    var audioSel = document.createElement('select');
-    audioSel.className = 'sb-select';
-    var noneOpt = document.createElement('option');
-    noneOpt.value = '';
-    noneOpt.textContent = '— No ambience —';
-    audioSel.appendChild(noneOpt);
-    sbAudioList.forEach(function (aUrl) {
-      var opt = document.createElement('option');
-      opt.value = aUrl;
-      opt.textContent = aUrl.split('/').pop();
-      if (aUrl === view.audio) opt.selected = true;
-      audioSel.appendChild(opt);
-    });
-    audioSel.onchange = function () { sbViews[idx].audio = audioSel.value || null; };
-    line2.appendChild(audioSel);
-
-    var fogLabel = document.createElement('label');
-    fogLabel.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:0.78rem;color:#999;white-space:nowrap;cursor:pointer;margin:0;';
-    var fogCheck = document.createElement('input');
-    fogCheck.type = 'checkbox';
-    fogCheck.checked = view.fog === true;
-    fogCheck.onchange = function () { sbViews[idx].fog = fogCheck.checked; };
-    fogLabel.appendChild(fogCheck);
-    fogLabel.appendChild(document.createTextNode('🌫 Fog'));
-    line2.appendChild(fogLabel);
-
-    row.appendChild(line2);
-    container.appendChild(row);
-  });
-
-  // Add View + Save buttons
-  var actionRow = document.createElement('div');
-  actionRow.className = 'sb-action-row';
-
-  var addViewBtn = document.createElement('button');
-  addViewBtn.textContent = '➕ Add Map';
-  addViewBtn.className = 'btn btn-secondary btn-small';
-  addViewBtn.onclick = addViewRow;
-  actionRow.appendChild(addViewBtn);
-
-  var saveBtn = document.createElement('button');
-  saveBtn.textContent = sbEditingId ? '💾 Update Scene' : '💾 Save Scene';
-  saveBtn.className = 'btn btn-primary btn-small';
-  saveBtn.onclick = saveScene;
-  actionRow.appendChild(saveBtn);
-
-  if (sbEditingId) {
-    var cancelBtn = document.createElement('button');
-    cancelBtn.textContent = '✕ Cancel Edit';
-    cancelBtn.className = 'btn btn-warning btn-small';
-    cancelBtn.onclick = function () {
-      sbEditingId = null;
-      sbViews = [];
-      document.getElementById('sb-scene-label').value = '';
-      renderSceneBuilderList();
-    };
-    actionRow.appendChild(cancelBtn);
-  }
-
-  container.appendChild(actionRow);
-}
-
-function addViewRow() {
-  sbViews.push({ label: '', image: '', audio: null, fog: false });
-  renderSceneBuilderList();
-}
+// ── Scene Builder functions moved to /scene-builder/app.js ──────────────
 
 function editScene(sceneIdx) {
   var scene = sceneData[sceneIdx];
-  sbEditingId = scene.id;
-  document.getElementById('sb-tab').value   = scene.tab || scene.label || '';
-  document.getElementById('sb-scene-label').value = scene.label || '';
-  // Deep-copy views so edits don't affect original until saved
-  sbViews = scene.views.map(function (v) {
-    return { label: v.label, image: v.image, audio: v.audio || null, fog: v.fog === true };
-  });
-  renderSceneBuilderList();
-  // Expand Scene Builder section and scroll it into view
-  var sbSection = document.getElementById('section-scene-builder');
-  if (sbSection) {
-    var details = sbSection.querySelector('details');
-    if (details) details.open = true;
-  }
-  var sb = document.getElementById('sb-scene-list');
-  if (sb) sb.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function saveScene() {
-  var tab   = document.getElementById('sb-tab').value.trim();
-  var label = document.getElementById('sb-scene-label').value.trim();
-
-  if (!tab || !label) {
-    alert('Area name and Scene label are required.'); return;
-  }
-  var validViews = sbViews.filter(function (v) { return v.label && v.image; });
-  if (!validViews.length) {
-    alert('Add at least one view with a label and an image URL.'); return;
-  }
-
-  // Build scene object
-  var sceneId = sbEditingId || (tab.toLowerCase().replace(/\s+/g, '-') + '-' +
-    label.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now());
-  var newScene = {
-    id: sceneId, tab: tab, label: label,
-    views: validViews.map(function (v, i) {
-      return {
-        id: sceneId + '-view-' + i,
-        label: v.label,
-        image: v.image,
-        audio: v.audio || null,
-        fog: v.fog === true
-      };
-    })
-  };
-
-  var updatedScenes;
-  if (sbEditingId) {
-    // Replace existing scene in-place
-    updatedScenes = sceneData.map(function (s) { return s.id === sbEditingId ? newScene : s; });
-  } else {
-    updatedScenes = sceneData.concat([newScene]);
-  }
-
-  fetch('/api/scenes')
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      var currentScenes = data.scenes || [];
-      var updatedScenes;
-      if (sbEditingId) {
-        updatedScenes = currentScenes.map(function (s) { return s.id === sbEditingId ? newScene : s; });
-      } else {
-        updatedScenes = currentScenes.concat([newScene]);
-      }
-      return fetch('/api/scenes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenes: updatedScenes })
-      });
-    })
-    .then(function (r) { return r.json(); })
-    .then(function (resp) {
-      if (!resp.ok) { alert('Error saving: ' + (resp.error || 'unknown')); return; }
-      alert('✅ Scene "' + label + '" ' + (sbEditingId ? 'updated!' : 'saved!'));
-      sbEditingId = null;
-      // Reset builder — keep Area name so DM can add another scene to same area
-      document.getElementById('sb-scene-label').value = '';
-      sbViews = [];
-      renderSceneBuilderList();
-      // Switch to the new tab and refresh
-      currentTab = tab;
-      renderScenesPanel();
-    })
-    .catch(function (e) { alert('Network error: ' + e.message); });
+  if (!scene) return;
+  window.open('/scene-builder?edit=' + encodeURIComponent(scene.id), '_blank');
 }
 
 // ── Section Drag & Drop — DOM reorder ──────────────────────────────────
@@ -6615,7 +6358,6 @@ function renderSessionList() {
 connectWebSocket();
 renderScenesPanel();
 renderAudioPanel();
-initSceneBuilder();
 loadPlayerRoster();
 loadInitiative();
 renderInitiative();

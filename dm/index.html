@@ -17,6 +17,7 @@
       </div>
       <span id="status-dot" class="status-dot off"></span>
       <a href="/map-builder" class="dm-logout-btn" title="Open Map Builder" style="color:#d4af37;border-color:#d4af37;">🗺️ Map Builder</a>
+      <a href="/scene-builder" target="_blank" class="dm-logout-btn" title="Scene Builder" style="color:#34d399;border-color:#34d399;">🎭 Scene Builder</a>
       <a href="/characters" target="_blank" class="dm-logout-btn" title="Character Sheets" style="color:#a78bfa;border-color:#a78bfa;">📋 Characters</a>
       <a href="/dm-logout" class="dm-logout-btn" title="Lock DM panel">🔒 Lock</a>
     </div>
@@ -432,24 +433,6 @@
       </details>
     </section>
 
-    <!-- ── Scene Builder ── prep tool, collapsed by default ── -->
-    <section class="panel col-4" id="section-scene-builder">
-      <details>
-        <summary class="panel-summary">
-          <span class="drag-handle" title="Drag to reorder">⠿</span>Scene Builder
-          <span class="sb-chevron">▶</span>
-        </summary>
-        <div id="scene-builder" style="margin-top:1rem;">
-          <p style="color:#666;font-size:0.78rem;margin-bottom:0.75rem;">Hierarchy: <strong style="color:#d4af37">Area</strong> (e.g. Phandalin) &rsaquo; <strong style="color:#d4af37">Scene</strong> (e.g. Stonehill Inn) &rsaquo; <strong style="color:#d4af37">Map</strong> (e.g. Ground Floor)</p>
-          <div class="scene-builder-row">
-            <input type="text" id="sb-tab" placeholder="Area (e.g. Phandalin)" />
-            <input type="text" id="sb-scene-label" placeholder="Scene (e.g. Stonehill Inn)" />
-            <button class="btn btn-secondary btn-small" id="sb-new-scene-btn">+ New Scene</button>
-          </div>
-          <div id="sb-scene-list"></div>
-        </div>
-      </details>
-    </section>
     <!-- ── AI Dungeon Master Assistant ── -->
     <section class="panel col-4" id="section-ai-assistant">
       <details>
@@ -647,7 +630,7 @@
       </section>
     </aside>
   </div><!-- end app-layout -->
-  <script src="/dm/app.js?v=3.9.12"></script>
+  <script src="/dm/app.js?v=3.9.13"></script>
   <div id="map-drop-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9998;align-items:center;justify-content:center;pointer-events:none;">
     <div style="border:3px dashed #d4af37;border-radius:16px;padding:3rem 4rem;text-align:center;color:#d4af37;">
       <div style="font-size:3rem;">🗺️</div>

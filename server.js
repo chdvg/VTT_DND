@@ -1588,6 +1588,9 @@ function saveCharacters() {
 app.get('/characters', requireDm, (req, res) => res.sendFile(path.join(__dirname, 'characters', 'index.html')));
 app.use('/characters', requireDm, express.static(path.join(__dirname, 'characters')));
 
+app.get('/scene-builder', requireDm, (req, res) => res.sendFile(path.join(__dirname, 'scene-builder', 'index.html')));
+app.use('/scene-builder', requireDm, express.static(path.join(__dirname, 'scene-builder')));
+
 app.post('/api/characters/reload', requireDm, (req, res) => {
   try {
     if (fs.existsSync(CHARACTERS_FILE)) characterSheets = JSON.parse(fs.readFileSync(CHARACTERS_FILE, 'utf8'));
