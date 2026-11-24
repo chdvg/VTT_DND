@@ -73,7 +73,7 @@ var dmCharacterSheets = [];  // full character sheet objects
 function loadDmCharacterSheets() {
   fetch('/api/characters')
     .then(function(r) { return r.json(); })
-    .then(function(d) { dmCharacterSheets = d.characters || []; renderCharSheetPicker(); })
+    .then(function(d) { dmCharacterSheets = d.characters || []; renderCharSheetPicker(); renderCharList(); })
     .catch(function() {});
 }
 
@@ -99,8 +99,177 @@ function renderCharSheetPicker() {
   if (prev) sel.value = prev;
 }
 
-// Item token state
-var selectedItemType = 'Chest'; // current item type for placement
+// ── Character Quick-Pick panel ────────────────────────────────
+var charListSelected = new Set(); // selected character ids
+
+function renderCharList() {
+  var container  = document.getElementById('char-list-container');
+  var emptyMsg   = document.getElementById('char-list-empty');
+  var actions    = document.getElementById('char-list-actions');
+  var selCount   = document.getElementById('char-list-sel-count');
+  var searchEl   = document.getElementById('char-list-search');
+  if (!container) return;
+
+  var q = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  var sheets = dmCharacterSheets.filter(function(s) {
+    if (!s.name) return false;
+    if (!q) return true;
+    return (s.name + ' ' + (s.class || '') + ' ' + (s.player || '')).toLowerCase().indexOf(q) >= 0;
+  });
+
+  container.innerHTML = '';
+  if (!sheets.length) {
+    if (emptyMsg) emptyMsg.style.display = '';
+    if (actions)  actions.style.display  = 'none';
+    if (selCount) selCount.textContent   = '';
+    return;
+  }
+  if (emptyMsg) emptyMsg.style.display = 'none';
+
+  var inRoster = playerRoster.map(function(p) { return p.name; });
+
+  sheets.forEach(function(s) {
+    var row = document.createElement('div');
+    var isSel = charListSelected.has(s.id || s.name);
+    row.style.cssText = 'display:flex;align-items:center;gap:0.4rem;padding:0.28rem 0.4rem;border-radius:3px;cursor:pointer;user-select:none;font-size:0.78rem;' +
+      (isSel ? 'background:#1a2a1a;border:1px solid #22543d;' : 'background:#0d1117;border:1px solid transparent;');
+    row.dataset.id  = s.id  || s.name;
+    row.dataset.name = s.name;
+
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = isSel;
+    cb.style.cssText = 'flex:none;cursor:pointer;accent-color:#d4af37;';
+    cb.addEventListener('click', function(e) { e.stopPropagation(); charListToggle(s.id || s.name); });
+
+    var info = document.createElement('div');
+    info.style.cssText = 'flex:1;min-width:0;overflow:hidden;';
+    var nameSpan = document.createElement('div');
+    nameSpan.style.cssText = 'color:' + (inRoster.indexOf(s.name) >= 0 ? '#d4af37' : '#ccc') + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    nameSpan.textContent = s.name;
+    var subSpan = document.createElement('div');
+    subSpan.style.cssText = 'font-size:0.68rem;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    subSpan.textContent = [s.class, s.level ? 'Lv' + s.level : '', s.player ? '(' + s.player + ')' : ''].filter(Boolean).join(' · ');
+    info.appendChild(nameSpan);
+    if (subSpan.textContent) info.appendChild(subSpan);
+
+    row.appendChild(cb);
+    row.appendChild(info);
+    container.appendChild(row);
+
+    row.addEventListener('click', function(e) { charListToggle(s.id || s.name); });
+    row.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+      if (!charListSelected.has(s.id || s.name)) { charListSelected.clear(); charListSelected.add(s.id || s.name); renderCharList(); }
+      showCharContextMenu(e.clientX, e.clientY, getCharListSelection());
+    });
+  });
+
+  var selArr = getCharListSelection();
+  if (selCount) selCount.textContent = selArr.length ? selArr.length + ' selected' : '';
+  if (actions)  actions.style.display = selArr.length ? 'flex' : 'none';
+}
+
+function charListToggle(id) {
+  if (charListSelected.has(id)) charListSelected.delete(id);
+  else charListSelected.add(id);
+  renderCharList();
+}
+
+function getCharListSelection() {
+  return dmCharacterSheets.filter(function(s) { return charListSelected.has(s.id || s.name); });
+}
+
+function charActRoster(sheets) {
+  if (!sheets.length) return;
+  var added = 0;
+  sheets.forEach(function(s) {
+    var alreadyIn = playerRoster.some(function(p) { return p.name === s.name; });
+    if (!alreadyIn) { playerRoster.push({ name: s.name, cls: s.class || '' }); added++; }
+  });
+  if (added) { savePlayerRoster(); renderPlayerRoster(); renderCharSheetPicker(); renderCharList(); }
+  else alert('All selected characters are already in the roster.');
+}
+
+function charActMap(sheets) {
+  if (!activeTokenMapKey || !activeTokenMapUrl) { alert('No map is currently active. Load a map first.'); return; }
+  if (!tokenState[activeTokenMapKey]) tokenState[activeTokenMapKey] = [];
+  var n = sheets.length;
+  var cols = Math.ceil(Math.sqrt(n));
+  var spacing = 0.06;
+  var totalW  = (cols - 1) * spacing;
+  var totalH  = (Math.ceil(n / cols) - 1) * spacing;
+  var startX  = 0.5 - totalW / 2;
+  var startY  = 0.5 - totalH / 2;
+  sheets.forEach(function(s, i) {
+    var existing = tokenState[activeTokenMapKey].find(function(t) { return t.color === 'green' && t.label === s.name; });
+    var tx = Math.max(0.02, Math.min(0.98, startX + (i % cols) * spacing));
+    var ty = Math.max(0.02, Math.min(0.98, startY + Math.floor(i / cols) * spacing));
+    if (existing) { existing.x = tx; existing.y = ty; }
+    else {
+      tokenState[activeTokenMapKey].push({
+        id: 'tok-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + i,
+        x: tx, y: ty, color: 'green', label: s.name, type: 'player', cls: s.class || ''
+      });
+    }
+  });
+  sendTokenUpdate(activeTokenMapKey);
+  renderTokenControls(activeTokenMapUrl, activeTokenMapKey);
+}
+
+function charActInit(sheets) {
+  sheets.forEach(function(s) {
+    var roll = Math.floor(Math.random() * 20) + 1;
+    addToInitiative(s.name, roll, true, s.class || '');
+    dmLog('dice', 'initiative', s.name + ' initiative: ' + roll, { name: s.name, roll: roll });
+  });
+}
+
+function showCharContextMenu(cx, cy, sheets) {
+  var existing = document.getElementById('char-ctx-menu');
+  if (existing) existing.remove();
+  if (!sheets.length) return;
+  var menu = document.createElement('div');
+  menu.id = 'char-ctx-menu';
+  menu.style.cssText = 'position:fixed;left:' + cx + 'px;top:' + cy + 'px;background:#1a1f2e;border:1px solid #30363d;border-radius:6px;padding:0.3rem 0;z-index:9000;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,0.6);font-size:0.8rem;';
+  var names = sheets.map(function(s) { return s.name; }).join(', ');
+  var title = document.createElement('div');
+  title.style.cssText = 'padding:0.25rem 0.75rem;color:#555;font-size:0.68rem;border-bottom:1px solid #21262d;margin-bottom:0.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;';
+  title.textContent = names;
+  menu.appendChild(title);
+  var items = [
+    { icon: '👥', label: 'Add to Roster',     fn: function() { charActRoster(sheets); } },
+    { icon: '🗺️', label: 'Place on Map',      fn: function() { charActMap(sheets); } },
+    { icon: '⚔️', label: 'Add to Initiative', fn: function() { charActInit(sheets); } },
+    { icon: '📋', label: 'View Sheet',         fn: function() { window.open('/characters#' + encodeURIComponent(sheets[0].name), '_blank'); } },
+  ];
+  items.forEach(function(item) {
+    var el = document.createElement('div');
+    el.style.cssText = 'padding:0.35rem 0.75rem;cursor:pointer;color:#ccc;display:flex;align-items:center;gap:0.5rem;';
+    el.innerHTML = '<span style="font-size:0.85rem;">' + item.icon + '</span>' + item.label;
+    el.addEventListener('mouseenter', function() { el.style.background = '#252d3d'; });
+    el.addEventListener('mouseleave', function() { el.style.background = ''; });
+    el.addEventListener('click', function() { menu.remove(); item.fn(); });
+    menu.appendChild(el);
+  });
+  document.body.appendChild(menu);
+  setTimeout(function() {
+    document.addEventListener('click', function dismiss() { menu.remove(); document.removeEventListener('click', dismiss); }, { once: true });
+  }, 0);
+}
+
+(function initCharList() {
+  document.addEventListener('DOMContentLoaded', function() {
+    var search = document.getElementById('char-list-search');
+    if (search) search.addEventListener('input', function() { renderCharList(); });
+    var rosterBtn = document.getElementById('char-act-roster');
+    var mapBtn    = document.getElementById('char-act-map');
+    var initBtn   = document.getElementById('char-act-init');
+    if (rosterBtn) rosterBtn.addEventListener('click', function() { charActRoster(getCharListSelection()); });
+    if (mapBtn)    mapBtn.addEventListener('click',    function() { charActMap(getCharListSelection()); });
+    if (initBtn)   initBtn.addEventListener('click',   function() { charActInit(getCharListSelection()); });
+  });
+})();
 
 // ── Mob icons & colours ───────────────────────────────────────
 // ── Item icons ───────────────────────────────────────────────
