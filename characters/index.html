@@ -77,6 +77,24 @@
     .btn-danger{background:transparent;color:#f87171;border-color:#7f1d1d;}
     .btn-danger:hover{background:#7f1d1d;color:#fff;}
     .btn-sm{padding:0.28rem 0.65rem;font-size:0.72rem;}
+
+    @media print {
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      header, .sidebar, .char-tabs, .editor-header, .no-print { display: none !important; }
+      body { background: #fff !important; color: #111 !important; overflow: visible !important; height: auto !important; }
+      .layout, .main, #char-editor, .char-panes { display: block !important; overflow: visible !important; height: auto !important; min-height: 0 !important; }
+      .char-pane { display: none !important; }
+      #pane-view { display: block !important; overflow: visible !important; height: auto !important; padding: 0 !important; }
+      #pane-view-content { max-width: 100% !important; }
+      #pane-view-content div[style*="background:#0d1117"],
+      #pane-view-content div[style*="background: #0d1117"] { background: #f5f5f5 !important; }
+      #pane-view-content [style*="color:#e6e6e6"] { color: #111 !important; }
+      #pane-view-content [style*="color:#ccc"] { color: #333 !important; }
+      #pane-view-content [style*="color:#888"] { color: #555 !important; }
+      #pane-view-content [style*="color:#d4af37"] { color: #7a5c00 !important; }
+      #pane-view-content [style*="border:1px solid #21262d"] { border-color: #ccc !important; }
+      #pane-view-content [style*="color:#a78bfa"] { color: #5b21b6 !important; }
+    }
   </style>
 </head>
 <body>
@@ -130,6 +148,7 @@
         <button class="char-tab" data-tab="story">&#128214; Story</button>
         <button class="char-tab" data-tab="gear">&#127820; Gear &amp; Abilities</button>
         <button class="char-tab" data-tab="notes">&#128221; Session Notes</button>
+        <button class="char-tab" data-tab="view">&#128203; Player View</button>
       </div>
 
       <div class="char-panes">
@@ -210,6 +229,15 @@
             <div class="form-group full"><label class="form-label">Session Notes</label><textarea id="f-notes" style="min-height:200px;" placeholder="- Knows Klarg works for the Black Spider&#10;- Owes Sildar Hallwinter a favour&#10;- Has the Cragmaw map, hasn't told the party"></textarea></div>
             <div class="form-group full"><label class="form-label">Relationships &amp; Contacts</label><textarea id="f-relationships" class="tall" placeholder="Sildar Hallwinter -- Friendly, rescued from the cave&#10;Klarg -- Hostile bugbear boss&#10;Gundren Rockseeker -- Quest giver, missing"></textarea></div>
           </div>
+        </div>
+
+        <!-- ── Player View pane ── -->
+        <div class="char-pane" id="pane-view">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-shrink:0;" class="no-print">
+            <span style="font-size:0.78rem;color:#555;">Read-only view — the same sheet your players see on their screen.</span>
+            <button id="print-btn" class="btn btn-secondary btn-sm" onclick="window.print()">🖨️ Print / Save PDF</button>
+          </div>
+          <div id="pane-view-content" style="max-width:720px;"></div>
         </div>
 
       </div>

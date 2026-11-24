@@ -12,6 +12,14 @@ function escHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
+function showToast(msg, duration) {
+  var el = document.createElement('div');
+  el.textContent = msg;
+  el.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:#1a1f2e;border:1px solid #30363d;border-radius:6px;padding:0.6rem 1rem;color:#e6e6e6;font-size:0.85rem;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.5);pointer-events:none;';
+  document.body.appendChild(el);
+  setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, duration || 3000);
+}
+
 // ── State ────────────────────────────────────────────────────
 var ws            = null;
 var initiative    = [];
@@ -66,6 +74,12 @@ var _dmObjDragging = null; // { objId, startX, startY, startCol, startRow } duri
 var dmTargets  = {};  // playerName -> targetLabel
 var dmHpState  = {};  // tokenLabel -> { hp, maxHp }
 var gridEnabled = false; // DM-toggled grid overlay
+
+// Maps metadata + tag/recent state
+var mapsMeta        = {};   // { sceneId: { tags: [], note: "" } } — loaded from server
+var activeMapTags   = new Set(); // currently active tag filters
+var activeCampaignName = ''; // current active campaign display name
+var PREDEFINED_TAGS = ['Town','Dungeon','Interior','Wilderness','Combat','Road','Cave','Sea','Camp'];
 
 // Character sheets (loaded from server for AI context)
 var dmCharacterSheets = [];  // full character sheet objects
@@ -948,10 +962,83 @@ function renderSceneGroup(container, scene, sIdx) {
   })(sIdx);
   var sceneActions = document.createElement('div');
   sceneActions.className = 'scene-actions';
+
+  var noteMeta0 = mapsMeta[scene.id] || {};
+
+  var noteBtn = document.createElement('button');
+  noteBtn.textContent = '📝';
+  noteBtn.title = 'Scene notes';
+  noteBtn.className = 'btn btn-secondary btn-small';
+  if (noteMeta0.note) noteBtn.style.color = '#d4af37';
+
+  sceneActions.appendChild(noteBtn);
   sceneActions.appendChild(editBtn);
   sceneActions.appendChild(delBtn);
+
+  var notePreview = document.createElement('span');
+  notePreview.className = 'map-note-preview';
+  if (noteMeta0.note) notePreview.textContent = noteMeta0.note.slice(0, 40);
+
+  titleRow.appendChild(notePreview);
   titleRow.appendChild(sceneActions);
   sceneDiv.appendChild(titleRow);
+
+  // Notes area (initially hidden)
+  var noteArea = document.createElement('div');
+  noteArea.className = 'map-note-area';
+  noteArea.style.display = 'none';
+
+  var noteTa = document.createElement('textarea');
+  noteTa.placeholder = 'Scene notes…';
+  noteTa.value = noteMeta0.note || '';
+  noteTa.onblur = (function (sid, np, nb) {
+    return function () {
+      var newNote = noteTa.value;
+      if (!mapsMeta[sid]) mapsMeta[sid] = { tags: [], note: '' };
+      mapsMeta[sid].note = newNote;
+      np.textContent = newNote ? newNote.slice(0, 40) : '';
+      nb.style.color = newNote ? '#d4af37' : '';
+      fetch('/api/maps-meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: sid, tags: mapsMeta[sid].tags || [], note: newNote })
+      }).catch(function () {});
+    };
+  })(scene.id, notePreview, noteBtn);
+  noteArea.appendChild(noteTa);
+
+  var tagRow = document.createElement('div');
+  tagRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.35rem;';
+  PREDEFINED_TAGS.forEach(function (tag) {
+    var chip = document.createElement('span');
+    var curTags = (mapsMeta[scene.id] || {}).tags || [];
+    chip.className = 'map-tag-chip' + (curTags.indexOf(tag) >= 0 ? ' active' : '');
+    chip.textContent = tag;
+    chip.onclick = (function (t, c, sid) {
+      return function () {
+        if (!mapsMeta[sid]) mapsMeta[sid] = { tags: [], note: '' };
+        var tagIdx = mapsMeta[sid].tags.indexOf(t);
+        if (tagIdx >= 0) mapsMeta[sid].tags.splice(tagIdx, 1);
+        else mapsMeta[sid].tags.push(t);
+        c.className = 'map-tag-chip' + (mapsMeta[sid].tags.indexOf(t) >= 0 ? ' active' : '');
+        fetch('/api/maps-meta', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: sid, tags: mapsMeta[sid].tags, note: mapsMeta[sid].note || '' })
+        }).then(function () { renderMapTagFilters(); }).catch(function () {});
+      };
+    })(tag, chip, scene.id);
+    tagRow.appendChild(chip);
+  });
+  noteArea.appendChild(tagRow);
+  sceneDiv.appendChild(noteArea);
+
+  noteBtn.onclick = function (e) {
+    e.stopPropagation();
+    var nowHidden = noteArea.style.display === 'none';
+    noteArea.style.display = nowHidden ? '' : 'none';
+    if (nowHidden) noteTa.focus();
+  };
 
   // Views wrapper — collapsible
   var viewsWrap = document.createElement('div');
@@ -1107,6 +1194,13 @@ function renderScenesPanel() {
     .then(function (r) { return r.json(); })
     .then(function (data) {
       sceneData = data.scenes || [];
+      // ── Tag filter ──
+      if (activeMapTags.size > 0) {
+        sceneData = sceneData.filter(function (s) {
+          var m = mapsMeta[s.id];
+          return m && m.tags && m.tags.some(function (t) { return activeMapTags.has(t); });
+        });
+      }
       var mapList = document.getElementById('map-list');
       mapList.innerHTML = '';
 
@@ -1265,6 +1359,7 @@ function showSceneView(sceneIdx, viewIdx) {
   var fogKey = view.id || (sceneIdx + '-' + viewIdx);
   currentViewFogKey   = fogKey;
   currentViewImageUrl = view.image;
+  updateRecentMaps(scene.id || String(sceneIdx), viewIdx, view.label || '', view.image || '');
   var useFog = view.fog === true;
   var newFogKey = useFog ? fogKey : null;
 
@@ -6531,6 +6626,70 @@ loadDmCharacterSheets();
 initAiAssistant();
 initEventLog();
 initCampaigns();
+loadMapsMeta();
+
+// ── Drag-drop map upload ──────────────────────────────────────
+(function () {
+  var overlay = document.getElementById('map-drop-overlay');
+  if (!overlay) return;
+  var _dragging = false;
+
+  document.body.addEventListener('dragenter', function (e) {
+    var items = e.dataTransfer && e.dataTransfer.items;
+    if (!items) return;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].kind === 'file' && items[i].type.startsWith('image/')) {
+        _dragging = true;
+        overlay.style.display = 'flex';
+        overlay.style.pointerEvents = 'all';
+        e.preventDefault();
+        return;
+      }
+    }
+  });
+
+  document.body.addEventListener('dragover', function (e) {
+    if (_dragging) e.preventDefault();
+  });
+
+  document.body.addEventListener('dragleave', function (e) {
+    if (!e.relatedTarget || !document.body.contains(e.relatedTarget)) {
+      _dragging = false;
+      overlay.style.display = 'none';
+      overlay.style.pointerEvents = 'none';
+    }
+  });
+
+  document.body.addEventListener('drop', function (e) {
+    _dragging = false;
+    overlay.style.display = 'none';
+    overlay.style.pointerEvents = 'none';
+    e.preventDefault();
+    var files = e.dataTransfer && e.dataTransfer.files;
+    if (!files || !files.length) return;
+    var file = files[0];
+    if (!file.type.startsWith('image/')) return;
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      fetch('/api/maps/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, data: ev.target.result })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.ok) {
+            showToast('✅ Map uploaded: ' + file.name);
+            renderScenesPanel();
+          } else {
+            showToast('❌ Upload failed: ' + (d.error || 'unknown'));
+          }
+        })
+        .catch(function (err) { showToast('❌ Upload error: ' + err.message); });
+    };
+    reader.readAsDataURL(file);
+  });
+})();
 
 // Warm the event log cache on page load (background — no spinner)
 fetch('/api/event-log?limit=50')
@@ -6973,8 +7132,58 @@ function initEventLog() {
 // Campaign Management
 // ============================================================
 function renderCampaignSection(displayName) {
+  activeCampaignName = displayName || '';
   var badge = document.getElementById('campaign-active-badge');
   if (badge) badge.textContent = displayName || '';
+  var hdr = document.getElementById('header-campaign-name');
+  if (hdr) hdr.textContent = displayName ? '— ' + displayName : '';
+}
+
+// ── Maps Metadata ─────────────────────────────────────────────
+function loadMapsMeta() {
+  fetch('/api/maps-meta')
+    .then(function (r) { return r.json(); })
+    .then(function (d) { mapsMeta = d.meta || {}; renderMapTagFilters(); })
+    .catch(function () {});
+}
+
+// ── Recent Maps (per campaign, localStorage) ─────────────────
+function _recentKey() { return 'dm-recent-' + (activeCampaignName || 'default'); }
+
+function getRecentMaps() {
+  try { return JSON.parse(localStorage.getItem(_recentKey()) || '[]'); } catch (_) { return []; }
+}
+
+function updateRecentMaps(sceneId, viewIdx, label, image) {
+  var key = _recentKey();
+  var list = getRecentMaps();
+  list = list.filter(function (e) { return !(e.sceneId === sceneId && e.viewIdx === viewIdx); });
+  list.unshift({ sceneId: sceneId, viewIdx: viewIdx, label: label, image: image });
+  if (list.length > 8) list = list.slice(0, 8);
+  try { localStorage.setItem(key, JSON.stringify(list)); } catch (_) {}
+}
+
+// ── Map Tag Filters ───────────────────────────────────────────
+function renderMapTagFilters() {
+  var container = document.getElementById('map-tag-filters');
+  if (!container) return;
+  container.innerHTML = '';
+  var usedTags = new Set();
+  Object.values(mapsMeta).forEach(function (m) { (m.tags || []).forEach(function (t) { usedTags.add(t); }); });
+  var tagsToShow = PREDEFINED_TAGS.filter(function (t) { return usedTags.has(t); });
+  if (!tagsToShow.length) { container.style.display = 'none'; return; }
+  container.style.display = '';
+  tagsToShow.forEach(function (tag) {
+    var chip = document.createElement('span');
+    chip.className = 'map-tag-chip' + (activeMapTags.has(tag) ? ' active' : '');
+    chip.textContent = tag;
+    chip.onclick = function () {
+      if (activeMapTags.has(tag)) activeMapTags.delete(tag); else activeMapTags.add(tag);
+      renderMapTagFilters();
+      renderScenesPanel();
+    };
+    container.appendChild(chip);
+  });
 }
 
 function renderCampaignList(active, campaigns) {
