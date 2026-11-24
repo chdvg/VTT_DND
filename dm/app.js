@@ -1305,6 +1305,13 @@ function renderScenesPanel() {
                 fogIcon.style.cssText = 'flex:none;font-size:0.85rem;';
                 rowTop.appendChild(fogIcon);
               }
+              if (view.audio) {
+                var audioIcon = document.createElement('span');
+                audioIcon.textContent = '🎵';
+                audioIcon.title = 'Ambience: ' + view.audio.split('/').pop();
+                audioIcon.style.cssText = 'flex:none;font-size:0.85rem;cursor:help;';
+                rowTop.appendChild(audioIcon);
+              }
               row.appendChild(rowTop);
 
               var rowBtns = document.createElement('div');
@@ -1316,6 +1323,25 @@ function renderScenesPanel() {
                 return function () { showSceneView(si, vi); };
               })(sIdx, vIdx);
               rowBtns.appendChild(showBtn);
+              if (view.audio) {
+                var loopBtn = document.createElement('button');
+                var isLoop = view.audioLoop !== false;
+                loopBtn.textContent = isLoop ? '🔁' : '▶️';
+                loopBtn.title = isLoop ? 'Loops — click to play once' : 'Plays once — click to loop';
+                loopBtn.className = 'btn btn-small';
+                loopBtn.style.cssText = 'flex:none;padding:0.1rem 0.3rem;font-size:0.75rem;background:transparent;border:1px solid #555;';
+                loopBtn.onclick = (function (si, vi2, btn) {
+                  return function (e) {
+                    e.stopPropagation();
+                    var v = sceneData[si].views[vi2];
+                    v.audioLoop = !(v.audioLoop !== false);
+                    btn.textContent = v.audioLoop ? '🔁' : '▶️';
+                    btn.title = v.audioLoop ? 'Loops — click to play once' : 'Plays once — click to loop';
+                    fetch('/api/scenes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenes: sceneData }) });
+                  };
+                })(sIdx, vIdx, loopBtn);
+                rowBtns.appendChild(loopBtn);
+              }
               row.appendChild(rowBtns);
               mapList.appendChild(row);
             });
@@ -1462,6 +1488,7 @@ function showSceneView(sceneIdx, viewIdx) {
 
   // Stop any playing audio before switching scene view
   wsSend({ action: 'stop-audio' });
+  setNowPlaying(view.audio || null);
 
   // Pass fogKey (fog) and mapKey (tokens) so player can correlate overlays
   lastSceneViewPayload = { action: 'show-scene-view', image: view.image, audio: view.audio || null, audioLoop: view.audioLoop !== false, fit: view.fit || 'contain', fogKey: useFog ? fogKey : null, mapKey: fogKey, label: view.label || '' };
@@ -1794,15 +1821,33 @@ function applyAudioDisplay() {
 
 function broadcastAudio(url, loop) {
   wsSend({ action: 'play-audio', url: url, loop: loop !== false });
+  setNowPlaying(url);
+}
+
+function setNowPlaying(url) {
+  var wrap = document.getElementById('audio-now-playing');
+  var nameEl = document.getElementById('audio-now-playing-name');
+  if (!wrap || !nameEl) return;
+  if (url) {
+    nameEl.textContent = url.split('/').pop();
+    wrap.style.display = 'flex';
+  } else {
+    wrap.style.display = 'none';
+    nameEl.textContent = '';
+  }
 }
 
 document.getElementById('stop-audio-btn').addEventListener('click', function () {
+  wsSend({ action: 'stop-audio' });
   fetch('/api/stopaudio', { method: 'POST' });
-  // Also stop any locally-playing audio preview elements in the DM panel
-  document.querySelectorAll('#audio-list audio').forEach(function (a) {
-    a.pause();
-    a.currentTime = 0;
-  });
+  setNowPlaying(null);
+  document.querySelectorAll('#audio-list audio').forEach(function (a) { a.pause(); a.currentTime = 0; });
+});
+
+document.getElementById('audio-stop-btn') && document.getElementById('audio-stop-btn').addEventListener('click', function () {
+  wsSend({ action: 'stop-audio' });
+  fetch('/api/stopaudio', { method: 'POST' });
+  setNowPlaying(null);
 });
 
 // ============================================================
