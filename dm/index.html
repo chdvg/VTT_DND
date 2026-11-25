@@ -131,13 +131,17 @@
           </div>
         </div>
       </div>
-      <div id="map-control-grid" style="display:none;grid-template-columns:2fr 1px 3fr;gap:0 1.25rem;">
+      <div id="map-control-grid" style="display:none;grid-template-columns:1fr 240px;gap:0 1.25rem;align-items:start;">
         <div id="fog-controls-container"></div>
         <div id="map-control-divider" style="background:#2a2f3a;align-self:stretch;"></div>
-        <div style="display:flex;flex-direction:column;gap:0.5rem;">
+        <div style="display:flex;flex-direction:column;gap:0.5rem;overflow:hidden;">
           <div id="token-controls-container" style="display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;"></div>
           <div id="token-map-container"></div>
           <div id="draw-controls-container" style="border-top:1px solid #21262d;padding-top:0.6rem;"></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.5rem;overflow-y:auto;max-height:800px;border:1px solid #21262d;border-radius:4px;padding:0.5rem;background:#0d1117;">
+          <div id="init-map-mobs-summary" style="font-weight:bold;color:#e6e6e6;font-size:0.82rem;flex:none;">📍 Tokens on Map</div>
+          <div id="init-map-mobs-list" style="display:flex;flex-direction:column;gap:0.15rem;overflow-y:auto;max-height:calc(800px - 40px);font-size:0.78rem;"></div>
         </div>
       </div>
       <div id="feature-controls-container" style="margin-top:0.75rem;"></div>
@@ -593,11 +597,6 @@
           <input type="number" id="init-roll" placeholder="Roll" min="1" max="30" />
           <button id="init-add-btn" class="btn btn-small btn-primary">+ Add Mob</button>
         </div>
-        <details id="init-map-mobs-details" style="margin-top:0.5rem;">
-          <summary id="init-map-mobs-summary" style="cursor:pointer;color:#d4af37;font-size:0.82rem;user-select:none;">📍 Mobs on Map</summary>
-          <div id="init-map-mobs-list" style="margin-top:0.4rem;display:flex;flex-direction:column;gap:0.3rem;"></div>
-          <div style="font-size:0.7rem;color:#666;margin-top:0.35rem;">Click to fill name • Shift+click to add instantly with random roll</div>
-        </details>
         <details id="init-players-details" style="margin-top:0.9rem;">
           <summary style="cursor:pointer;color:#d4af37;font-size:0.82rem;user-select:none;">👥 Player Roster</summary>
           <div id="init-player-list" style="margin-top:0.5rem;"></div>
