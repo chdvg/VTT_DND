@@ -458,7 +458,7 @@ function restoreDmState(msg) {
   if (mapControlGrid) {
     mapControlGrid.style.display = 'grid';
     var hasFog = !!fogKey;
-    mapControlGrid.style.gridTemplateColumns = hasFog ? '2fr 1px 3fr' : '1fr';
+    mapControlGrid.style.gridTemplateColumns = hasFog ? '2fr 1px 1fr 240px' : '1fr 240px';
     var mcgDivider2    = document.getElementById('map-control-divider');
     var fogControlsEl2 = document.getElementById('fog-controls-container');
     if (mcgDivider2)    mcgDivider2.style.display    = hasFog ? '' : 'none';
@@ -1455,14 +1455,14 @@ function toggleMapFog() {
     if (fogControlsEl) fogControlsEl.innerHTML = '';
     if (fogControlsEl) fogControlsEl.style.display = 'none';
     if (mcgDivider)    mcgDivider.style.display    = 'none';
-    if (mapControlGrid) mapControlGrid.style.gridTemplateColumns = '1fr';
+    if (mapControlGrid) mapControlGrid.style.gridTemplateColumns = '1fr 240px';
   } else {
     // ── Turn fog ON ────────────────────────────────────────────
     activeFogKey = currentViewFogKey;
     if (lastSceneViewPayload) lastSceneViewPayload.fogKey = activeFogKey;
     if (fogControlsEl) fogControlsEl.style.display = '';
     if (mcgDivider)    mcgDivider.style.display    = '';
-    if (mapControlGrid) mapControlGrid.style.gridTemplateColumns = '2fr 1px 3fr';
+    if (mapControlGrid) mapControlGrid.style.gridTemplateColumns = '2fr 1px 1fr 240px';
     renderFogControls(currentViewImageUrl, activeFogKey);
     sendFogUpdate(activeFogKey);
     wsSend({ action: 'set-fog-key', fogKey: activeFogKey });
@@ -1521,7 +1521,7 @@ function showSceneView(sceneIdx, viewIdx) {
   var mapControlTitle = document.getElementById('map-control-title');
   if (mapControlGrid) {
     mapControlGrid.style.display = 'grid';
-    mapControlGrid.style.gridTemplateColumns = useFog ? '2fr 1px 3fr' : '1fr';
+    mapControlGrid.style.gridTemplateColumns = useFog ? '2fr 1px 1fr 240px' : '1fr 240px';
     var mcgDivider    = document.getElementById('map-control-divider');
     var fogControlsEl = document.getElementById('fog-controls-container');
     if (mcgDivider)    mcgDivider.style.display    = useFog ? '' : 'none';
@@ -3549,186 +3549,10 @@ function renderTokenControls(mapUrl, mapKey) {
 
   updateDmFeatureOverlay();
   renderDmObjectLayer();
-  var tokens = tokenState[mapKey] || [];
-  if (tokens.length) {
-    // ── Collapsible token list header ──────────────────────────────────
-    var listToggleBtn = document.createElement('button');
-    var listCollapsed = true; // collapsed by default
-    listToggleBtn.textContent = '▶ Token List (' + tokens.length + ')';
-    listToggleBtn.style.cssText = 'display:block;width:100%;text-align:left;margin-top:0.25rem;' +
-      'padding:0.28rem 0.6rem;font-size:0.75rem;border-radius:4px;cursor:pointer;' +
-      'border:1px solid #30363d;background:#0d1117;color:#999;';
-    listToggleBtn.onclick = function () {
-      listCollapsed = !listCollapsed;
-      listToggleBtn.textContent = (listCollapsed ? '▶' : '▼') + ' Token List (' + tokens.length + ')';
-      listDiv.style.display = listCollapsed ? 'none' : 'block';
-    };
-    mapTarget.appendChild(listToggleBtn);
-    var listDiv = document.createElement('div');
-    listDiv.style.cssText = 'margin-top:0.25rem;display:none;'; // collapsed by default
-    tokens.forEach(function (tok, idx) {
-      var row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-bottom:0.25rem;';
-      var dot = document.createElement('span');
-      dot.style.cssText = 'width:14px;height:14px;border-radius:50%;flex-shrink:0;' +
-        'background:' + tokenBgColor(tok) + ';border:2px solid rgba(255,255,255,0.4);' +
-        'display:inline-flex;align-items:center;justify-content:center;font-size:8px;';
-      if (tok.type === 'player' && tok.cls && MOB_ICONS_CLASS[tok.cls]) dot.textContent = MOB_ICONS_CLASS[tok.cls];
-      else if (tok.mobType && MOB_ICONS[tok.mobType]) dot.textContent = MOB_ICONS[tok.mobType];
-      row.appendChild(dot);
-      var lbl = document.createElement('span');
-      lbl.style.cssText = 'flex:1;font-size:0.75rem;color:#ccc;';
-      lbl.textContent = tok.label + ' (' + tok.color + ')';
-      row.appendChild(lbl);
-      // Show conditions from initiative tracker
-      var initEntry = initiative.find(function (e) { return e.name === tok.label; });
-      if (initEntry && initEntry.conditions && initEntry.conditions.length) {
-        var condWrap = document.createElement('span');
-        condWrap.style.cssText = 'display:flex;gap:3px;flex-wrap:wrap;align-items:center;max-width:160px;';
-        initEntry.conditions.forEach(function (c) {
-          var badge = document.createElement('span');
-          badge.title = c.type;
-          var roundLabel = c.rounds === null ? '∞' : c.rounds + 'r';
-          badge.textContent = (c.icon || '') + ' ' + c.name + ' ' + roundLabel;
-          badge.style.cssText = 'font-size:0.65rem;line-height:1.3;padding:1px 4px;border-radius:3px;white-space:nowrap;' +
-            'background:' + (c.type === 'buff' ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)') + ';' +
-            'border:1px solid ' + (c.type === 'buff' ? '#22c55e' : '#ef4444') + ';' +
-            'color:' + (c.type === 'buff' ? '#4ade80' : '#f87171') + ';';
-          condWrap.appendChild(badge);
-        });
-        row.appendChild(condWrap);
-      }
-      // Lock toggle for player tokens
-      if (tok.type === 'player' && tok.label) {
-        var isLocked = allPlayersLockedDm || !!playerLockState[tok.label];
-        var lockBtn = document.createElement('button');
-        lockBtn.textContent = isLocked ? '�' : '🔓';
-        lockBtn.title = isLocked ? 'Unlock movement' : 'Lock movement';
-        lockBtn.style.cssText = 'font-size:0.75rem;padding:0.05rem 0.3rem;min-width:0;flex:none;border-radius:3px;cursor:pointer;' +
-          'border:1px solid ' + (isLocked ? '#f87171' : '#444') + ';' +
-          'background:' + (isLocked ? 'rgba(248,113,113,0.15)' : 'rgba(0,0,0,0.3)') + ';' +
-          'color:' + (isLocked ? '#f87171' : '#666') + ';' +
-          (allPlayersLockedDm ? 'opacity:0.5;cursor:default;' : '');
-        lockBtn.onclick = (function (name, locked) {
-          return function () {
-            if (allPlayersLockedDm) return;
-            if (locked) {
-              playerLockState[name] = false;
-              wsSend({ action: 'unlock-player', name: name });
-            } else {
-              playerLockState[name] = true;
-              wsSend({ action: 'lock-player', name: name });
-            }
-            renderTokenControls(mapUrl, mapKey);
-          };
-        }(tok.label, isLocked));
-        row.appendChild(lockBtn);
-      }
-
-      // Visibility toggle
-      var eyeBtn2 = document.createElement('button');
-        eyeBtn2.textContent = tok.hidden ? '🙈' : '👁️';
-        eyeBtn2.title = tok.hidden ? 'Hidden from players — click to reveal' : 'Visible to players — click to hide';
-        eyeBtn2.style.cssText = 'font-size:0.75rem;padding:0.05rem 0.3rem;min-width:0;flex:none;border-radius:3px;cursor:pointer;' +
-          'border:1px solid ' + (tok.hidden ? '#7c3aed' : '#374151') + ';' +
-          'background:' + (tok.hidden ? 'rgba(124,58,237,0.25)' : 'rgba(0,0,0,0.3)') + ';' +
-          'color:' + (tok.hidden ? '#c4b5fd' : '#6b7280') + ';';
-        eyeBtn2.onclick = (function (t, mk) {
-          return function () {
-            t.hidden = !t.hidden;
-            sendTokenUpdate(mk);
-            renderTokenControls(mapUrl, mk);
-          };
-        })(tok, mapKey);
-        row.appendChild(eyeBtn2);
-
-      // Death toggle button
-      var deathBtn = document.createElement('button');
-      deathBtn.textContent = tok.dead ? '💚' : '💀';
-      deathBtn.title = tok.dead ? 'Revive — remove death marker' : 'Mark Dead — adds X over token, removes from initiative';
-      deathBtn.style.cssText = 'font-size:0.75rem;padding:0.05rem 0.3rem;min-width:0;flex:none;border-radius:3px;cursor:pointer;' +
-        'border:1px solid ' + (tok.dead ? '#16a34a' : '#7f1d1d') + ';' +
-        'background:' + (tok.dead ? 'rgba(22,163,74,0.15)' : 'rgba(127,29,29,0.25)') + ';' +
-        'color:' + (tok.dead ? '#4ade80' : '#f87171') + ';';
-      deathBtn.onclick = (function (t, mk) {
-        return function () {
-          t.dead = !t.dead;
-          if (t.dead) {
-            initiative = initiative.filter(function (e) { return e.name !== t.label; });
-            if (fogDeferredInit[mk]) fogDeferredInit[mk] = fogDeferredInit[mk].filter(function (d) { return d.label !== t.label; });
-            renderInitiative();
-            if (t.type !== 'player' && t.type !== 'item') showLootDropPicker(t, mk);
-          }
-          sendTokenUpdate(mk);
-          renderTokenControls(mapUrl, mk);
-        };
-      })(tok, mapKey);
-      row.appendChild(deathBtn);
-
-      var rmBtn = document.createElement('button');
-      rmBtn.textContent = '✕';
-      rmBtn.className = 'btn btn-danger btn-small';
-      rmBtn.style.cssText = 'padding:0.1rem 0.4rem;min-width:0;flex:none;';
-      rmBtn.onclick = (function (i, tok) {
-        return function () {
-          // Remove from initiative tracker if present
-          initiative = initiative.filter(function (e) { return e.name !== tok.label; });
-          // Remove from fog deferred queue too
-          if (fogDeferredInit[mapKey]) {
-            fogDeferredInit[mapKey] = fogDeferredInit[mapKey].filter(function (d) { return d.label !== tok.label; });
-          }
-          renderInitiative();
-          tokenState[mapKey].splice(i, 1);
-          sendTokenUpdate(mapKey);
-          renderTokenControls(mapUrl, mapKey);
-        };
-      })(idx, tok);
-      row.appendChild(rmBtn);
-      listDiv.appendChild(row);
-    });
-
-    var clearAllBtn = document.createElement('button');
-    clearAllBtn.textContent = '🗑 Clear All Tokens';
-    clearAllBtn.className = 'btn btn-warning btn-small';
-    clearAllBtn.style.marginTop = '0.3rem';
-    clearAllBtn.onclick = function () {
-      // Remove all non-player tokens from initiative
-      var removedLabels = (tokenState[mapKey] || []).filter(function (t) { return t.color !== 'green'; }).map(function (t) { return t.label; });
-      initiative = initiative.filter(function (e) { return !removedLabels.includes(e.name); });
-      fogDeferredInit[mapKey] = [];
-      renderInitiative();
-      tokenState[mapKey] = [];
-      sendTokenUpdate(mapKey);
-      renderTokenControls(mapUrl, mapKey);
-    };
-    listDiv.appendChild(clearAllBtn);
-    var killMobsBtn = document.createElement('button');
-    killMobsBtn.textContent = '\uD83D\uDC80 Kill Mobs';
-    killMobsBtn.className = 'btn btn-danger btn-small';
-    killMobsBtn.style.marginTop = '0.2rem';
-    killMobsBtn.onclick = function () {
-      var anyChanged = false;
-      (tokenState[mapKey] || []).forEach(function (t) {
-        if (t.type !== 'player' && t.type !== 'item' && !t.dead) { t.dead = true; anyChanged = true; }
-      });
-      if (anyChanged) {
-        initiative = initiative.filter(function (e) { return e.isPlayer; });
-        fogDeferredInit[mapKey] = [];
-        renderInitiative();
-        sendTokenUpdate(mapKey);
-        renderTokenControls(mapUrl, mapKey);
-      }
-    };
-    listDiv.appendChild(killMobsBtn);
-    mapTarget.appendChild(listDiv);
-  }
 
   // Keep fog map token overlay in sync whenever tokens change
   updateFogTokenOverlay();
 }
-
-
-// ── Scene Builder functions moved to /scene-builder/app.js ──────────────
 
 function editScene(sceneIdx) {
   var scene = sceneData[sceneIdx];
@@ -4141,19 +3965,72 @@ function refreshMapMobsSection() {
     return;
   }
   if (summary) summary.textContent = '📍 Tokens on Map (' + mobs.length + ')';
+
+  // Bulk control bar — compact single row of icon buttons
+  var ctrlBar = document.createElement('div');
+  ctrlBar.style.cssText = 'display:flex;gap:0.2rem;flex-wrap:wrap;margin-bottom:0.35rem;padding-bottom:0.35rem;border-bottom:1px solid #333;';
+
+  function mkCtrl(icon, label, cls, fn) {
+    var b = document.createElement('button');
+    b.textContent = icon;
+    b.title = label;
+    b.style.cssText = 'flex:1;min-width:0;font-size:0.7rem;padding:0.15rem 0.25rem;border-radius:3px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    b.className = 'btn btn-small ' + cls;
+    b.onclick = fn;
+    return b;
+  }
+
+  ctrlBar.appendChild(mkCtrl('👁 All', 'Reveal all tokens', 'btn-secondary', function() {
+    mobs.forEach(function(t) { t.hidden = false; });
+    sendTokenUpdate(activeTokenMapKey);
+    refreshMapMobsSection();
+  }));
+  ctrlBar.appendChild(mkCtrl('🙈 All', 'Hide all tokens', 'btn-secondary', function() {
+    mobs.forEach(function(t) { t.hidden = true; });
+    sendTokenUpdate(activeTokenMapKey);
+    refreshMapMobsSection();
+  }));
+  ctrlBar.appendChild(mkCtrl('💀 All', 'Kill all mobs', 'btn-danger', function() {
+    var anyChanged = false;
+    mobs.forEach(function(t) {
+      if (t.type !== 'player' && t.type !== 'item' && !t.dead) { t.dead = true; anyChanged = true; }
+    });
+    if (anyChanged) {
+      initiative = initiative.filter(function(e) { return e.isPlayer; });
+      if (fogDeferredInit && fogDeferredInit[activeTokenMapKey]) fogDeferredInit[activeTokenMapKey] = [];
+      renderInitiative();
+      sendTokenUpdate(activeTokenMapKey);
+      refreshMapMobsSection();
+    }
+  }));
+  ctrlBar.appendChild(mkCtrl('🗑 Clear', 'Remove all tokens from map', 'btn-warning', function() {
+    var removedLabels = mobs.filter(function(t) { return t.type !== 'player'; }).map(function(t) { return t.label; });
+    initiative = initiative.filter(function(e) { return !removedLabels.includes(e.name); });
+    if (fogDeferredInit && fogDeferredInit[activeTokenMapKey]) fogDeferredInit[activeTokenMapKey] = [];
+    tokenState[activeTokenMapKey] = [];
+    sendTokenUpdate(activeTokenMapKey);
+    renderInitiative();
+    refreshMapMobsSection();
+  }));
+
+  list.appendChild(ctrlBar);
+
   mobs.forEach(function(tok) {
     var alreadyIn = initiative.some(function(e) { return e.name === tok.label; });
     var row = document.createElement('div');
-    row.style.cssText = 'display:flex;gap:0.3rem;align-items:center;';
+    row.style.cssText = 'display:flex;gap:0.2rem;align-items:center;padding:0.1rem 0;';
 
-    // Visibility toggle button
+    // Shared micro-button style helper
+    var microBtn = 'flex:none;font-size:0.72rem;padding:0.05rem 0.28rem;border-radius:3px;cursor:pointer;line-height:1.4;';
+
+    // Visibility toggle
     var eyeBtn = document.createElement('button');
-    eyeBtn.textContent = tok.hidden ? '🙈' : '👁️';
-    eyeBtn.title = tok.hidden ? 'Invisible — click to reveal to players' : 'Visible — click to hide from players';
-    eyeBtn.style.cssText = 'flex:none;font-size:0.82rem;padding:0.1rem 0.35rem;border-radius:4px;cursor:pointer;' +
-      'border:1px solid ' + (tok.hidden ? '#7c3aed' : '#374151') + ';' +
-      'background:' + (tok.hidden ? 'rgba(124,58,237,0.25)' : 'rgba(0,0,0,0.3)') + ';' +
-      'color:' + (tok.hidden ? '#c4b5fd' : '#6b7280') + ';';
+    eyeBtn.textContent = tok.hidden ? '🙈' : '👁';
+    eyeBtn.title = tok.hidden ? 'Hidden — click to reveal' : 'Visible — click to hide';
+    eyeBtn.style.cssText = microBtn +
+      'border:1px solid ' + (tok.hidden ? '#7c3aed' : '#2d333b') + ';' +
+      'background:' + (tok.hidden ? 'rgba(124,58,237,0.2)' : 'rgba(0,0,0,0.3)') + ';' +
+      'color:' + (tok.hidden ? '#c4b5fd' : '#555') + ';';
     eyeBtn.addEventListener('click', function(e) {
       e.stopPropagation();
       tok.hidden = !tok.hidden;
@@ -4162,31 +4039,56 @@ function refreshMapMobsSection() {
     });
     row.appendChild(eyeBtn);
 
-    // Token chip (initiative button for non-player tokens)
+    // Kill/revive toggle (not shown for items)
+    if (tok.type !== 'item') {
+      var killBtn = document.createElement('button');
+      killBtn.textContent = tok.dead ? '💚' : '💀';
+      killBtn.title = tok.dead ? 'Revive' : 'Kill';
+      killBtn.style.cssText = microBtn +
+        'border:1px solid ' + (tok.dead ? '#16a34a' : '#3d1515') + ';' +
+        'background:' + (tok.dead ? 'rgba(22,163,74,0.15)' : 'rgba(127,29,29,0.18)') + ';' +
+        'color:' + (tok.dead ? '#4ade80' : '#c9524a') + ';';
+      killBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        tok.dead = !tok.dead;
+        if (tok.dead) {
+          initiative = initiative.filter(function(e) { return e.name !== tok.label; });
+          if (fogDeferredInit && fogDeferredInit[activeTokenMapKey]) {
+            fogDeferredInit[activeTokenMapKey] = fogDeferredInit[activeTokenMapKey].filter(function(d) { return d.label !== tok.label; });
+          }
+          renderInitiative();
+          if (tok.type !== 'player') showLootDropPicker(tok, activeTokenMapKey);
+        }
+        sendTokenUpdate(activeTokenMapKey);
+        refreshMapMobsSection();
+      });
+      row.appendChild(killBtn);
+    }
+
+    // Token name chip
     var chip = document.createElement('button');
+    var deadStyle = tok.dead ? 'opacity:0.45;text-decoration:line-through;' : '';
+    var hiddenStyle = (!tok.dead && tok.hidden) ? 'opacity:0.55;' : '';
     if (tok.type === 'player') {
-      chip.className = 'btn btn-small btn-secondary';
-      chip.style.cssText = 'font-size:0.75rem;padding:0.2rem 0.5rem;flex:1;text-align:left;' +
-        (tok.hidden ? 'opacity:0.5;text-decoration:line-through;' : '');
-      var pIcon = MOB_ICONS_CLASS[tok.cls] || '⚔️';
-      chip.textContent = pIcon + ' ' + tok.label + ' (player)';
+      chip.style.cssText = 'flex:1;min-width:0;text-align:left;font-size:0.72rem;padding:0.1rem 0.3rem;' +
+        'border-radius:3px;cursor:default;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
+        'background:rgba(255,255,255,0.05);border:1px solid #2d333b;color:#9ca3af;' + deadStyle + hiddenStyle;
+      chip.textContent = (MOB_ICONS_CLASS[tok.cls] || '👤') + ' ' + tok.label;
       chip.title = 'Player token';
-      chip.addEventListener('click', function() {});
     } else {
-      chip.className = 'btn btn-small' + (alreadyIn ? ' btn-secondary' : ' btn-primary');
-      chip.style.cssText = 'font-size:0.75rem;padding:0.2rem 0.5rem;flex:1;text-align:left;opacity:' +
-        (tok.hidden ? '0.5' : (alreadyIn ? '0.45' : '1')) + ';' +
-        (tok.hidden ? 'text-decoration:line-through;' : '');
-      var mobIcon = (MOB_ICONS && MOB_ICONS[tok.mobType]) ? MOB_ICONS[tok.mobType] + ' ' :
-                    (MOB_ICONS_CLASS && MOB_ICONS_CLASS[tok.mobType]) ? MOB_ICONS_CLASS[tok.mobType] + ' ' : '';
-      chip.textContent = mobIcon + tok.label;
-      chip.title = alreadyIn ? 'Already in initiative' : 'Click to fill • Shift+click to add instantly';
+      var mobIcon = (MOB_ICONS && MOB_ICONS[tok.mobType]) ? MOB_ICONS[tok.mobType] :
+                    (MOB_ICONS_CLASS && MOB_ICONS_CLASS[tok.mobType]) ? MOB_ICONS_CLASS[tok.mobType] : '•';
+      chip.style.cssText = 'flex:1;min-width:0;text-align:left;font-size:0.72rem;padding:0.1rem 0.3rem;' +
+        'border-radius:3px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
+        (alreadyIn
+          ? 'background:rgba(255,255,255,0.04);border:1px solid #2d333b;color:#6b7280;'
+          : 'background:rgba(212,175,55,0.1);border:1px solid #5a4a1a;color:#d4af37;') +
+        deadStyle + hiddenStyle;
+      chip.textContent = mobIcon + ' ' + tok.label;
+      chip.title = alreadyIn ? 'In initiative' : 'Click → fill name field  •  Shift+click → roll and add';
       chip.addEventListener('click', function(e) {
         if (e.shiftKey) {
-          if (!alreadyIn) {
-            addToInitiative(tok.label, Math.floor(Math.random() * 20) + 1, false, '');
-            refreshMapMobsSection();
-          }
+          if (!alreadyIn) { addToInitiative(tok.label, Math.floor(Math.random() * 20) + 1, false, ''); refreshMapMobsSection(); }
         } else {
           document.getElementById('init-name').value = tok.label;
           document.getElementById('init-roll').focus();
@@ -7018,6 +6920,11 @@ function renderCampaignSection(displayName) {
   if (badge) badge.textContent = displayName || '';
   var hdr = document.getElementById('header-campaign-name');
   if (hdr) hdr.textContent = displayName ? '— ' + displayName : '';
+  var tagText = displayName ? '📁 ' + displayName : '';
+  ['sessions-campaign-tag','encounters-campaign-tag','bundles-campaign-tag'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = tagText;
+  });
 }
 
 // ── Maps Metadata ─────────────────────────────────────────────
