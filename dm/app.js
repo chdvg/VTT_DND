@@ -6920,6 +6920,11 @@ function renderCampaignSection(displayName) {
   if (badge) badge.textContent = displayName || '';
   var hdr = document.getElementById('header-campaign-name');
   if (hdr) hdr.textContent = displayName ? '— ' + displayName : '';
+  var tagText = displayName ? '📁 ' + displayName : '';
+  ['sessions-campaign-tag','encounters-campaign-tag','bundles-campaign-tag'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = tagText;
+  });
 }
 
 // ── Maps Metadata ─────────────────────────────────────────────
